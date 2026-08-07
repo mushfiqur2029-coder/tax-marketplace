@@ -4,7 +4,8 @@ export type SegmentId =
   | "landlord"
   | "investor"
   | "cis"
-  | "high_earner";
+  | "high_earner"
+  | "limited_company_vat";
 
 export type IntakeField = {
   name: string;
@@ -20,7 +21,7 @@ export type Segment = {
   id: SegmentId;
   title: string;
   tagline: string;
-  numeral: "①" | "②" | "③" | "④" | "⑤" | "⑥";
+  numeral: "①" | "②" | "③" | "④" | "⑤" | "⑥" | "⑦";
   intake: IntakeField[];
   suggestedDocs: string[];
 };
@@ -223,6 +224,57 @@ export const SEGMENTS: Segment[] = [
       },
     ],
     suggestedDocs: ["P60", "Bonus / share vesting statements", "Pension provider statement"],
+  },
+  {
+    id: "limited_company_vat",
+    title: "Limited company & VAT",
+    tagline: "Corporation tax, VAT returns, and company filings.",
+    numeral: "⑦",
+    intake: [
+      {
+        name: "company_number",
+        label: "Companies House number",
+        hint: "8 digits, on your certificate of incorporation",
+        type: "text",
+        required: true,
+      },
+      {
+        name: "vat_status",
+        label: "VAT status",
+        type: "select",
+        options: [
+          "Not VAT-registered",
+          "VAT-registered, standard scheme",
+          "VAT-registered, flat rate",
+          "Dormant (no activity)",
+        ],
+        required: true,
+      },
+      {
+        name: "annual_turnover",
+        label: "Approximate annual turnover",
+        prefix: "£",
+        type: "number",
+      },
+      {
+        name: "accounting_period_end",
+        label: "Accounting period end date (if known)",
+        hint: "e.g. 31/03 for a March year-end",
+        type: "text",
+      },
+      {
+        name: "notes",
+        label: "Anything else we should know?",
+        hint: "Recent changes, overseas income, employees, etc.",
+        type: "textarea",
+      },
+    ],
+    suggestedDocs: [
+      "Bank statements",
+      "Sales invoices",
+      "Purchase invoices / receipts",
+      "Previous year accounts (if any)",
+    ],
   },
 ];
 

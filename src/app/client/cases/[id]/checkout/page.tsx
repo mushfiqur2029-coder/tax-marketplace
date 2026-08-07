@@ -88,9 +88,18 @@ export default async function CheckoutPage({
             <div className="font-semibold text-ink">{data.tier.title}</div>
             <div className="text-2xl font-bold text-ink" style={{ fontFamily: "var(--font-heading)" }}>
               £{data.tier.priceGbp}
+              {data.tier.pricePer ? (
+                <span className="text-sm font-semibold text-slate"> {data.tier.pricePer}</span>
+              ) : null}
+              {data.tier.priceSuffix ? (
+                <span className="text-sm font-semibold text-slate"> {data.tier.priceSuffix}</span>
+              ) : null}
             </div>
           </div>
-          <p className="mt-1 text-xs text-slate">{data.tier.tagline} · one-off</p>
+          <p className="mt-1 text-xs text-slate">
+            {data.tier.tagline}
+            {data.tier.priceGbpSubtitle ? ` · ${data.tier.priceGbpSubtitle}` : ""}
+          </p>
           <form action={bound} className="mt-6">
             <SLButton type="submit" variant="primary" block>
               Pay £{data.tier.priceGbp} with card

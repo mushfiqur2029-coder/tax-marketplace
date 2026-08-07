@@ -1,29 +1,21 @@
 import Link from "next/link";
+import { COMPANY_TIERS } from "@/lib/plans";
 
-// Only rendered on /limited-company-tax-returns. A second pricing block, for
-// company-level services rather than personal filing. Static (no toggle) and
-// with a different price shape (£X+VAT) so it uses its own component.
+// Only rendered on /limited-company-tax-returns. Shows the full 6-card
+// company grid, pulling from the shared PLAN_TIERS source of truth so
+// prices stay in lockstep with the client wizard.
+const IDS = [
+  "vat_basic",
+  "vat_standard",
+  "vat_accounts",
+  "dormant",
+  "non_vat_reg",
+  "vat_reg",
+] as const;
 
-const TIERS = [
-  {
-    title: "Dormant",
-    price: "£89",
-    description:
-      "For companies that are inactive and have no business activity.",
-  },
-  {
-    title: "Non-VAT registered",
-    price: "£329",
-    description:
-      "For all non-VAT registered companies, including non-trading companies.",
-  },
-  {
-    title: "VAT-registered",
-    price: "£419",
-    description:
-      "For VAT registered companies with an annual turnover below £200k.",
-  },
-];
+const TIERS = IDS
+  .map((id) => COMPANY_TIERS.find((t) => t.id === id))
+  .filter((t): t is NonNullable<typeof t> => t != null);
 
 export function CompanyServicesPricing() {
   return (
@@ -34,24 +26,44 @@ export function CompanyServicesPricing() {
           <h2>Fixed prices for company-level filings.</h2>
           <p>
             Separate from personal filing. Pick the tier that matches your
-            company's activity.
+            company&rsquo;s activity.
           </p>
         </div>
 
         <div className="pricing-grid">
           {TIERS.map((t) => (
-            <div key={t.title} className="price-card">
+            <div
+              key={t.id}
+              className={"price-card" + (t.featured ? " featured" : "")}
+            >
+              {t.featured ? (
+                <span className="price-badge">Most chosen</span>
+              ) : null}
               <h3>{t.title}</h3>
-              <div className="price mt-3">
-                {t.price}
-                <small> +VAT</small>
+              {t.tagline ? <p className="tier-sub">{t.tagline}</p> : null}
+              <div className="price">
+                £{t.priceGbp}
+                {t.pricePer ? <small> {t.pricePer}</small> : null}
+                {t.priceSuffix ? <small> {t.priceSuffix}</small> : null}
               </div>
-              <p className="mt-4 text-sm text-slate">{t.description}</p>
-              <div className="mt-6">
-                <Link href="/register" className="btn-sl btn-sl-outline btn-sl-block">
-                  Choose {t.title}
-                </Link>
-              </div>
+              {t.features && t.features.length > 0 ? (
+                <ul>
+                  {t.features.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : t.description ? (
+                <p className="mt-2 mb-6 text-sm text-slate">{t.description}</p>
+              ) : null}
+              <Link
+                href="/register"
+                className={
+                  "btn-sl btn-sl-block " +
+                  (t.featured ? "btn-sl-primary" : "btn-sl-outline")
+                }
+              >
+                Choose {t.title}
+              </Link>
             </div>
           ))}
         </div>

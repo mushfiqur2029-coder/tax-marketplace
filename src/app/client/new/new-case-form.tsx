@@ -1,22 +1,34 @@
 "use client";
 
-import { useState } from "react";
-import type { Segment } from "@/lib/segments";
-import type { PlanTier, TierId } from "@/lib/plans";
+import { useMemo, useState } from "react";
+import type { Segment, SegmentId } from "@/lib/segments";
+import { tiersForSegment, type PlanTier, type TierId } from "@/lib/plans";
 import { SLButton } from "@/components/sl-button";
 
 type Props = {
   segments: Segment[];
-  tiers: PlanTier[];
   action: (fd: FormData) => Promise<void>;
 };
 
-export function NewCaseForm({ segments, tiers, action }: Props) {
-  const [segment, setSegment] = useState<string | null>(null);
-  const [tier, setTier] = useState<TierId | null>("standard");
+export function NewCaseForm({ segments, action }: Props) {
+  const [segment, setSegment] = useState<SegmentId | null>(null);
+  const [tier, setTier] = useState<TierId | null>(null);
   const [deadline, setDeadline] = useState<string>("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const tiers = useMemo(() => tiersForSegment(segment), [segment]);
+
+  const handleSegment = (nextId: SegmentId) => {
+    setSegment(nextId);
+    // Reset the selected tier when switching between personal / company sets.
+    const nextTiers = tiersForSegment(nextId);
+    const stillValid = tier ? nextTiers.some((t) => t.id === tier) : false;
+    if (!stillValid) {
+      const featured = nextTiers.find((t) => t.featured);
+      setTier(featured?.id ?? nextTiers[0]?.id ?? null);
+    }
+  };
 
   return (
     <form
@@ -46,7 +58,7 @@ export function NewCaseForm({ segments, tiers, action }: Props) {
               <button
                 key={s.id}
                 type="button"
-                onClick={() => setSegment(s.id)}
+                onClick={() => handleSegment(s.id)}
                 aria-pressed={active}
                 className={
                   "card-sl group relative text-left transition p-6 " +
@@ -83,69 +95,58 @@ export function NewCaseForm({ segments, tiers, action }: Props) {
         </div>
       </section>
 
-      {/* Tier picker */}
-      <section>
-        <SectionHeading eyebrow="Step 2" title="Choose a plan" />
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          {tiers.map((t) => {
-            const active = tier === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTier(t.id)}
-                aria-pressed={active}
-                className={
-                  "card-sl relative flex flex-col text-left p-6 transition " +
-                  (active
-                    ? "!border-sky/70 !shadow-[0_18px_38px_-18px_rgba(25,156,217,0.45)]"
-                    : "hover:border-sky/40 hover:-translate-y-0.5")
-                }
-              >
-                {t.featured ? (
-                  <span
-                    className="absolute -top-3 left-6 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white"
-                    style={{
-                      background:
-                        "linear-gradient(120deg, var(--navy), var(--sky))",
-                      fontFamily: "var(--font-mono)",
-                    }}
-                  >
-                    Most chosen
-                  </span>
-                ) : null}
-                <h3 className="text-lg font-semibold text-ink">{t.title}</h3>
-                <p className="mt-1 text-sm text-slate">{t.tagline}</p>
-                <p
-                  className="mt-4 text-3xl font-bold text-ink"
-                  style={{ fontFamily: "var(--font-heading)" }}
+      {/* Tier picker — hidden until a segment is chosen */}
+      {segment ? (
+        <section>
+          <SectionHeading
+            eyebrow="Step 2"
+            title={
+              segment === "limited_company_vat"
+                ? "Choose a company plan"
+                : "Choose a plan"
+            }
+          />
+          <div
+            className={
+              "mt-6 grid gap-4 " +
+              (tiers.length > 3
+                ? "sm:grid-cols-2 lg:grid-cols-3"
+                : "lg:grid-cols-3")
+            }
+          >
+            {tiers.map((t) => {
+              const active = tier === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTier(t.id)}
+                  aria-pressed={active}
+                  className={
+                    "card-sl relative flex flex-col text-left p-6 transition " +
+                    (active
+                      ? "!border-sky/70 !shadow-[0_18px_38px_-18px_rgba(25,156,217,0.45)]"
+                      : "hover:border-sky/40 hover:-translate-y-0.5")
+                  }
                 >
-                  £{t.priceGbp}
-                </p>
-                <ul className="mt-4 space-y-2 text-sm text-ink">
-                  {t.features.map((f) => (
-                    <li key={f} className="flex gap-2">
-                      <span className="text-mint">✓</span>
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                {active ? (
-                  <span
-                    className="absolute right-4 top-4 inline-flex h-6 w-6 items-center justify-center rounded-full text-white text-xs font-bold"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, var(--sky), var(--mint))",
-                    }}
-                  >
-                    ✓
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+                  <TierCardBody tier={t} />
+                  {active ? (
+                    <span
+                      className="absolute right-4 top-4 inline-flex h-6 w-6 items-center justify-center rounded-full text-white text-xs font-bold"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, var(--sky), var(--mint))",
+                      }}
+                    >
+                      ✓
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {/* Deadline */}
       <section>
@@ -191,6 +192,71 @@ export function NewCaseForm({ segments, tiers, action }: Props) {
         </span>
       </div>
     </form>
+  );
+}
+
+function TierCardBody({ tier: t }: { tier: PlanTier }) {
+  return (
+    <>
+      {t.featured ? (
+        <span
+          className="absolute -top-3 left-6 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white"
+          style={{
+            background: "linear-gradient(120deg, var(--navy), var(--sky))",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          Most chosen
+        </span>
+      ) : null}
+      <h3 className="text-lg font-semibold text-ink">{t.title}</h3>
+      <p className="mt-1 text-sm text-slate">{t.tagline}</p>
+      <div
+        className="mt-4 flex items-baseline gap-2"
+        style={{ fontFamily: "var(--font-heading)" }}
+      >
+        {t.originalGbp && t.originalGbp !== t.priceGbp ? (
+          <span className="text-lg font-semibold text-slate line-through decoration-slate/60">
+            £{t.originalGbp}
+          </span>
+        ) : null}
+        <span className="text-3xl font-bold text-ink">£{t.priceGbp}</span>
+        {t.priceSuffix ? (
+          <span className="text-sm font-semibold text-slate">
+            {t.priceSuffix}
+          </span>
+        ) : null}
+        {t.pricePer ? (
+          <span className="text-sm font-semibold text-slate">
+            {t.pricePer}
+          </span>
+        ) : null}
+        {t.saveGbp ? (
+          <span
+            className="ml-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider"
+            style={{
+              background: "rgba(19, 217, 160, 0.14)",
+              color: "#0E9E77",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            Save £{t.saveGbp}
+          </span>
+        ) : null}
+      </div>
+      {t.features && t.features.length > 0 ? (
+        <ul className="mt-4 space-y-2 text-sm text-ink">
+          {t.features.map((f) => (
+            <li key={f} className="flex gap-2">
+              <span className="text-mint">✓</span>
+              <span>{f}</span>
+            </li>
+          ))}
+        </ul>
+      ) : t.description ? (
+        <p className="mt-4 text-sm text-slate">{t.description}</p>
+      ) : null}
+    </>
   );
 }
 

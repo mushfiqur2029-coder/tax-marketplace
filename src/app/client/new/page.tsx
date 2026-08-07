@@ -2,8 +2,6 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { SEGMENTS } from "@/lib/segments";
-import { PLAN_TIERS } from "@/lib/plans";
-import { SLButton } from "@/components/sl-button";
 import { createCaseAction } from "@/app/client/actions";
 import { NewCaseForm } from "./new-case-form";
 
@@ -19,11 +17,7 @@ export default async function NewCasePage() {
       email={me.email}
       role={me.role}
     >
-      <NewCaseForm
-        segments={SEGMENTS}
-        tiers={PLAN_TIERS}
-        action={createCaseAction}
-      />
+      <NewCaseForm segments={SEGMENTS} action={createCaseAction} />
       <p className="mt-8 text-sm text-slate">
         Changed your mind?{" "}
         <Link href="/client" className="font-semibold text-navy-deep underline underline-offset-4 hover:text-sky">
