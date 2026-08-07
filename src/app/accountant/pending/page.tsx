@@ -21,6 +21,7 @@ export default async function AccountantPendingPage() {
           ? "Sterling Ledger admins reviewed your application and weren't able to approve it at this time."
           : "Sterling Ledger admins review every accountant before you can take cases."
       }
+      name={me.name}
       email={me.email}
       role={me.role}
     >

@@ -10,7 +10,8 @@ export type CurrentUser = {
   email: string;
   role: Role;
   status: "active" | "warned" | "suspended";
-  approvalStatus?: AccountantApproval; // only populated for accountants
+  name?: string | null;                 // fetched from role-specific profile
+  approvalStatus?: AccountantApproval;  // only populated for accountants
 };
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -35,16 +36,27 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     status: userRow.status,
   };
 
+  // Fetch role-specific profile to get the display name (and, for accountants,
+  // the approval status). Use the admin client so this doesn't depend on any
+  // specific RLS path.
+  const admin = createAdminClient();
   if (me.role === "accountant") {
-    // Use admin client so we don't depend on any specific RLS policy path.
-    const admin = createAdminClient();
     const { data: prof } = await admin
       .from("accountant_profiles")
-      .select("approval_status")
+      .select("name, approval_status")
       .eq("user_id", me.id)
       .single();
+    me.name = prof?.name ?? null;
     me.approvalStatus = (prof?.approval_status ?? "pending") as AccountantApproval;
+  } else if (me.role === "client") {
+    const { data: prof } = await admin
+      .from("client_profiles")
+      .select("name")
+      .eq("user_id", me.id)
+      .single();
+    me.name = prof?.name ?? null;
   }
+  // admin role has no profile row — greeting falls back to email.
 
   return me;
 }

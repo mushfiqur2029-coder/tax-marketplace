@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { PlaceholderPage } from "@/components/marketing/placeholder-page";
 
 export const metadata: Metadata = {
-  title: "About — Sterling Ledger",
+  title: "About. Sterling Ledger",
   description:
-    "Sterling Ledger connects UK clients with vetted, qualified accountants — ACCA, CIMA, and CTA only.",
+    "Sterling Ledger connects UK clients with vetted, qualified accountants. ACCA, CIMA, and CTA only.",
 };
 
 export default function Page() {

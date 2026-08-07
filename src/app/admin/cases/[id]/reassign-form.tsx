@@ -59,7 +59,7 @@ export function ReassignForm({
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
         >
-          <option value="">— unassigned —</option>
+          <option value="">. unassigned.</option>
           {options.map((o) => (
             <option key={o.id} value={o.id}>
               {o.email} {o.id === current ? "· current" : ""}

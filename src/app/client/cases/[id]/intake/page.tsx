@@ -27,7 +27,8 @@ export default async function IntakePage({
     <DashboardShell
       eyebrow={`${data.segment.title} · ${data.tier.title}`}
       title="Tell us about your year"
-      description="A few quick questions so your accountant has what they need. This takes 2–3 minutes."
+      description="A few quick questions so your accountant has what they need. This takes 2 to 3 minutes."
+      name={data.me.name}
       email={data.me.email}
       role={data.me.role}
     >

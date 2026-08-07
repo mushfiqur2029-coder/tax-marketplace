@@ -74,6 +74,7 @@ export default async function AdminAccountantDetail({
       eyebrow="Accountant"
       title={profile.name ?? user.email}
       description={user.email}
+      name={me.name}
       email={me.email}
       role={me.role}
     >
@@ -144,7 +145,7 @@ export default async function AdminAccountantDetail({
                           {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
                         </div>
                         <div className="text-xs text-slate">
-                          Client {clientEmail.get(c.client_id) ?? "—"} · started{" "}
+                          Client {clientEmail.get(c.client_id) ?? "."} · started{" "}
                           {formatDateTime(c.created_at)}
                         </div>
                       </Link>
@@ -218,7 +219,7 @@ function ProfileRow({ label, value }: { label: string; value?: string | null }) 
         {label}
       </dt>
       <dd className="text-right text-ink">
-        {value?.trim() ? value : <span className="text-slate italic">—</span>}
+        {value?.trim() ? value : <span className="text-slate italic">.</span>}
       </dd>
     </div>
   );

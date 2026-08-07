@@ -32,6 +32,7 @@ export default async function AdminAdminsPage() {
       eyebrow="Admin console"
       title="Sterling Ledger admins"
       description="Public registration only creates clients and accountants. Admin accounts are created here, by an existing admin."
+      name={me.name}
       email={me.email}
       role={me.role}
     >
@@ -79,7 +80,7 @@ export default async function AdminAdminsPage() {
             <AddAdminForm create={create} />
           </div>
           <p className="mt-4 text-[11px] text-slate">
-            Bootstrap the very first admin via SQL — see{" "}
+            Bootstrap the very first admin via SQL. see{" "}
             <code className="rounded bg-cloud px-1 py-0.5 text-[10px] text-ink">supabase/README.md</code>
             .
           </p>

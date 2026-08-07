@@ -15,6 +15,7 @@ export default async function NewCasePage() {
       eyebrow="New tax return"
       title="Pick your situation and plan"
       description="One flat fee, no surprises. Every plan includes a qualified accountant and our accuracy guarantee."
+      name={me.name}
       email={me.email}
       role={me.role}
     >

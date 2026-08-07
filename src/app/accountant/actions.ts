@@ -58,7 +58,7 @@ export async function takeCaseAction(caseId: string) {
 
   if (error || !data) {
     throw new Error(
-      "Couldn't take this case — someone may have grabbed it, or it's not in the queue anymore.",
+      "Couldn't take this case. someone may have grabbed it, or it's not in the queue anymore.",
     );
   }
 

@@ -7,6 +7,8 @@ import { WithdrawalRequestForm } from "./withdrawal-form";
 import { ReceiptLink } from "./receipt-link";
 import { getReceiptSignedUrl } from "@/app/admin/actions";
 import { formatDateTime } from "@/lib/format";
+import { AccountantNav } from "@/app/accountant/accountant-nav";
+import { IncomeSubnav } from "./income-subnav";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +16,15 @@ function formatMoney(pence: number) {
   return `£${(pence / 100).toFixed(2)}`;
 }
 
-export default async function WalletPage() {
+export default async function WalletPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view: viewRaw } = await searchParams;
+  const view: "balance" | "pending" | "withdrawn" =
+    viewRaw === "pending" || viewRaw === "withdrawn" ? viewRaw : "balance";
+
   const me = await requireApprovedAccountant();
   const supabase = await createClient();
 
@@ -48,14 +58,40 @@ export default async function WalletPage() {
     return getReceiptSignedUrl(path);
   };
 
+  const paidReqs = (reqs ?? []).filter((r) => r.status === "paid");
+  const pendingReqs = (reqs ?? []).filter((r) => r.status === "pending");
+
+  const reqsView =
+    view === "pending"
+      ? {
+          list: pendingReqs,
+          title: "Pending withdrawals",
+          empty: "No pending withdrawals.",
+        }
+      : view === "withdrawn"
+        ? {
+            list: paidReqs,
+            title: "Withdrawn",
+            empty: "No withdrawals paid out yet.",
+          }
+        : {
+            list: reqs ?? [],
+            title: "Withdrawal history",
+            empty: "No withdrawals yet.",
+          };
+
   return (
     <DashboardShell
-      eyebrow="Accountant wallet"
+      eyebrow="Accountant income"
       title="Earnings and payouts"
       description="You earn 50% of each case fee. Request a withdrawal to your bank when you're ready."
+      name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<AccountantNav active="income" />}
     >
+      <IncomeSubnav active={view} />
+
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <StatCard label="Available" pence={available} tone="mint" />
         <StatCard label="Pending payout" pence={pending} tone="sky" />
@@ -126,15 +162,15 @@ export default async function WalletPage() {
             className="mt-8 text-sm font-semibold uppercase tracking-wider text-slate"
             style={{ fontFamily: "var(--font-mono)" }}
           >
-            Withdrawal history ({reqs?.length ?? 0})
+            {reqsView.title} ({reqsView.list.length})
           </h3>
-          {!reqs || reqs.length === 0 ? (
+          {reqsView.list.length === 0 ? (
             <p className="mt-3 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-slate">
-              No withdrawals yet.
+              {reqsView.empty}
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
-              {reqs.map((r) => (
+              {reqsView.list.map((r) => (
                 <li key={r.id} className="grid grid-cols-1 gap-1 px-4 py-3 text-sm sm:grid-cols-[1fr_auto]">
                   <div>
                     <div className="font-semibold text-ink">

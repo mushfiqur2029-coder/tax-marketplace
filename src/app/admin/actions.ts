@@ -108,7 +108,7 @@ export async function reassignCaseAction(
     action: "warning";
     note: string;
   }> = [];
-  const reason = note?.trim() ? ` — ${note.trim()}` : "";
+  const reason = note?.trim() ? `. ${note.trim()}` : "";
   if (prevAccountantId && prevAccountantId !== newAccountantId) {
     rows.push({
       target_user_id: prevAccountantId,

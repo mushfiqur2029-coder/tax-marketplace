@@ -19,7 +19,7 @@ export type ServicePageData = {
   slug: string;
   breadcrumb: string;
   eyebrow: string;
-  h1: string; // may contain <span class="gradient-text"> — pass as JSX via h1Jsx
+  h1: string; // may contain <span class="gradient-text">. pass as JSX via h1Jsx
   h1Jsx?: React.ReactNode;
   lede: string;
   heroCard?: React.ReactNode; // optional custom hero visual, else default
@@ -32,6 +32,7 @@ export type ServicePageData = {
   showPricing?: boolean; // default true; tax-advice sets false
   showConsult?: boolean; // default true; tax-advice sets false
   extraAfterWho?: React.ReactNode;
+  extraAfterPricing?: React.ReactNode;
   howHeading?: string;
   howSteps?: { n: number; title: string; body: string }[];
 };
@@ -159,15 +160,17 @@ export function ServicePage({ data }: { data: ServicePageData }) {
 
         {data.extraAfterWho}
 
-        {/* How it works — shared */}
+        {/* How it works. shared */}
         {data.howSteps ? (
           <CustomHowItWorks heading={data.howHeading} steps={data.howSteps} />
         ) : (
           <HowItWorks />
         )}
 
-        {/* Pricing — shared, hidden for tax-advice */}
+        {/* Pricing. shared, hidden for tax-advice */}
         {showPricing ? <PricingSection /> : null}
+
+        {data.extraAfterPricing}
 
         {/* Consult band */}
         {showConsult ? (

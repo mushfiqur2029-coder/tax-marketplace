@@ -140,7 +140,7 @@ export const firstTimeFilersPage: ServicePageData = {
     },
     {
       q: "What happens if I miss the deadline?",
-      a: "There's an automatic £100 fine, then daily penalties after 3 months. If you're already late, we can still file — the faster we do it, the less it costs.",
+      a: "There's an automatic £100 fine, then daily penalties after 3 months. If you're already late, we can still file. the faster we do it, the less it costs.",
     },
     {
       q: "Do I need to register with HMRC before I file?",
@@ -191,7 +191,7 @@ export const investorsPage: ServicePageData = {
     },
     {
       q: "Do I need to report a loss as well as a gain?",
-      a: "Yes — reporting losses lets you offset them against future gains. We'll make sure they're recorded.",
+      a: "Yes. reporting losses lets you offset them against future gains. We'll make sure they're recorded.",
     },
     {
       q: "How does crypto get taxed in the UK?",
@@ -242,7 +242,7 @@ export const highEarnersPage: ServicePageData = {
     },
     {
       q: "Do I need to declare dividend income separately?",
-      a: "Yes — dividends have their own rates and allowance (£500 for 2024/25). Your accountant will report them alongside your other income.",
+      a: "Yes. dividends have their own rates and allowance (£500 for 2024/25). Your accountant will report them alongside your other income.",
     },
   ],
 };
@@ -323,7 +323,7 @@ export const cisConstructionPage: ServicePageData = {
   faqs: [
     {
       q: "Why was 20% (or 30%) deducted from my pay?",
-      a: "That's CIS — contractors deduct 20% (registered) or 30% (not registered) from your invoices. It's an advance on the tax you'd owe on that income.",
+      a: "That's CIS. contractors deduct 20% (registered) or 30% (not registered) from your invoices. It's an advance on the tax you'd owe on that income.",
     },
     {
       q: "What expenses can I claim as a CIS subcontractor?",
@@ -331,11 +331,11 @@ export const cisConstructionPage: ServicePageData = {
     },
     {
       q: "How long does a CIS refund take?",
-      a: "Usually 4–6 weeks after HMRC receive your return. We file quickly to get you the refund as soon as possible.",
+      a: "Usually 4 to 6 weeks after HMRC receive your return. We file quickly to get you the refund as soon as possible.",
     },
     {
       q: "Do I need to register for CIS myself?",
-      a: "If you're a subcontractor, yes — otherwise you're on the 30% deduction rate. Your accountant will register you if you haven't already.",
+      a: "If you're a subcontractor, yes. otherwise you're on the 30% deduction rate. Your accountant will register you if you haven't already.",
     },
   ],
 };
@@ -370,7 +370,7 @@ export const ltdDirectorsPage: ServicePageData = {
   faqs: [
     {
       q: "Do I still need to file a personal return if my company files its own?",
-      a: "Yes — the company's Corporation Tax return is separate from your personal Self Assessment. You need both.",
+      a: "Yes. the company's Corporation Tax return is separate from your personal Self Assessment. You need both.",
     },
     {
       q: "What's the most tax-efficient way to pay myself as a director?",
@@ -421,7 +421,7 @@ export const mtdPage: ServicePageData = {
     },
     {
       q: "When exactly does it become mandatory for me?",
-      a: "Depends on income: April 2026 for over £50,000, April 2027 for £30,000–£50,000, April 2028 for £20,000–£30,000.",
+      a: "Depends on income: April 2026 for over £50,000, April 2027 for £30,000 to £50,000, April 2028 for £20,000 to £30,000.",
     },
     {
       q: "What software do I need?",
@@ -468,11 +468,11 @@ export const limitedCompanyPage: ServicePageData = {
     },
     {
       q: "What can my company claim as an expense?",
-      a: "Anything incurred wholly and exclusively for the business — from staff costs to rent to legitimate travel. Your accountant will review and advise.",
+      a: "Anything incurred wholly and exclusively for the business. from staff costs to rent to legitimate travel. Your accountant will review and advise.",
     },
     {
       q: "Do I need an accountant if my company is dormant?",
-      a: "You still need to file a dormant company return. Cheaper than a trading return, but still required — we can handle it.",
+      a: "You still need to file a dormant company return. Cheaper than a trading return, but still required. we can handle it.",
     },
     {
       q: "What's the difference between this and my personal Self Assessment?",
@@ -534,7 +534,7 @@ export const taxAdvicePage: ServicePageData = {
     },
     {
       q: "Can I use this more than once?",
-      a: "Yes — book as many consultations as you need. Each is a separate 30-minute call.",
+      a: "Yes. book as many consultations as you need. Each is a separate 30-minute call.",
     },
     {
       q: "Will you contact HMRC on my behalf?",

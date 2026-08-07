@@ -29,7 +29,7 @@ export const SEGMENTS: Segment[] = [
   {
     id: "first_time_filer",
     title: "First-time filer",
-    tagline: "New to Self Assessment — we'll tell you what's needed in plain English.",
+    tagline: "New to Self Assessment. we'll tell you what's needed in plain English.",
     numeral: "①",
     intake: [
       {
@@ -57,7 +57,7 @@ export const SEGMENTS: Segment[] = [
   {
     id: "self_employed",
     title: "Self-employed",
-    tagline: "Sole trader / freelancer — income, expenses, and deductions.",
+    tagline: "Sole trader / freelancer. income, expenses, and deductions.",
     numeral: "②",
     intake: [
       {
@@ -77,7 +77,7 @@ export const SEGMENTS: Segment[] = [
         name: "vat_registered",
         label: "Are you VAT-registered?",
         type: "select",
-        options: ["No", "Yes — standard", "Yes — flat rate"],
+        options: ["No", "Yes. standard", "Yes. flat rate"],
         required: true,
       },
       {
@@ -112,7 +112,7 @@ export const SEGMENTS: Segment[] = [
         name: "mortgages",
         label: "Are any properties mortgaged?",
         type: "select",
-        options: ["No", "Yes — one", "Yes — multiple"],
+        options: ["No", "Yes. one", "Yes. multiple"],
         required: true,
       },
       {
@@ -157,7 +157,7 @@ export const SEGMENTS: Segment[] = [
   {
     id: "cis",
     title: "CIS / Construction",
-    tagline: "Sub-contractor deductions — most workers are owed a refund.",
+    tagline: "Sub-contractor deductions. most workers are owed a refund.",
     numeral: "⑤",
     intake: [
       {

@@ -7,7 +7,9 @@ type Props = {
   description: string;
   email: string;
   role: string;
+  name?: string | null;
   headerExtra?: React.ReactNode;
+  subnav?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -17,9 +19,14 @@ export function DashboardShell({
   description,
   email,
   role,
+  name,
   headerExtra,
+  subnav,
   children,
 }: Props) {
+  // For clients + accountants we prefer a "Welcome, [Name]" greeting; admins
+  // don't have a profile row, so they fall through to email.
+  const greeting = name?.trim() ? `Welcome, ${name.trim()}` : email;
   return (
     <div className="min-h-full flex flex-col">
       <header className="sticky top-0 z-40 border-b border-line/60 bg-paper/80 backdrop-blur-md">
@@ -28,7 +35,7 @@ export function DashboardShell({
           <div className="flex items-center gap-3 sm:gap-4">
             {headerExtra}
             <div className="hidden text-right sm:block">
-              <div className="text-xs font-semibold text-ink">{email}</div>
+              <div className="text-xs font-semibold text-ink">{greeting}</div>
               <div
                 className="text-[10px] uppercase tracking-widest text-slate"
                 style={{ fontFamily: "var(--font-mono)" }}
@@ -39,6 +46,11 @@ export function DashboardShell({
             <SignOutButton />
           </div>
         </div>
+        {subnav ? (
+          <div className="border-t border-line/60 bg-paper/60">
+            <div className="mx-auto max-w-6xl px-4 sm:px-6">{subnav}</div>
+          </div>
+        ) : null}
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
         <div className="mb-8 sm:mb-10">

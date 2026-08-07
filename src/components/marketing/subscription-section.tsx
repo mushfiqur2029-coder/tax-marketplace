@@ -10,7 +10,7 @@ export function SubscriptionSection() {
           <h2>Ongoing company subscription.</h2>
           <p>
             One dedicated accountant on retainer, handling your bookkeeping,
-            payroll, and filings year-round — not just at year end.
+            payroll, and filings year-round. not just at year end.
           </p>
         </div>
         <div className="who-grid">

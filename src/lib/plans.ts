@@ -3,53 +3,72 @@ export type TierId = "basic" | "standard" | "premium";
 export type PlanTier = {
   id: TierId;
   title: string;
-  tagline: string;
-  priceGbp: number; // in whole pounds
-  priceGbpSubtitle: string;
+  tagline: string;              // sub-heading under title
+  priceGbp: number;             // current price
+  originalGbp: number;          // struck-through original
+  saveGbp: number;              // computed for display
+  priceGbpSubtitle: string;     // small footer under the price
   featured?: boolean;
-  features: string[];
+  heroLine: string;             // one-liner between price and bullets
+  features: string[];           // bullet list
+  footerLine: string;           // italic line at the bottom of the card
 };
 
 export const PLAN_TIERS: PlanTier[] = [
   {
     id: "basic",
-    title: "Basic",
-    tagline: "Filed, simply",
+    title: "Prepared & Filed Accurately",
+    tagline: "Expert sign off, so you know it's right.",
     priceGbp: 99,
-    priceGbpSubtitle: "£99 one-off",
+    originalGbp: 169,
+    saveGbp: 70,
+    priceGbpSubtitle: "one-off",
+    heroLine: "Expert sign off, so you know it's right.",
     features: [
-      "Accountant prepares and files",
-      "Accuracy guarantee",
-      "Secure document upload",
-      "Status tracking",
+      "Accountant prepares & files your Self Assessment",
+      "Accuracy Guarantee",
+      "Message your accountant during filing",
     ],
+    footerLine: "If your situation is straightforward, this is enough.",
   },
   {
     id: "standard",
-    title: "Standard",
-    tagline: "Filed and optimised",
+    title: "Filed, Optimised & Protected",
+    tagline: "We find what you're owed, and protect you if HMRC asks questions.",
     priceGbp: 149,
-    priceGbpSubtitle: "£149 one-off",
+    originalGbp: 249,
+    saveGbp: 100,
+    priceGbpSubtitle: "one-off",
     featured: true,
+    heroLine:
+      "We find what you're owed, and protect you if HMRC asks questions.",
     features: [
-      "Everything in Basic",
-      "Deduction and expense review",
-      "HMRC letter support",
-      "Direct chat with your accountant",
+      "Everything in Prepared & Filed Accurately",
+      "Deduction & relief optimisation + strategic tax planning call",
+      "Full HMRC protection (audit + letter support)",
     ],
+    footerLine:
+      "Most filers choose this, if you'd rather not leave money on the table.",
   },
   {
     id: "premium",
-    title: "Premium",
-    tagline: "Year-round partner",
+    title: "Filed + a Year-Round Tax Partner",
+    tagline:
+      "An accountant on retainer, helping you stay on top of your tax position all year.",
     priceGbp: 349,
-    priceGbpSubtitle: "£349 one-off",
+    originalGbp: 499,
+    saveGbp: 150,
+    priceGbpSubtitle: "one-off",
+    heroLine:
+      "An accountant on retainer, helping you stay on top of your tax position all year.",
     features: [
-      "Everything in Standard",
-      "Ongoing access to your accountant",
+      "Everything in Filed, Optimised & Protected",
+      "Year-round access to your accountant",
+      "Annual tax efficiency review",
       "HMRC agent representation",
-      "Annual tax planning review",
     ],
+    footerLine:
+      "If your situation is more complex, or you want year-round accountant support.",
   },
 ];
 

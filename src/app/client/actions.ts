@@ -187,7 +187,7 @@ export async function startCheckoutAction(caseId: string) {
           currency: "gbp",
           unit_amount: tier.priceGbp * 100,
           product_data: {
-            name: `${tier.title} — ${seg.title}`,
+            name: `${tier.title}. ${seg.title}`,
             description: tier.tagline,
           },
         },

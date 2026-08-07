@@ -89,6 +89,7 @@ export default async function AdminDashboard() {
       eyebrow="Admin console"
       title="Platform overview"
       description="Numbers first. Everything else is one click away."
+      name={me.name}
       email={me.email}
       role={me.role}
       headerExtra={
@@ -167,7 +168,7 @@ export default async function AdminDashboard() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-ink">
-                        {nameById.get(id) ?? emailById.get(id) ?? "—"}
+                        {nameById.get(id) ?? emailById.get(id) ?? "."}
                       </div>
                       <div className="text-xs text-slate">
                         {emailById.get(id) ?? id.slice(0, 8)}
@@ -228,15 +229,15 @@ export default async function AdminDashboard() {
                         </span>
                         <span className="text-xs text-slate">·</span>
                         <span className="text-xs text-slate">
-                          {tier?.title ?? c.tier} · £{tier?.priceGbp ?? "–"}
+                          {tier?.title ?? c.tier} · £{tier?.priceGbp ?? "."}
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-slate">
-                        Client {emailById.get(c.client_id) ?? "—"}
+                        Client {emailById.get(c.client_id) ?? "."}
                         {c.accountant_id ? (
                           <>
                             {" · Accountant "}
-                            {emailById.get(c.accountant_id) ?? "—"}
+                            {emailById.get(c.accountant_id) ?? "."}
                           </>
                         ) : (
                           " · Unassigned"

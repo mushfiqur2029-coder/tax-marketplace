@@ -2,13 +2,19 @@ import Link from "next/link";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { SLLink } from "@/components/sl-button";
+import { getTier, type TierId } from "@/lib/plans";
+import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { NotificationBell } from "@/components/case/notification-bell";
-import { QueueTabs } from "./queue-tabs";
+import { AccountantNav } from "./accountant-nav";
+import {
+  AccountantCasesFilter,
+  type CasesView,
+  type UrgencyFilter,
+  type IncomeFilter,
+  type DateFilter,
+} from "./cases-filter";
 import { formatDate, formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +31,37 @@ type Row = {
   deadline: string | null;
 };
 
-export default async function AccountantDashboard() {
+// "Live" = cases actively being worked on right now.
+const LIVE_STATUSES = new Set(["in_review", "prepared", "filed"]);
+
+export default async function AccountantDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    view?: string;
+    urgency?: string;
+    income?: string;
+    date?: string;
+  }>;
+}) {
+  const raw = await searchParams;
+  const view: CasesView =
+    raw.view === "queue" || raw.view === "completed" || raw.view === "pending"
+      ? raw.view
+      : "live";
+  const urgency: UrgencyFilter =
+    raw.urgency === "safe" || raw.urgency === "soon" || raw.urgency === "urgent"
+      ? raw.urgency
+      : "all";
+  const income: IncomeFilter =
+    raw.income === "basic" || raw.income === "standard" || raw.income === "premium"
+      ? raw.income
+      : "all";
+  const date: DateFilter =
+    raw.date === "7d" || raw.date === "30d" || raw.date === "90d"
+      ? raw.date
+      : "all";
+
   const me = await requireApprovedAccountant();
   const supabase = await createClient();
 
@@ -51,80 +87,112 @@ export default async function AccountantDashboard() {
   const queue = (queueRes.data ?? []) as Row[];
   const mine = (mineRes.data ?? []) as Row[];
 
+  const live = mine.filter((c) => LIVE_STATUSES.has(c.status));
+  const completed = mine.filter((c) => c.status === "complete");
+  // "Pending" from the accountant's POV = returned to client for approval,
+  // now waiting on the client to sign off.
+  const pendingCases = mine.filter((c) => c.status === "client_approval");
+
+  const pool =
+    view === "queue"
+      ? queue
+      : view === "completed"
+        ? completed
+        : view === "pending"
+          ? pendingCases
+          : live;
+
+  const filtered = pool.filter((c) => {
+    if (income !== "all" && (c.tier as TierId) !== income) return false;
+    if (urgency !== "all") {
+      if (!c.deadline) return false;
+      const days = Math.round(
+        (new Date(c.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+      );
+      if (urgency === "urgent" && days > 3) return false;
+      if (urgency === "soon" && (days <= 3 || days > 14)) return false;
+      if (urgency === "safe" && days <= 14) return false;
+    }
+    if (date !== "all") {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - (date === "7d" ? 7 : date === "30d" ? 30 : 90));
+      const stamp = new Date(c.created_at).getTime();
+      if (stamp < cutoff.getTime()) return false;
+    }
+    return true;
+  });
+
   return (
     <DashboardShell
       eyebrow="Accountant workspace"
-      title="Case queue"
-      description="Pick up new cases, track your workload, and message clients."
+      title="Cases"
+      description="Pick up new cases from the queue and track everything you're working on."
+      name={me.name}
       email={me.email}
       role={me.role}
-      headerExtra={
-        <>
-          <SLLink
-            href="/accountant/wallet"
-            variant="outline"
-            className="!text-[13px]"
-          >
-            Wallet
-          </SLLink>
-          <NotificationBell seedCaseIds={queue.map((c) => c.id)} />
-        </>
-      }
+      subnav={<AccountantNav active="cases" />}
+      headerExtra={<NotificationBell seedCaseIds={queue.map((c) => c.id)} />}
     >
-      <QueueTabs
-        queueCount={queue.length}
-        mineCount={mine.length}
-        queue={queue.map(renderRow)}
-        mine={mine.map(renderRow)}
-      />
+      <AccountantCasesFilter view={view} urgency={urgency} income={income} date={date} />
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title="Nothing to show here."
+          hint={
+            view === "queue"
+              ? "No paid cases waiting to be picked up. The bell will ping you when one lands."
+              : "Try a different tab or loosen the filters."
+          }
+        />
+      ) : (
+        <ul className="grid gap-3">
+          {filtered.map((c) => (
+            <li key={c.id}>{renderCard(c)}</li>
+          ))}
+        </ul>
+      )}
     </DashboardShell>
   );
 }
 
-function renderRow(c: Row) {
+function renderCard(c: Row) {
   const seg = getSegment(c.segment);
   const tier = getTier(c.tier);
   const isMine = !!c.accountant_id;
-  return {
-    id: c.id,
-    node: (
-      <Link
-        key={c.id}
-        href={`/accountant/cases/${c.id}`}
-        className="card-sl group flex items-center gap-4 p-5 transition hover:border-sky/40 hover:-translate-y-0.5"
+  return (
+    <Link
+      href={`/accountant/cases/${c.id}`}
+      className="card-sl group flex items-center gap-4 p-5 transition hover:border-sky/40 hover:-translate-y-0.5"
+    >
+      <div
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
+        style={{
+          background: "linear-gradient(135deg, var(--navy), var(--sky))",
+        }}
+        aria-hidden="true"
       >
-        <div
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
-          style={{
-            background: "linear-gradient(135deg, var(--navy), var(--sky))",
-          }}
-          aria-hidden="true"
-        >
-          {seg?.numeral ?? "•"}
+        {seg?.numeral ?? "."}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-ink">
+            {seg?.title ?? c.segment}
+          </span>
+          <span className="text-xs text-slate">.</span>
+          <span className="text-xs text-slate">
+            {tier?.title ?? c.tier}. £{tier?.priceGbp ?? "."}
+          </span>
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-ink">
-              {seg?.title ?? c.segment}
-            </span>
-            <span className="text-xs text-slate">·</span>
-            <span className="text-xs text-slate">
-              {tier?.title ?? c.tier} · £{tier?.priceGbp ?? "–"}
-            </span>
-          </div>
-          <div className="mt-1 text-xs text-slate">
-            {isMine
-              ? `Started ${formatDate(c.created_at)}`
-              : `Submitted ${c.submitted_at ? formatDateTime(c.submitted_at) : "—"}`}
-          </div>
+        <div className="mt-1 text-xs text-slate">
+          {isMine
+            ? `Started ${formatDate(c.created_at)}`
+            : `Submitted ${c.submitted_at ? formatDateTime(c.submitted_at) : "."}`}
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <StatusPill status={c.status} />
-          {c.deadline ? (
-            <DeadlinePill deadline={c.deadline} size="sm" />
-          ) : null}
-        </div>
-      </Link>
-    ),
-  };
+      </div>
+      <div className="flex flex-col items-end gap-1">
+        <StatusPill status={c.status} />
+        {c.deadline ? <DeadlinePill deadline={c.deadline} size="sm" /> : null}
+      </div>
+    </Link>
+  );
 }

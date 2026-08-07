@@ -102,9 +102,10 @@ export default async function AccountantCaseDetailPage({
       title={data.isMine ? "Case dashboard" : "New case in the queue"}
       description={
         data.isMine
-          ? `Client: ${data.clientEmail ?? "—"}`
+          ? `Client: ${data.clientEmail ?? "."}`
           : "Review the intake and take this case to see documents and start chat."
       }
+      name={data.me.name}
       email={data.me.email}
       role={data.me.role}
     >

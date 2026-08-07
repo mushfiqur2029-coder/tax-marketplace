@@ -100,6 +100,7 @@ export default async function CaseDetailPage({
           ? "You're a few steps away from submitting."
           : "Track progress and message your accountant here."
       }
+      name={data.me.name}
       email={data.me.email}
       role={data.me.role}
     >
@@ -113,7 +114,7 @@ export default async function CaseDetailPage({
             color: "#0E7B57",
           }}
         >
-          Payment received — your case is in the queue. An accountant will pick it up shortly.
+          Payment received. your case is in the queue. An accountant will pick it up shortly.
         </div>
       ) : null}
 
@@ -122,7 +123,7 @@ export default async function CaseDetailPage({
         {data.row.deadline ? <DeadlinePill deadline={data.row.deadline} /> : null}
         {isDraft ? (
           <SLLink href={nextHref} variant="primary">
-            Resume — {stepLabel(data.progress.nextStep)}
+            Resume. {stepLabel(data.progress.nextStep)}
           </SLLink>
         ) : null}
       </div>

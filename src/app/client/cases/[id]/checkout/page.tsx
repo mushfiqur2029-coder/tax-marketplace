@@ -35,6 +35,7 @@ export default async function CheckoutPage({
       eyebrow={`${data.segment.title} · ${data.tier.title}`}
       title="Review and pay"
       description="Your case is queued to accountants the moment payment succeeds."
+      name={data.me.name}
       email={data.me.email}
       role={data.me.role}
     >
@@ -47,7 +48,7 @@ export default async function CheckoutPage({
           role="status"
           className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
         >
-          Payment cancelled. Your details are saved — pay whenever you're ready.
+          Payment cancelled. Your details are saved. pay whenever you're ready.
         </div>
       ) : null}
 
@@ -56,7 +57,7 @@ export default async function CheckoutPage({
           <h3 className="text-lg font-semibold text-ink">What we have from you</h3>
           <dl className="mt-4 divide-y divide-line">
             <Row label="Service" value={data.segment.title} />
-            <Row label="Plan" value={`${data.tier.title} — £${data.tier.priceGbp}`} />
+            <Row label="Plan" value={`${data.tier.title}. £${data.tier.priceGbp}`} />
             <Row
               label="Intake"
               value={`${Object.keys(data.row.intake_answers ?? {}).length} answered`}

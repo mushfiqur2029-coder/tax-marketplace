@@ -68,6 +68,7 @@ export default async function AccountantsPage() {
       eyebrow="Admin console"
       title="Accountants"
       description="Approve new accountants and drill into any of them for full details."
+      name={me.name}
       email={me.email}
       role={me.role}
     >

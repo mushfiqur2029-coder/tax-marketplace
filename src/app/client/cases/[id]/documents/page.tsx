@@ -37,7 +37,8 @@ export default async function DocumentsPage({
     <DashboardShell
       eyebrow={`${data.segment.title} · ${data.tier.title}`}
       title="Upload your documents"
-      description="Bank-level secure storage. Add what you have now — you can add more after payment."
+      description="Bank-level secure storage. Add what you have now. you can add more after payment."
+      name={data.me.name}
       email={data.me.email}
       role={data.me.role}
     >

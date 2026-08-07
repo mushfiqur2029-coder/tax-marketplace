@@ -52,6 +52,7 @@ export default async function AdminWithdrawalsPage() {
       eyebrow="Admin console"
       title="Withdrawal requests"
       description="Pay from your own banking, then upload the receipt to close the request."
+      name={me.name}
       email={me.email}
       role={me.role}
     >
@@ -73,7 +74,7 @@ export default async function AdminWithdrawalsPage() {
                 <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
                   <div>
                     <div className="text-base font-semibold text-ink">
-                      {formatMoney(r.amount_pence)} — {emailById.get(r.accountant_id) ?? r.accountant_id}
+                      {formatMoney(r.amount_pence)}. {emailById.get(r.accountant_id) ?? r.accountant_id}
                     </div>
                     <dl className="mt-2 text-xs text-slate">
                       <div><span className="font-semibold text-ink">{r.account_name}</span></div>
@@ -107,7 +108,7 @@ export default async function AdminWithdrawalsPage() {
               <li key={r.id} className="card-sl flex items-center justify-between p-5 text-sm">
                 <div>
                   <div className="font-semibold text-ink">
-                    {formatMoney(r.amount_pence)} — {emailById.get(r.accountant_id) ?? r.accountant_id}
+                    {formatMoney(r.amount_pence)}. {emailById.get(r.accountant_id) ?? r.accountant_id}
                   </div>
                   <div className="text-xs text-slate">
                     {r.account_name} · {r.sort_code} · {r.account_number}

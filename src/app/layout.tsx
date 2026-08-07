@@ -20,7 +20,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sterling Ledger — Tax & VAT, sorted by real accountants.",
+  title: "Sterling Ledger. Tax & VAT, sorted by real accountants.",
   description:
     "A UK tax marketplace: answer a few questions, upload your documents, and a vetted accountant files your return.",
 };

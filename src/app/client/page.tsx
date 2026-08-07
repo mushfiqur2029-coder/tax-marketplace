@@ -8,10 +8,29 @@ import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { formatDate } from "@/lib/format";
+import { ClientNav, ClientCasesFilter } from "./client-nav";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientDashboard() {
+type View = "in_progress" | "completed" | "pending";
+
+const IN_PROGRESS = new Set([
+  "submitted",
+  "in_review",
+  "prepared",
+  "client_approval",
+  "filed",
+]);
+
+export default async function ClientDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view: viewRaw } = await searchParams;
+  const view: View =
+    viewRaw === "completed" || viewRaw === "pending" ? viewRaw : "in_progress";
+
   const me = await requireRole("client");
   const supabase = await createClient();
   const { data: cases } = await supabase
@@ -22,20 +41,25 @@ export default async function ClientDashboard() {
     .eq("client_id", me.id)
     .order("created_at", { ascending: false });
 
+  const all = cases ?? [];
+  const filtered = all.filter((c) => {
+    if (view === "completed") return c.status === "complete";
+    if (view === "pending") return c.status === "draft";
+    return IN_PROGRESS.has(c.status);
+  });
+
   return (
     <DashboardShell
       eyebrow="Client workspace"
       title="Your tax returns"
       description="Track the status of your filings and chat with your accountant."
+      name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<ClientNav active="cases" />}
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate">
-          {cases?.length
-            ? `You have ${cases.length} ${cases.length === 1 ? "case" : "cases"}.`
-            : "No cases yet — start your first return in a couple of minutes."}
-        </p>
+        <ClientCasesFilter active={view} />
         <SLLink href="/client/new" variant="primary">
           Start a new return
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
@@ -44,14 +68,22 @@ export default async function ClientDashboard() {
         </SLLink>
       </div>
 
-      {!cases || cases.length === 0 ? (
+      {filtered.length === 0 ? (
         <EmptyState
-          title="Your cases will appear here."
-          hint="Click Start a new return above. Answer a few questions, upload documents, and pay to submit."
+          title={
+            all.length === 0
+              ? "Your cases will appear here."
+              : `Nothing ${view === "in_progress" ? "in progress" : view === "pending" ? "pending" : "completed"} right now.`
+          }
+          hint={
+            all.length === 0
+              ? "Click Start a new return above. Answer a few questions, upload documents, and pay to submit."
+              : "Switch tabs above to see cases in other states."
+          }
         />
       ) : (
         <ul className="grid gap-3">
-          {cases.map((c) => {
+          {filtered.map((c) => {
             const seg = getSegment(c.segment);
             const tier = getTier(c.tier);
             return (
@@ -77,7 +109,7 @@ export default async function ClientDashboard() {
                       </span>
                       <span className="text-xs text-slate">·</span>
                       <span className="text-xs text-slate">
-                        {tier?.title ?? c.tier} · £{tier?.priceGbp ?? "–"}
+                        {tier?.title ?? c.tier} · £{tier?.priceGbp ?? "."}
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-slate">

@@ -132,7 +132,8 @@ export default async function AdminCasePage({
     <DashboardShell
       eyebrow={`${seg.title} · ${tier.title}`}
       title="Case oversight"
-      description={`Client ${client?.email ?? "—"} · Accountant ${acc?.email ?? "unassigned"}`}
+      description={`Client ${client?.email ?? "."} · Accountant ${acc?.email ?? "unassigned"}`}
+      name={me.name}
       email={me.email}
       role={me.role}
     >
