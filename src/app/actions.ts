@@ -20,7 +20,15 @@ export async function signUpAction(
   const name = String(formData.get("name") ?? "").trim();
   const role = String(formData.get("role") ?? "");
   const contactNumber = String(formData.get("contact_number") ?? "").trim();
-  const address = String(formData.get("address") ?? "").trim();
+  // Address is now collected as structured fields for browser autofill.
+  // Join into a single string for storage (client_profiles.address is text).
+  const addressLine1 = String(formData.get("address_line1") ?? "").trim();
+  const addressLine2 = String(formData.get("address_line2") ?? "").trim();
+  const addressCity = String(formData.get("address_city") ?? "").trim();
+  const addressPostcode = String(formData.get("address_postcode") ?? "").trim();
+  const address = [addressLine1, addressLine2, addressCity, addressPostcode]
+    .filter(Boolean)
+    .join("\n");
   const companyEmail = String(formData.get("company_email") ?? "").trim();
   const companyName = String(formData.get("company_name") ?? "").trim();
   const avatar = formData.get("avatar");
@@ -33,8 +41,10 @@ export async function signUpAction(
   if (!name) return { error: "Full name is required." };
   if (!email) return { error: "Email is required." };
   if (!contactNumber) return { error: "Contact number is required." };
-  if (role === "client" && !address) {
-    return { error: "Address is required." };
+  if (role === "client" && (!addressLine1 || !addressCity || !addressPostcode)) {
+    return {
+      error: "Address line 1, city, and postcode are all required.",
+    };
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };

@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { signUpAction, type AuthState } from "@/app/actions";
 import { SLButton } from "@/components/sl-button";
 import { AvatarPicker } from "@/components/avatar-picker";
+import { PasswordField } from "@/components/password-field";
 
 type Role = "client" | "accountant";
 
@@ -83,13 +84,38 @@ export function RegisterForm() {
       />
 
       {role === "client" ? (
-        <Field
-          label="Address"
-          name="address"
-          type="textarea"
-          autoComplete="street-address"
-          required
-        />
+        <>
+          <Field
+            label="Address line 1"
+            name="address_line1"
+            type="text"
+            autoComplete="address-line1"
+            required
+          />
+          <Field
+            label="Address line 2"
+            hint="Optional"
+            name="address_line2"
+            type="text"
+            autoComplete="address-line2"
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="City"
+              name="address_city"
+              type="text"
+              autoComplete="address-level2"
+              required
+            />
+            <Field
+              label="Postcode"
+              name="address_postcode"
+              type="text"
+              autoComplete="postal-code"
+              required
+            />
+          </div>
+        </>
       ) : (
         <>
           <Field
@@ -109,10 +135,8 @@ export function RegisterForm() {
         </>
       )}
 
-      <Field
-        label="Password"
+      <PasswordField
         name="password"
-        type="password"
         autoComplete="new-password"
         minLength={8}
         required

@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { signInAction, type AuthState } from "@/app/actions";
 import { SLButton } from "@/components/sl-button";
+import { PasswordField } from "@/components/password-field";
 
 export function LoginForm() {
   const [state, formAction, pending] = useActionState<AuthState, FormData>(
@@ -13,12 +14,7 @@ export function LoginForm() {
   return (
     <form action={formAction} className="space-y-4">
       <Field label="Email" name="email" type="email" autoComplete="email" />
-      <Field
-        label="Password"
-        name="password"
-        type="password"
-        autoComplete="current-password"
-      />
+      <PasswordField name="password" autoComplete="current-password" required />
 
       {state?.error ? (
         <p
