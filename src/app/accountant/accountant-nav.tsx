@@ -8,7 +8,7 @@ type AccountantTab = "cases" | "income" | "profile";
 const TABS: { key: AccountantTab; label: string; href: string }[] = [
   { key: "cases", label: "Cases", href: "/accountant" },
   { key: "income", label: "Income", href: "/accountant/wallet" },
-  { key: "profile", label: "Profile", href: "/accountant/profile" },
+  { key: "profile", label: "Account", href: "/accountant/profile" },
 ];
 
 export function AccountantNav({ active }: { active?: AccountantTab }) {

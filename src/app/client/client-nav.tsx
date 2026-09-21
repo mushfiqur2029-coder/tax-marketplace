@@ -8,7 +8,7 @@ type ClientTab = "cases" | "payments" | "profile";
 const TABS: { key: ClientTab; label: string; href: string }[] = [
   { key: "cases", label: "Cases", href: "/client" },
   { key: "payments", label: "Payments", href: "/client/payments" },
-  { key: "profile", label: "Profile", href: "/client/profile" },
+  { key: "profile", label: "Account", href: "/client/profile" },
 ];
 
 export function ClientNav({ active }: { active?: ClientTab }) {

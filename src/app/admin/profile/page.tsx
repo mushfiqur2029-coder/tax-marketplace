@@ -1,39 +1,29 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  submitClientProfileChangeAction,
+  updateAdminProfileAction,
   changePasswordAction,
 } from "@/app/profile-actions";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { ClientNav } from "@/app/client/client-nav";
-import { ClientProfileForm } from "./client-profile-form";
 import { ChangePasswordForm } from "@/components/change-password-form";
+import { AdminProfileForm } from "./admin-profile-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientAccountPage() {
-  const me = await requireRole("client");
+export default async function AdminAccountPage() {
+  const me = await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: profile }, { data: pending }] = await Promise.all([
-    admin
-      .from("client_profiles")
-      .select("name, contact_number, address, avatar_path")
-      .eq("user_id", me.id)
-      .single(),
-    admin
-      .from("pending_profile_changes")
-      .select("id, proposed, requested_at, status, review_note")
-      .eq("user_id", me.id)
-      .eq("status", "pending")
-      .order("requested_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const { data: profile } = await admin
+    .from("admin_profiles")
+    .select("name, contact_number")
+    .eq("user_id", me.id)
+    .maybeSingle();
 
-  const submit = async (edit: Parameters<typeof submitClientProfileChangeAction>[0]) => {
+  const submit = async (edit: Parameters<typeof updateAdminProfileAction>[0]) => {
     "use server";
-    await submitClientProfileChangeAction(edit);
+    await updateAdminProfileAction(edit);
   };
 
   const change = async (current: string, next: string, confirm: string) => {
@@ -45,11 +35,10 @@ export default async function ClientAccountPage() {
     <DashboardShell
       eyebrow="Account settings"
       title="Your account"
-      description="Update your personal details or change your password."
+      description="Update your details or change your password."
       name={me.name}
       email={me.email}
       role={me.role}
-      subnav={<ClientNav active="profile" />}
     >
       <section className="mb-10">
         <h2
@@ -58,23 +47,17 @@ export default async function ClientAccountPage() {
         >
           Personal details
         </h2>
-        <p className="mb-4 max-w-2xl text-sm text-slate">
-          Edits go to Sterling Ledger admins for review and take effect once
-          approved.
-        </p>
-        <ClientProfileForm
+        <AdminProfileForm
           current={{
             name: profile?.name ?? "",
             contact_number: profile?.contact_number ?? "",
             email: me.email,
-            address: profile?.address ?? "",
           }}
-          pending={pending ? (pending.proposed as Record<string, string>) : null}
           submit={submit}
         />
       </section>
 
-      <section>
+      <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
           style={{ fontFamily: "var(--font-mono)" }}
@@ -83,6 +66,13 @@ export default async function ClientAccountPage() {
         </h2>
         <ChangePasswordForm change={change} />
       </section>
+
+      <Link
+        href="/admin"
+        className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
+      >
+        ← Back to admin console
+      </Link>
     </DashboardShell>
   );
 }

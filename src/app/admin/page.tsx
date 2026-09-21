@@ -121,6 +121,13 @@ export default async function AdminDashboard() {
           >
             Admins
           </SLLink>
+          <SLLink
+            href="/admin/profile"
+            variant="outline"
+            className="!text-[13px]"
+          >
+            Account
+          </SLLink>
         </>
       }
     >

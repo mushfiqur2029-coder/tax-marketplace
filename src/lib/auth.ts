@@ -55,8 +55,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       .eq("user_id", me.id)
       .single();
     me.name = prof?.name ?? null;
+  } else if (me.role === "admin") {
+    const { data: prof } = await admin
+      .from("admin_profiles")
+      .select("name")
+      .eq("user_id", me.id)
+      .maybeSingle();
+    me.name = prof?.name ?? null;
   }
-  // admin role has no profile row — greeting falls back to email.
 
   return me;
 }

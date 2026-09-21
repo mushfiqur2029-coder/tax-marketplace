@@ -1,13 +1,17 @@
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { submitAccountantProfileChangeAction } from "@/app/profile-actions";
+import {
+  submitAccountantProfileChangeAction,
+  changePasswordAction,
+} from "@/app/profile-actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { AccountantNav } from "@/app/accountant/accountant-nav";
 import { AccountantProfileForm } from "./accountant-profile-form";
+import { ChangePasswordForm } from "@/components/change-password-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountantProfilePage() {
+export default async function AccountantAccountPage() {
   const me = await requireApprovedAccountant();
   const admin = createAdminClient();
 
@@ -32,27 +36,54 @@ export default async function AccountantProfilePage() {
     await submitAccountantProfileChangeAction(edit);
   };
 
+  const change = async (current: string, next: string, confirm: string) => {
+    "use server";
+    return changePasswordAction(current, next, confirm);
+  };
+
   return (
     <DashboardShell
-      eyebrow="Your profile"
-      title="Professional details"
-      description="Edits go to Sterling Ledger admins for review, they take effect once approved."
+      eyebrow="Account settings"
+      title="Your account"
+      description="Update your professional details or change your password."
       name={me.name}
       email={me.email}
       role={me.role}
       subnav={<AccountantNav active="profile" />}
     >
-      <AccountantProfileForm
-        current={{
-          name: profile?.name ?? "",
-          contact_number: profile?.contact_number ?? "",
-          email: me.email,
-          company_name: profile?.company_name ?? "",
-          company_email: profile?.company_email ?? "",
-        }}
-        pending={pending ? (pending.proposed as Record<string, string>) : null}
-        submit={submit}
-      />
+      <section className="mb-10">
+        <h2
+          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          Professional details
+        </h2>
+        <p className="mb-4 max-w-2xl text-sm text-slate">
+          Edits go to Sterling Ledger admins for review and take effect once
+          approved.
+        </p>
+        <AccountantProfileForm
+          current={{
+            name: profile?.name ?? "",
+            contact_number: profile?.contact_number ?? "",
+            email: me.email,
+            company_name: profile?.company_name ?? "",
+            company_email: profile?.company_email ?? "",
+          }}
+          pending={pending ? (pending.proposed as Record<string, string>) : null}
+          submit={submit}
+        />
+      </section>
+
+      <section>
+        <h2
+          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          Change password
+        </h2>
+        <ChangePasswordForm change={change} />
+      </section>
     </DashboardShell>
   );
 }
