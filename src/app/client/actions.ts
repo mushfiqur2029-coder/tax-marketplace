@@ -254,6 +254,28 @@ export async function reconcilePaymentAction(caseId: string) {
 }
 
 // -------------------------------------------------------------------------
+// Client approves the prepared return. Moves status client_approval -> filed.
+// The accountant's ALLOWED_TRANSITIONS deliberately omits this step so a
+// return can never be marked filed without the client's explicit sign-off.
+// -------------------------------------------------------------------------
+export async function approveAndFileAction(caseId: string) {
+  const { supabase, caseRow } = await assertCaseOwner(caseId);
+  if (caseRow.status !== "client_approval") {
+    throw new Error("This case isn't awaiting your approval right now.");
+  }
+  const { error } = await supabase
+    .from("cases")
+    .update({ status: "filed" })
+    .eq("id", caseId)
+    .eq("status", "client_approval");
+  if (error) throw new Error(error.message);
+  revalidatePath(`/client/cases/${caseId}`);
+  revalidatePath("/client");
+  revalidatePath("/accountant");
+  revalidatePath(`/accountant/cases/${caseId}`);
+}
+
+// -------------------------------------------------------------------------
 // Signed URL for downloading a document (client owner viewing their own).
 // -------------------------------------------------------------------------
 export async function getDocumentSignedUrl(caseId: string, filePath: string) {

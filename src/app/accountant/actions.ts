@@ -14,12 +14,16 @@ type CaseStatus =
   | "complete";
 
 // Which transitions the accountant can perform.
+// client_approval -> filed is INTENTIONALLY absent: only the client can move
+// a case past client_approval (they click "Approve and file" on their portal).
+// Accountants marking a case as filed without client sign-off was the loophole
+// this closes.
 const ALLOWED_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
   draft: [],
   submitted: ["in_review"],
   in_review: ["prepared"],
   prepared: ["client_approval"],
-  client_approval: ["filed"],
+  client_approval: [],
   filed: ["complete"],
   complete: [],
 };

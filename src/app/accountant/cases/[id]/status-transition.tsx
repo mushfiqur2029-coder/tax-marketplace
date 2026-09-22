@@ -7,7 +7,7 @@ const NEXT: Record<string, { label: string; next: string } | null> = {
   submitted: { label: "Start review", next: "in_review" },
   in_review: { label: "Mark as prepared", next: "prepared" },
   prepared: { label: "Send for client approval", next: "client_approval" },
-  client_approval: { label: "Mark as filed", next: "filed" },
+  client_approval: null,
   filed: { label: "Mark as complete", next: "complete" },
   complete: null,
   draft: null,
@@ -54,7 +54,9 @@ export function StatusTransition({
         <p className="text-sm text-slate">
           {current === "complete"
             ? "Case complete. Nice."
-            : "No further transitions from here."}
+            : current === "client_approval"
+              ? "Waiting on the client to approve and file. You can't move this forward from your side — this is by design so nothing gets filed without their explicit sign-off."
+              : "No further transitions from here."}
         </p>
       )}
 

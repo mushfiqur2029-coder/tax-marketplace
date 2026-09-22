@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { loadClientCase } from "@/lib/case";
-import { reconcilePaymentAction } from "@/app/client/actions";
+import { reconcilePaymentAction, approveAndFileAction } from "@/app/client/actions";
+import { ApproveAndFileButton } from "./approve-and-file-button";
 import {
   sendMessageAction,
   uploadMessageAttachmentAction,
@@ -82,6 +83,10 @@ export default async function CaseDetailPage({
     "use server";
     return sendMessageAction(input);
   };
+  const approve = async () => {
+    "use server";
+    await approveAndFileAction(id);
+  };
   const uploadAttachment = async (caseId: string, fd: FormData) => {
     "use server";
     return uploadMessageAttachmentAction(caseId, fd);
@@ -127,6 +132,10 @@ export default async function CaseDetailPage({
           </SLLink>
         ) : null}
       </div>
+
+      {data.row.status === "client_approval" ? (
+        <ApproveAndFileButton approve={approve} />
+      ) : null}
 
       {isDraft ? (
         <>

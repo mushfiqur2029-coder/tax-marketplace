@@ -136,14 +136,35 @@ export default async function AccountantDashboard({
       <AccountantCasesFilter view={view} urgency={urgency} income={income} date={date} />
 
       {filtered.length === 0 ? (
-        <EmptyState
-          title="Nothing to show here."
-          hint={
-            view === "queue"
-              ? "No paid cases waiting to be picked up. The bell will ping you when one lands."
-              : "Try a different tab or loosen the filters."
-          }
-        />
+        pool.length === 0 ? (
+          <EmptyState
+            title="Nothing to show here."
+            hint={
+              view === "queue"
+                ? "No paid cases waiting to be picked up. The bell will ping you when one lands."
+                : view === "live"
+                  ? "No cases are actively being worked on right now."
+                  : view === "pending"
+                    ? "No cases are waiting on the client to approve."
+                    : "No completed cases yet."
+            }
+          />
+        ) : (
+          <div className="card-sl border-dashed p-8 text-center sm:p-10">
+            <p className="text-lg font-semibold text-ink">
+              {pool.length} case{pool.length === 1 ? "" : "s"} hidden by filters.
+            </p>
+            <p className="mt-2 text-sm text-slate">
+              Loosen a filter to see them again.
+            </p>
+            <Link
+              href={`/accountant?view=${view}`}
+              className="mt-4 inline-flex items-center gap-2 rounded-full bg-navy-deep px-4 py-1.5 text-sm font-semibold text-white transition hover:opacity-90"
+            >
+              Clear filters
+            </Link>
+          </div>
+        )
       ) : (
         <ul className="grid gap-3">
           {filtered.map((c) => (
