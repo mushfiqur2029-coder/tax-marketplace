@@ -10,6 +10,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // so we cannot allow these fields to be blanked out. Do not soften this
 // validation without adding the corresponding verification flow first.
 
+const AVATAR_BUCKET = "avatars";
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
 export type ClientProfileEdit = {
   name: string;
   contact_number: string;
@@ -25,9 +28,40 @@ export type AccountantProfileEdit = {
   company_email?: string;
 };
 
+// Upload an avatar file under {userId}/{timestamp}.{ext} and return the path.
+// Returns null when the file is missing or empty. Throws on validation /
+// upload errors so callers can bail.
+async function uploadAvatarIfProvided(
+  userId: string,
+  file: File | null,
+): Promise<string | null> {
+  if (!file || file.size === 0) return null;
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Avatar must be an image.");
+  }
+  if (file.size > MAX_AVATAR_BYTES) {
+    throw new Error("Avatar must be under 5 MB.");
+  }
+  const admin = createAdminClient();
+  const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
+  const path = `${userId}/${Date.now()}.${ext.replace(/[^a-z0-9]/g, "")}`;
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const { error: upErr } = await admin.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, buf, {
+      contentType: file.type,
+      upsert: false,
+    });
+  if (upErr) throw new Error(upErr.message);
+  return path;
+}
+
 // Submit a client profile edit. Creates a pending_profile_changes row.
 // The change only takes effect after an admin approves it.
-export async function submitClientProfileChangeAction(edit: ClientProfileEdit) {
+export async function submitClientProfileChangeAction(
+  edit: ClientProfileEdit,
+  avatarFile: File | null,
+) {
   const me = await requireRole("client");
   const supabase = await createClient();
 
@@ -40,6 +74,8 @@ export async function submitClientProfileChangeAction(edit: ClientProfileEdit) {
   if (!contactNumber) throw new Error("Contact number is required.");
   if (!email) throw new Error("Email is required.");
 
+  const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
+
   // Withdraw any previously-pending change from this user so only the latest
   // request sits in the admin queue.
   await supabase
@@ -48,15 +84,18 @@ export async function submitClientProfileChangeAction(edit: ClientProfileEdit) {
     .eq("user_id", me.id)
     .eq("status", "pending");
 
+  const proposed: Record<string, string> = {
+    name,
+    contact_number: contactNumber,
+    email,
+    address,
+  };
+  if (avatarPath) proposed.avatar_path = avatarPath;
+
   const { error } = await supabase.from("pending_profile_changes").insert({
     user_id: me.id,
     role: "client",
-    proposed: {
-      name,
-      contact_number: contactNumber,
-      email,
-      address,
-    },
+    proposed,
   });
   if (error) throw new Error(error.message);
 
@@ -66,6 +105,7 @@ export async function submitClientProfileChangeAction(edit: ClientProfileEdit) {
 
 export async function submitAccountantProfileChangeAction(
   edit: AccountantProfileEdit,
+  avatarFile: File | null,
 ) {
   const me = await requireRole("accountant");
   const supabase = await createClient();
@@ -80,22 +120,27 @@ export async function submitAccountantProfileChangeAction(
   if (!contactNumber) throw new Error("Contact number is required.");
   if (!email) throw new Error("Email is required.");
 
+  const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
+
   await supabase
     .from("pending_profile_changes")
     .delete()
     .eq("user_id", me.id)
     .eq("status", "pending");
 
+  const proposed: Record<string, string> = {
+    name,
+    contact_number: contactNumber,
+    email,
+    company_name: companyName,
+    company_email: companyEmail,
+  };
+  if (avatarPath) proposed.avatar_path = avatarPath;
+
   const { error } = await supabase.from("pending_profile_changes").insert({
     user_id: me.id,
     role: "accountant",
-    proposed: {
-      name,
-      contact_number: contactNumber,
-      email,
-      company_name: companyName,
-      company_email: companyEmail,
-    },
+    proposed,
   });
   if (error) throw new Error(error.message);
 
@@ -142,7 +187,10 @@ export type AdminProfileEdit = {
   email: string;
 };
 
-export async function updateAdminProfileAction(edit: AdminProfileEdit) {
+export async function updateAdminProfileAction(
+  edit: AdminProfileEdit,
+  avatarFile: File | null,
+) {
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
@@ -154,10 +202,18 @@ export async function updateAdminProfileAction(edit: AdminProfileEdit) {
   if (!contactNumber) throw new Error("Contact number is required.");
   if (!email) throw new Error("Email is required.");
 
+  const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
+
+  const patch: Record<string, string> = {
+    name,
+    contact_number: contactNumber,
+  };
+  if (avatarPath) patch.avatar_path = avatarPath;
+
   const { error: profErr } = await admin
     .from("admin_profiles")
     .upsert(
-      { user_id: me.id, name, contact_number: contactNumber },
+      { user_id: me.id, ...patch },
       { onConflict: "user_id" },
     );
   if (profErr) throw new Error(profErr.message);

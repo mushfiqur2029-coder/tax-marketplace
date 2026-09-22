@@ -9,6 +9,8 @@ import { Avatar } from "@/components/avatar";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { formatDateTime } from "@/lib/format";
+import { AdminNav } from "@/app/admin/admin-nav";
+import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +25,14 @@ export default async function AdminAccountantDetail({
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: user }, { data: profile }] = await Promise.all([
+  const [{ data: user }, { data: profile }, navCounts] = await Promise.all([
     admin.from("users").select("id, email, status").eq("id", id).single(),
     admin
       .from("accountant_profiles")
       .select("user_id, name, contact_number, company_email, company_name, avatar_path, approval_status")
       .eq("user_id", id)
       .single(),
+    getAdminNavCounts(),
   ]);
   if (!user || !profile) notFound();
 
@@ -77,6 +80,7 @@ export default async function AdminAccountantDetail({
       name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<AdminNav active="accountants" counts={navCounts} />}
     >
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         {/* Profile */}

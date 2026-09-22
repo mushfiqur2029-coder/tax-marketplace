@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DashboardShell } from "@/components/dashboard-shell";
@@ -9,6 +8,8 @@ import {
 import { PayoutForm } from "./payout-form";
 import { ReceiptLink } from "@/app/accountant/wallet/receipt-link";
 import { formatDateTime } from "@/lib/format";
+import { AdminNav } from "@/app/admin/admin-nav";
+import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +21,15 @@ export default async function AdminWithdrawalsPage() {
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
-  const { data: reqs } = await admin
-    .from("withdrawal_requests")
-    .select(
-      "id, accountant_id, amount_pence, account_name, sort_code, account_number, status, receipt_path, requested_at, paid_at",
-    )
-    .order("requested_at", { ascending: false });
+  const [{ data: reqs }, navCounts] = await Promise.all([
+    admin
+      .from("withdrawal_requests")
+      .select(
+        "id, accountant_id, amount_pence, account_name, sort_code, account_number, status, receipt_path, requested_at, paid_at",
+      )
+      .order("requested_at", { ascending: false }),
+    getAdminNavCounts(),
+  ]);
 
   const accIds = Array.from(
     new Set((reqs ?? []).map((r) => r.accountant_id)),
@@ -55,6 +59,7 @@ export default async function AdminWithdrawalsPage() {
       name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<AdminNav active="withdrawals" counts={navCounts} />}
     >
       <section className="mb-10">
         <h2
@@ -124,11 +129,6 @@ export default async function AdminWithdrawalsPage() {
         )}
       </section>
 
-      <div className="mt-8">
-        <Link href="/admin" className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky">
-          ← Back to admin console
-        </Link>
-      </div>
     </DashboardShell>
   );
 }

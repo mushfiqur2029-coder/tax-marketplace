@@ -4,10 +4,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
-import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { Avatar } from "@/components/avatar";
+import { AdminNav } from "@/app/admin/admin-nav";
+import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,8 @@ export default async function AdminDashboard() {
     { data: cases },
     { count: clientCount },
     { count: accountantCount },
-    { count: pendingWithdrawals },
-    { count: pendingAccountants },
     { data: accountantProfiles },
+    navCounts,
   ] = await Promise.all([
     admin
       .from("cases")
@@ -32,16 +32,9 @@ export default async function AdminDashboard() {
     admin.from("users").select("id", { count: "exact", head: true }).eq("role", "client"),
     admin.from("users").select("id", { count: "exact", head: true }).eq("role", "accountant"),
     admin
-      .from("withdrawal_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending"),
-    admin
-      .from("accountant_profiles")
-      .select("user_id", { count: "exact", head: true })
-      .eq("approval_status", "pending"),
-    admin
       .from("accountant_profiles")
       .select("user_id, name, avatar_path, approval_status"),
+    getAdminNavCounts(),
   ]);
 
   const totalCases = cases?.length ?? 0;
@@ -92,44 +85,7 @@ export default async function AdminDashboard() {
       name={me.name}
       email={me.email}
       role={me.role}
-      headerExtra={
-        <>
-          <SLLink
-            href="/admin/accountants"
-            variant="outline"
-            className="!text-[13px]"
-          >
-            Accountants
-            {pendingAccountants ? (
-              <PillCount n={pendingAccountants} />
-            ) : null}
-          </SLLink>
-          <SLLink
-            href="/admin/withdrawals"
-            variant="outline"
-            className="!text-[13px]"
-          >
-            Withdrawals
-            {pendingWithdrawals ? (
-              <PillCount n={pendingWithdrawals} />
-            ) : null}
-          </SLLink>
-          <SLLink
-            href="/admin/admins"
-            variant="outline"
-            className="!text-[13px]"
-          >
-            Admins
-          </SLLink>
-          <SLLink
-            href="/admin/profile"
-            variant="outline"
-            className="!text-[13px]"
-          >
-            Account
-          </SLLink>
-        </>
-      }
+      subnav={<AdminNav active="dashboard" counts={navCounts} />}
     >
       {/* Stat cards */}
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -287,13 +243,3 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
   );
 }
 
-function PillCount({ n }: { n: number }) {
-  return (
-    <span
-      className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
-      style={{ background: "linear-gradient(135deg, var(--sky), var(--mint))" }}
-    >
-      {n}
-    </span>
-  );
-}

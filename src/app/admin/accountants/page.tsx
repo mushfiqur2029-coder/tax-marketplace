@@ -5,6 +5,8 @@ import { setAccountantApprovalAction } from "@/app/admin/actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Avatar } from "@/components/avatar";
 import { ApprovalActions } from "./approval-actions";
+import { AdminNav } from "@/app/admin/admin-nav";
+import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +23,12 @@ export default async function AccountantsPage() {
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
-  const { data: profiles } = await admin
-    .from("accountant_profiles")
-    .select("user_id, name, contact_number, company_name, avatar_path, approval_status");
+  const [{ data: profiles }, navCounts] = await Promise.all([
+    admin
+      .from("accountant_profiles")
+      .select("user_id, name, contact_number, company_name, avatar_path, approval_status"),
+    getAdminNavCounts(),
+  ]);
 
   const rows = (profiles ?? []) as Row[];
 
@@ -71,6 +76,7 @@ export default async function AccountantsPage() {
       name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<AdminNav active="accountants" counts={navCounts} />}
     >
       <Section
         title={`Pending (${groups.pending.length})`}
@@ -117,14 +123,6 @@ export default async function AccountantsPage() {
         </Section>
       ) : null}
 
-      <div className="mt-8">
-        <Link
-          href="/admin"
-          className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
-        >
-          ← Back to admin console
-        </Link>
-      </div>
     </DashboardShell>
   );
 }

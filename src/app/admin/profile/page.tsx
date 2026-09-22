@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -8,6 +7,8 @@ import {
 import { DashboardShell } from "@/components/dashboard-shell";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { AdminProfileForm } from "./admin-profile-form";
+import { AdminNav } from "@/app/admin/admin-nav";
+import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +16,21 @@ export default async function AdminAccountPage() {
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
-  const { data: profile } = await admin
-    .from("admin_profiles")
-    .select("name, contact_number")
-    .eq("user_id", me.id)
-    .maybeSingle();
+  const [{ data: profile }, navCounts] = await Promise.all([
+    admin
+      .from("admin_profiles")
+      .select("name, contact_number, avatar_path")
+      .eq("user_id", me.id)
+      .maybeSingle(),
+    getAdminNavCounts(),
+  ]);
 
-  const submit = async (edit: Parameters<typeof updateAdminProfileAction>[0]) => {
+  const submit = async (
+    edit: Parameters<typeof updateAdminProfileAction>[0],
+    avatar: File | null,
+  ) => {
     "use server";
-    await updateAdminProfileAction(edit);
+    await updateAdminProfileAction(edit, avatar);
   };
 
   const change = async (current: string, next: string, confirm: string) => {
@@ -39,6 +46,7 @@ export default async function AdminAccountPage() {
       name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<AdminNav active="profile" counts={navCounts} />}
     >
       <section className="mb-10">
         <h2
@@ -53,11 +61,12 @@ export default async function AdminAccountPage() {
             contact_number: profile?.contact_number ?? "",
             email: me.email,
           }}
+          currentAvatarPath={profile?.avatar_path ?? null}
           submit={submit}
         />
       </section>
 
-      <section className="mb-10">
+      <section>
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
           style={{ fontFamily: "var(--font-mono)" }}
@@ -66,13 +75,6 @@ export default async function AdminAccountPage() {
         </h2>
         <ChangePasswordForm change={change} />
       </section>
-
-      <Link
-        href="/admin"
-        className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
-      >
-        ← Back to admin console
-      </Link>
     </DashboardShell>
   );
 }

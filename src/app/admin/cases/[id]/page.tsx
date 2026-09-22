@@ -21,6 +21,8 @@ import {
 } from "@/components/case/multi-thread-chat";
 import { ReassignForm } from "./reassign-form";
 import { formatDateTime } from "@/lib/format";
+import { AdminNav } from "@/app/admin/admin-nav";
+import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +48,7 @@ export default async function AdminCasePage({
   const tier = getTier(row.tier);
   if (!seg || !tier) notFound();
 
-  const [{ data: client }, { data: acc }, { data: allAccs }, { data: docs }, { data: msgs }, { data: actions }] =
+  const [{ data: client }, { data: acc }, { data: allAccs }, { data: docs }, { data: msgs }, { data: actions }, navCounts] =
     await Promise.all([
       admin.from("users").select("id, email").eq("id", row.client_id).single(),
       row.accountant_id
@@ -68,6 +70,7 @@ export default async function AdminCasePage({
         .select("id, target_user_id, action, note, created_at")
         .order("created_at", { ascending: false })
         .limit(5),
+      getAdminNavCounts(),
     ]);
 
   const all = (msgs ?? []) as ChatMessage[];
@@ -136,6 +139,7 @@ export default async function AdminCasePage({
       name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<AdminNav counts={navCounts} />}
     >
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={row.status} />
@@ -251,11 +255,6 @@ export default async function AdminCasePage({
         </aside>
       </div>
 
-      <div className="mt-8">
-        <Link href="/admin" className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky">
-          ← Back to all cases
-        </Link>
-      </div>
     </DashboardShell>
   );
 }

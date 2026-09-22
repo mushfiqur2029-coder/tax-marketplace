@@ -18,7 +18,7 @@ export default async function AccountantAccountPage() {
   const [{ data: profile }, { data: pending }] = await Promise.all([
     admin
       .from("accountant_profiles")
-      .select("name, contact_number, company_name, company_email")
+      .select("name, contact_number, company_name, company_email, avatar_path")
       .eq("user_id", me.id)
       .single(),
     admin
@@ -31,9 +31,12 @@ export default async function AccountantAccountPage() {
       .maybeSingle(),
   ]);
 
-  const submit = async (edit: Parameters<typeof submitAccountantProfileChangeAction>[0]) => {
+  const submit = async (
+    edit: Parameters<typeof submitAccountantProfileChangeAction>[0],
+    avatar: File | null,
+  ) => {
     "use server";
-    await submitAccountantProfileChangeAction(edit);
+    await submitAccountantProfileChangeAction(edit, avatar);
   };
 
   const change = async (current: string, next: string, confirm: string) => {
@@ -70,6 +73,7 @@ export default async function AccountantAccountPage() {
             company_name: profile?.company_name ?? "",
             company_email: profile?.company_email ?? "",
           }}
+          currentAvatarPath={profile?.avatar_path ?? null}
           pending={pending ? (pending.proposed as Record<string, string>) : null}
           submit={submit}
         />

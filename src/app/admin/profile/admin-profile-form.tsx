@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
+import { Avatar } from "@/components/avatar";
+import { AvatarPicker } from "@/components/avatar-picker";
 
 type Current = {
   name: string;
@@ -11,11 +13,13 @@ type Current = {
 
 type Props = {
   current: Current;
-  submit: (edit: Current) => Promise<void>;
+  currentAvatarPath: string | null;
+  submit: (edit: Current, avatar: File | null) => Promise<void>;
 };
 
-export function AdminProfileForm({ current, submit }: Props) {
+export function AdminProfileForm({ current, currentAvatarPath, submit }: Props) {
   const [form, setForm] = useState<Current>(current);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -30,8 +34,9 @@ export function AdminProfileForm({ current, submit }: Props) {
         setOk(false);
         start(async () => {
           try {
-            await submit(form);
+            await submit(form, avatarFile);
             setOk(true);
+            setAvatarFile(null);
           } catch (e) {
             setError(e instanceof Error ? e.message : "Save failed.");
           }
@@ -43,6 +48,26 @@ export function AdminProfileForm({ current, submit }: Props) {
         Admin edits apply immediately. There&apos;s no one above admin to
         approve them.
       </p>
+
+      <div className="space-y-2">
+        <span
+          className="text-xs font-semibold uppercase tracking-wider text-slate"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          Profile picture
+        </span>
+        <div className="flex items-center gap-4">
+          <Avatar
+            path={currentAvatarPath}
+            name={form.name}
+            email={form.email}
+            size={72}
+          />
+          <div className="flex-1">
+            <AvatarPicker onChange={setAvatarFile} size={72} />
+          </div>
+        </div>
+      </div>
 
       <Field
         label="Name"

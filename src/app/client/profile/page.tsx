@@ -31,9 +31,12 @@ export default async function ClientAccountPage() {
       .maybeSingle(),
   ]);
 
-  const submit = async (edit: Parameters<typeof submitClientProfileChangeAction>[0]) => {
+  const submit = async (
+    edit: Parameters<typeof submitClientProfileChangeAction>[0],
+    avatar: File | null,
+  ) => {
     "use server";
-    await submitClientProfileChangeAction(edit);
+    await submitClientProfileChangeAction(edit, avatar);
   };
 
   const change = async (current: string, next: string, confirm: string) => {
@@ -69,6 +72,7 @@ export default async function ClientAccountPage() {
             email: me.email,
             address: profile?.address ?? "",
           }}
+          currentAvatarPath={profile?.avatar_path ?? null}
           pending={pending ? (pending.proposed as Record<string, string>) : null}
           submit={submit}
         />

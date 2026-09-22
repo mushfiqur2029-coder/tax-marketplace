@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -8,6 +7,9 @@ import {
 import { DashboardShell } from "@/components/dashboard-shell";
 import { formatDateTime } from "@/lib/format";
 import { ReviewActions } from "./review-actions";
+import { Avatar } from "@/components/avatar";
+import { AdminNav } from "@/app/admin/admin-nav";
+import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +17,15 @@ export default async function AdminProfileChangesPage() {
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
-  const { data: changes } = await admin
-    .from("pending_profile_changes")
-    .select(
-      "id, user_id, role, proposed, status, requested_at, reviewed_at, review_note",
-    )
-    .order("requested_at", { ascending: false });
+  const [{ data: changes }, navCounts] = await Promise.all([
+    admin
+      .from("pending_profile_changes")
+      .select(
+        "id, user_id, role, proposed, status, requested_at, reviewed_at, review_note",
+      )
+      .order("requested_at", { ascending: false }),
+    getAdminNavCounts(),
+  ]);
 
   const userIds = Array.from(new Set((changes ?? []).map((c) => c.user_id)));
   const { data: users } = userIds.length
@@ -48,6 +53,7 @@ export default async function AdminProfileChangesPage() {
       name={me.name}
       email={me.email}
       role={me.role}
+      subnav={<AdminNav active="profile-changes" counts={navCounts} />}
     >
       <section className="mb-10">
         <h2
@@ -93,7 +99,15 @@ export default async function AdminProfileChangesPage() {
                         >
                           {k.replace(/_/g, " ")}
                         </dt>
-                        <dd className="mt-1 text-ink">{String(v) || <span className="italic text-slate">(empty)</span>}</dd>
+                        <dd className="mt-1 text-ink">
+                          {k === "avatar_path" && v ? (
+                            <Avatar path={String(v)} size={56} />
+                          ) : String(v) ? (
+                            String(v)
+                          ) : (
+                            <span className="italic text-slate">(empty)</span>
+                          )}
+                        </dd>
                       </div>
                     ))}
                   </dl>
@@ -154,14 +168,6 @@ export default async function AdminProfileChangesPage() {
         )}
       </section>
 
-      <div className="mt-8">
-        <Link
-          href="/admin"
-          className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
-        >
-          Back to admin console
-        </Link>
-      </div>
     </DashboardShell>
   );
 }

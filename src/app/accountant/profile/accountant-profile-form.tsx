@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
+import { Avatar } from "@/components/avatar";
+import { AvatarPicker } from "@/components/avatar-picker";
 
 type Current = {
   name: string;
@@ -13,18 +15,26 @@ type Current = {
 
 type Props = {
   current: Current;
+  currentAvatarPath: string | null;
   pending: Record<string, string> | null;
-  submit: (edit: Current) => Promise<void>;
+  submit: (edit: Current, avatar: File | null) => Promise<void>;
 };
 
-export function AccountantProfileForm({ current, pending, submit }: Props) {
+export function AccountantProfileForm({
+  current,
+  currentAvatarPath,
+  pending,
+  submit,
+}: Props) {
   const [form, setForm] = useState<Current>(current);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [pendingSubmit, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
 
   const isPending = (field: keyof Current) =>
     pending != null && (pending[field] ?? "") !== "" && pending[field] !== current[field];
+  const pendingAvatar = pending?.avatar_path ?? null;
 
   const onChange = (k: keyof Current) => (v: string) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -36,8 +46,9 @@ export function AccountantProfileForm({ current, pending, submit }: Props) {
         setOk(false);
         start(async () => {
           try {
-            await submit(form);
+            await submit(form, avatarFile);
             setOk(true);
+            setAvatarFile(null);
           } catch (e) {
             setError(e instanceof Error ? e.message : "Save failed.");
           }
@@ -59,6 +70,43 @@ export function AccountantProfileForm({ current, pending, submit }: Props) {
           change are marked below.
         </div>
       ) : null}
+
+      <div className="space-y-2">
+        <span
+          className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          Profile picture
+          {pendingAvatar ? (
+            <span
+              className="rounded-full px-2 py-0.5 text-[9px] tracking-widest"
+              style={{
+                background: "rgba(217,159,25,0.15)",
+                color: "#8A6A0F",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              Pending approval
+            </span>
+          ) : null}
+        </span>
+        <div className="flex items-center gap-4">
+          <Avatar
+            path={currentAvatarPath}
+            name={form.name}
+            email={form.email}
+            size={72}
+          />
+          <div className="flex-1">
+            <AvatarPicker onChange={setAvatarFile} size={72} />
+          </div>
+        </div>
+        {pendingAvatar && !avatarFile ? (
+          <p className="text-xs text-slate">
+            A new picture is queued for admin approval.
+          </p>
+        ) : null}
+      </div>
 
       <Field
         label="Name"
