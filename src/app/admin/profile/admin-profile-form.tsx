@@ -56,14 +56,14 @@ export function AdminProfileForm({ current, currentAvatarPath, submit }: Props) 
         >
           Profile picture
         </span>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
           <Avatar
             path={currentAvatarPath}
             name={form.name}
             email={form.email}
             size={72}
           />
-          <div className="flex-1">
+          <div className="w-full min-w-0 sm:flex-1">
             <AvatarPicker onChange={setAvatarFile} size={72} />
           </div>
         </div>
