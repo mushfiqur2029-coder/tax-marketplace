@@ -9,6 +9,7 @@ import { getReceiptSignedUrl } from "@/app/admin/actions";
 import { formatDateTime } from "@/lib/format";
 import { AccountantNav } from "@/app/accountant/accountant-nav";
 import { IncomeSubnav } from "./income-subnav";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,7 @@ export default async function WalletPage({
       email={me.email}
       role={me.role}
       subnav={<AccountantNav active="income" />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <IncomeSubnav active={view} />
 

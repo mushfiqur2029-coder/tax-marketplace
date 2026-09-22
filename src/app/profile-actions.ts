@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { insertProfileChangeNotifications } from "@/lib/notifications";
 
 // Name / Contact number / Email are REQUIRED on every edit.
 // A future phase will add SMS + email verification via a confirmation code,
@@ -99,6 +100,8 @@ export async function submitClientProfileChangeAction(
   });
   if (error) throw new Error(error.message);
 
+  await insertProfileChangeNotifications({ submitterEmail: me.email });
+
   revalidatePath("/client/profile");
   revalidatePath("/admin/profile-changes");
 }
@@ -143,6 +146,8 @@ export async function submitAccountantProfileChangeAction(
     proposed,
   });
   if (error) throw new Error(error.message);
+
+  await insertProfileChangeNotifications({ submitterEmail: me.email });
 
   revalidatePath("/accountant/profile");
   revalidatePath("/admin/profile-changes");

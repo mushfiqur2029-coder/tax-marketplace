@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { insertWithdrawalPaidNotification } from "@/lib/notifications";
 
 const BUCKET = "case-documents";
 
@@ -174,6 +175,19 @@ export async function markWithdrawalPaidAction(
     // best-effort cleanup
     await admin.storage.from(BUCKET).remove([path]);
     throw new Error(rpcErr.message);
+  }
+
+  // Notify the accountant whose withdrawal was just paid.
+  const { data: req } = await admin
+    .from("withdrawal_requests")
+    .select("accountant_id, amount_pence")
+    .eq("id", requestId)
+    .single();
+  if (req) {
+    await insertWithdrawalPaidNotification({
+      accountantId: req.accountant_id,
+      amountPence: req.amount_pence,
+    });
   }
 
   revalidatePath(`/admin/withdrawals`);

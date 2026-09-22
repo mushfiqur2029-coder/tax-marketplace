@@ -10,6 +10,7 @@ import { ReviewActions } from "./review-actions";
 import { Avatar } from "@/components/avatar";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,7 @@ export default async function AdminProfileChangesPage() {
       email={me.email}
       role={me.role}
       subnav={<AdminNav active="profile-changes" counts={navCounts} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <section className="mb-10">
         <h2

@@ -10,6 +10,7 @@ import { ReceiptLink } from "@/app/accountant/wallet/receipt-link";
 import { formatDateTime } from "@/lib/format";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export default async function AdminWithdrawalsPage() {
       email={me.email}
       role={me.role}
       subnav={<AdminNav active="withdrawals" counts={navCounts} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <section className="mb-10">
         <h2

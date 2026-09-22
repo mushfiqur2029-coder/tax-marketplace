@@ -5,6 +5,7 @@ import {
   changePasswordAction,
 } from "@/app/profile-actions";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { Bell } from "@/components/bell";
 import { AccountantNav } from "@/app/accountant/accountant-nav";
 import { AccountantProfileForm } from "./accountant-profile-form";
 import { ChangePasswordForm } from "@/components/change-password-form";
@@ -53,6 +54,7 @@ export default async function AccountantAccountPage() {
       email={me.email}
       role={me.role}
       subnav={<AccountantNav active="profile" />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <section className="mb-10">
         <h2

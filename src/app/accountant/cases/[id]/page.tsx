@@ -12,6 +12,7 @@ import {
   getMessageAttachmentSignedUrl,
 } from "@/app/messages";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { Bell } from "@/components/bell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { ProgressBar } from "@/components/case/progress-bar";
@@ -108,6 +109,7 @@ export default async function AccountantCaseDetailPage({
       name={data.me.name}
       email={data.me.email}
       role={data.me.role}
+      bell={<Bell userId={data.me.id} role={data.me.role} />}
     >
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={data.row.status} />

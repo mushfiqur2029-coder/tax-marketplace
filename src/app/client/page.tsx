@@ -9,6 +9,7 @@ import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { formatDate } from "@/lib/format";
 import { ClientNav, ClientCasesFilter } from "./client-nav";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export default async function ClientDashboard({
       email={me.email}
       role={me.role}
       subnav={<ClientNav active="cases" />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <ClientCasesFilter active={view} />

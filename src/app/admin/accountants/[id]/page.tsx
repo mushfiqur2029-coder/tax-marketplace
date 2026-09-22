@@ -11,6 +11,7 @@ import { DeadlinePill } from "@/components/case/deadline-pill";
 import { formatDateTime } from "@/lib/format";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,7 @@ export default async function AdminAccountantDetail({
       email={me.email}
       role={me.role}
       subnav={<AdminNav active="accountants" counts={navCounts} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         {/* Profile */}

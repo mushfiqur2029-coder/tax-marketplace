@@ -9,6 +9,7 @@ import { ChangePasswordForm } from "@/components/change-password-form";
 import { AdminProfileForm } from "./admin-profile-form";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,7 @@ export default async function AdminAccountPage() {
       email={me.email}
       role={me.role}
       subnav={<AdminNav active="profile" counts={navCounts} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <section className="mb-10">
         <h2

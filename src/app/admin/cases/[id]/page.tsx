@@ -23,6 +23,7 @@ import { ReassignForm } from "./reassign-form";
 import { formatDateTime } from "@/lib/format";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +141,7 @@ export default async function AdminCasePage({
       email={me.email}
       role={me.role}
       subnav={<AdminNav counts={navCounts} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={row.status} />

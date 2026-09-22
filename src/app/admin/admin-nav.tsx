@@ -20,7 +20,7 @@ type TabDef = {
 };
 
 const TABS: TabDef[] = [
-  { key: "dashboard", label: "Dashboard", href: "/admin" },
+  { key: "dashboard", label: "Dashboard", href: "/admin", countKey: "unreadNotifications" },
   { key: "accountants", label: "Accountants", href: "/admin/accountants", countKey: "accountants" },
   { key: "withdrawals", label: "Withdrawals", href: "/admin/withdrawals", countKey: "withdrawals" },
   { key: "admins", label: "Admins", href: "/admin/admins" },

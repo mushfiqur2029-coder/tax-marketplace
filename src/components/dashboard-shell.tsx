@@ -9,6 +9,7 @@ type Props = {
   role: string;
   name?: string | null;
   headerExtra?: React.ReactNode;
+  bell?: React.ReactNode;
   subnav?: React.ReactNode;
   children: React.ReactNode;
 };
@@ -21,6 +22,7 @@ export function DashboardShell({
   role,
   name,
   headerExtra,
+  bell,
   subnav,
   children,
 }: Props) {
@@ -34,6 +36,7 @@ export function DashboardShell({
           <Brand />
           <div className="flex items-center gap-3 sm:gap-4">
             {headerExtra}
+            {bell}
             <div className="hidden text-right sm:block">
               <div className="text-xs font-semibold text-ink">{greeting}</div>
               <div

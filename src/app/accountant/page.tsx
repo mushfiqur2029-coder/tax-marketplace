@@ -6,7 +6,7 @@ import { getTier, type TierId } from "@/lib/plans";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
-import { NotificationBell } from "@/components/case/notification-bell";
+import { Bell } from "@/components/bell";
 import { AccountantNav } from "./accountant-nav";
 import {
   AccountantCasesFilter,
@@ -14,7 +14,9 @@ import {
   type UrgencyFilter,
   type IncomeFilter,
   type DateFilter,
+  type ViewCounts,
 } from "./cases-filter";
+import { AccountantCasesRealtimeRefresh } from "./cases-realtime-refresh";
 import { formatDate, formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +95,13 @@ export default async function AccountantDashboard({
   // now waiting on the client to sign off.
   const pendingCases = mine.filter((c) => c.status === "client_approval");
 
+  const viewCounts: ViewCounts = {
+    live: live.length,
+    queue: queue.length,
+    completed: completed.length,
+    pending: pendingCases.length,
+  };
+
   const pool =
     view === "queue"
       ? queue
@@ -131,9 +140,10 @@ export default async function AccountantDashboard({
       email={me.email}
       role={me.role}
       subnav={<AccountantNav active="cases" />}
-      headerExtra={<NotificationBell seedCaseIds={queue.map((c) => c.id)} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
-      <AccountantCasesFilter view={view} urgency={urgency} income={income} date={date} />
+      <AccountantCasesRealtimeRefresh accountantId={me.id} />
+      <AccountantCasesFilter view={view} urgency={urgency} income={income} date={date} counts={viewCounts} />
 
       {filtered.length === 0 ? (
         pool.length === 0 ? (

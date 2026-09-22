@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function AccountantPendingPage() {
       name={me.name}
       email={me.email}
       role={me.role}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <div className="card-sl p-8">
         <div className="flex items-start gap-4">

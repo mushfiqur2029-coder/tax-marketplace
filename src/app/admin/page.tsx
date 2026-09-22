@@ -9,6 +9,7 @@ import { DeadlinePill } from "@/components/case/deadline-pill";
 import { Avatar } from "@/components/avatar";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,7 @@ export default async function AdminDashboard() {
       email={me.email}
       role={me.role}
       subnav={<AdminNav active="dashboard" counts={navCounts} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       {/* Stat cards */}
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

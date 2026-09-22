@@ -8,6 +8,8 @@ export type UrgencyFilter = "all" | "safe" | "soon" | "urgent";
 export type IncomeFilter = "all" | "basic" | "standard" | "premium";
 export type DateFilter = "all" | "7d" | "30d" | "90d";
 
+export type ViewCounts = Record<CasesView, number>;
+
 const VIEWS: { key: CasesView; label: string }[] = [
   { key: "live", label: "Live" },
   { key: "queue", label: "Queue" },
@@ -41,15 +43,17 @@ export function AccountantCasesFilter({
   urgency,
   income,
   date,
+  counts,
 }: {
   view: CasesView;
   urgency: UrgencyFilter;
   income: IncomeFilter;
   date: DateFilter;
+  counts?: ViewCounts;
 }) {
   return (
     <div className="mb-6 space-y-3">
-      <TabRow current={view} options={VIEWS} paramKey="view" />
+      <ViewTabRow current={view} counts={counts} />
       <div className="flex flex-wrap gap-2">
         <FilterSelect current={urgency} options={URGENCY} paramKey="urgency" label="Urgency" />
         <FilterSelect current={date} options={DATES} paramKey="date" label="Date" />
@@ -59,35 +63,51 @@ export function AccountantCasesFilter({
   );
 }
 
-function TabRow<K extends string>({
+// View tabs get a count badge — the same count that would render if you
+// clicked into the tab. Updated live via the RealtimeCaseRefresh sibling.
+function ViewTabRow({
   current,
-  options,
-  paramKey,
+  counts,
 }: {
-  current: K;
-  options: { key: K; label: string }[];
-  paramKey: string;
+  current: CasesView;
+  counts?: ViewCounts;
 }) {
   const params = useSearchParams();
   return (
     <div className="inline-flex rounded-full border border-line bg-paper p-1">
-      {options.map((o) => {
-        const isActive = current === o.key;
+      {VIEWS.map((v) => {
+        const isActive = current === v.key;
         const next = new URLSearchParams(params?.toString());
-        next.set(paramKey, o.key);
+        next.set("view", v.key);
+        const n = counts?.[v.key] ?? 0;
         return (
           <Link
-            key={o.key}
+            key={v.key}
             href={`/accountant?${next.toString()}`}
             aria-pressed={isActive}
             className={
-              "rounded-full px-4 py-1.5 text-xs font-semibold transition " +
+              "inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition " +
               (isActive
                 ? "bg-navy-deep text-white"
                 : "text-slate hover:text-navy-deep")
             }
           >
-            {o.label}
+            {v.label}
+            {n > 0 ? (
+              <span
+                className={
+                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold " +
+                  (isActive ? "bg-white text-navy-deep" : "text-white")
+                }
+                style={
+                  isActive
+                    ? undefined
+                    : { background: "linear-gradient(135deg, var(--sky), var(--mint))" }
+                }
+              >
+                {n}
+              </span>
+            ) : null}
           </Link>
         );
       })}

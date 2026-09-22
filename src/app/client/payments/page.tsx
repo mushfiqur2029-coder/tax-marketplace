@@ -5,6 +5,7 @@ import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { ClientNav } from "@/app/client/client-nav";
+import { Bell } from "@/components/bell";
 import { formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export default async function ClientPaymentsPage() {
       email={me.email}
       role={me.role}
       subnav={<ClientNav active="payments" />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
         <StatCard label="Payments made" value={String(cases?.length ?? 0)} />

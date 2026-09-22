@@ -7,6 +7,7 @@ import { Avatar } from "@/components/avatar";
 import { ApprovalActions } from "./approval-actions";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,7 @@ export default async function AccountantsPage() {
       email={me.email}
       role={me.role}
       subnav={<AdminNav active="accountants" counts={navCounts} />}
+      bell={<Bell userId={me.id} role={me.role} />}
     >
       <Section
         title={`Pending (${groups.pending.length})`}

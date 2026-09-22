@@ -2,6 +2,7 @@ import Link from "next/link";
 import { loadClientCase } from "@/lib/case";
 import { reconcilePaymentAction, approveAndFileAction } from "@/app/client/actions";
 import { ApproveAndFileButton } from "./approve-and-file-button";
+import { Bell } from "@/components/bell";
 import {
   sendMessageAction,
   uploadMessageAttachmentAction,
@@ -108,6 +109,7 @@ export default async function CaseDetailPage({
       name={data.me.name}
       email={data.me.email}
       role={data.me.role}
+      bell={<Bell userId={data.me.id} role={data.me.role} />}
     >
       {paid === "1" && data.progress.paid ? (
         <div
