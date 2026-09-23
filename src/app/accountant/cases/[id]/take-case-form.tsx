@@ -3,7 +3,9 @@
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
 
-export function TakeCaseForm({ take }: { take: () => Promise<void> }) {
+type TakeResult = { ok: true } | { ok: false; error: string };
+
+export function TakeCaseForm({ take }: { take: () => Promise<TakeResult> }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -13,11 +15,8 @@ export function TakeCaseForm({ take }: { take: () => Promise<void> }) {
         action={() => {
           setError(null);
           start(async () => {
-            try {
-              await take();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Could not take case.");
-            }
+            const res = await take();
+            if (!res.ok) setError(res.error);
           });
         }}
       >

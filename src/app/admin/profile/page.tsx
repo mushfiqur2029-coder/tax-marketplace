@@ -31,7 +31,7 @@ export default async function AdminAccountPage() {
     avatar: File | null,
   ) => {
     "use server";
-    await updateAdminProfileAction(edit, avatar);
+    return updateAdminProfileAction(edit, avatar);
   };
 
   const change = async (current: string, next: string, confirm: string) => {

@@ -74,11 +74,11 @@ export default async function AccountantCaseDetailPage({
 
   const take = async () => {
     "use server";
-    await takeCaseAction(id);
+    return takeCaseAction(id);
   };
   const advance = async (next: string) => {
     "use server";
-    await updateCaseStatusAction(id, next);
+    return updateCaseStatusAction(id, next);
   };
   const signDocUrl = async (path: string) => {
     "use server";

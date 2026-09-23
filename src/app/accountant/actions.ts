@@ -4,6 +4,18 @@ import { revalidatePath } from "next/cache";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
+// Return-as-data shape for user-invoked mutations. Server actions catch their
+// own errors internally so Next.js never digests them into an opaque "React
+// error #441" — the caller reads res.error and renders a readable message.
+export type ActionResult = { ok: true } | { ok: false; error: string };
+
+function fail(e: unknown): ActionResult {
+  return {
+    ok: false,
+    error: e instanceof Error ? e.message : "Something went wrong.",
+  };
+}
+
 type CaseStatus =
   | "draft"
   | "submitted"
@@ -43,56 +55,69 @@ async function loadCaseForAccountant(caseId: string) {
 // -------------------------------------------------------------------------
 // Take a case from the queue (atomic — race-safe using WHERE accountant_id IS NULL).
 // -------------------------------------------------------------------------
-export async function takeCaseAction(caseId: string) {
-  const me = await requireApprovedAccountant();
-  const supabase = await createClient();
+export async function takeCaseAction(caseId: string): Promise<ActionResult> {
+  try {
+    const me = await requireApprovedAccountant();
+    const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from("cases")
-    .update({
-      accountant_id: me.id,
-      status: "in_review",
-    })
-    .eq("id", caseId)
-    .eq("status", "submitted")
-    .eq("stripe_payment_status", "succeeded")
-    .is("accountant_id", null)
-    .select("id")
-    .single();
+    const { data, error } = await supabase
+      .from("cases")
+      .update({
+        accountant_id: me.id,
+        status: "in_review",
+      })
+      .eq("id", caseId)
+      .eq("status", "submitted")
+      .eq("stripe_payment_status", "succeeded")
+      .is("accountant_id", null)
+      .select("id")
+      .single();
 
-  if (error || !data) {
-    throw new Error(
-      "Couldn't take this case. someone may have grabbed it, or it's not in the queue anymore.",
-    );
+    if (error || !data) {
+      throw new Error(
+        "Couldn't take this case. Someone may have grabbed it, or it's not in the queue anymore.",
+      );
+    }
+
+    revalidatePath("/accountant");
+    revalidatePath(`/accountant/cases/${caseId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
   }
-
-  revalidatePath("/accountant");
-  revalidatePath(`/accountant/cases/${caseId}`);
 }
 
 // -------------------------------------------------------------------------
 // Move a case through the lifecycle. Only valid forward transitions allowed.
 // -------------------------------------------------------------------------
-export async function updateCaseStatusAction(caseId: string, next: string) {
-  const { me, supabase, row } = await loadCaseForAccountant(caseId);
-  if (row.accountant_id !== me.id) {
-    throw new Error("You haven't taken this case.");
+export async function updateCaseStatusAction(
+  caseId: string,
+  next: string,
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    if (row.accountant_id !== me.id) {
+      throw new Error("You haven't taken this case.");
+    }
+
+    const current = row.status as CaseStatus;
+    const allowed = ALLOWED_TRANSITIONS[current] ?? [];
+    if (!allowed.includes(next as CaseStatus)) {
+      throw new Error(`Can't go from ${current} to ${next}.`);
+    }
+
+    const { error } = await supabase
+      .from("cases")
+      .update({ status: next })
+      .eq("id", caseId);
+    if (error) throw new Error(error.message);
+
+    revalidatePath(`/accountant/cases/${caseId}`);
+    revalidatePath(`/accountant`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
   }
-
-  const current = row.status as CaseStatus;
-  const allowed = ALLOWED_TRANSITIONS[current] ?? [];
-  if (!allowed.includes(next as CaseStatus)) {
-    throw new Error(`Can't go from ${current} to ${next}.`);
-  }
-
-  const { error } = await supabase
-    .from("cases")
-    .update({ status: next })
-    .eq("id", caseId);
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/accountant/cases/${caseId}`);
-  revalidatePath(`/accountant`);
 }
 
 // -------------------------------------------------------------------------

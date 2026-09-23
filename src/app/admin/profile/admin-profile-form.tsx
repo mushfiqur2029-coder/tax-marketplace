@@ -11,10 +11,12 @@ type Current = {
   email: string;
 };
 
+type SaveResult = { ok: true } | { ok: false; error: string };
+
 type Props = {
   current: Current;
   currentAvatarPath: string | null;
-  submit: (edit: Current, avatar: File | null) => Promise<void>;
+  submit: (edit: Current, avatar: File | null) => Promise<SaveResult>;
 };
 
 export function AdminProfileForm({ current, currentAvatarPath, submit }: Props) {
@@ -33,12 +35,12 @@ export function AdminProfileForm({ current, currentAvatarPath, submit }: Props) 
         setError(null);
         setOk(false);
         start(async () => {
-          try {
-            await submit(form, avatarFile);
+          const res = await submit(form, avatarFile);
+          if (res.ok) {
             setOk(true);
             setAvatarFile(null);
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Save failed.");
+          } else {
+            setError(res.error);
           }
         });
       }}

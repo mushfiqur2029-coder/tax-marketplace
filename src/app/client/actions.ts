@@ -272,27 +272,40 @@ export async function reconcilePaymentAction(caseId: string) {
 // The accountant's ALLOWED_TRANSITIONS deliberately omits this step so a
 // return can never be marked filed without the client's explicit sign-off.
 // -------------------------------------------------------------------------
-export async function approveAndFileAction(caseId: string) {
-  const { me, supabase, caseRow } = await assertCaseOwner(caseId);
-  assertNotSuspended(me.status, "approve filings");
-  if (caseRow.status !== "client_approval") {
-    throw new Error("This case isn't awaiting your approval right now.");
+export type ActionResult = { ok: true } | { ok: false; error: string };
+
+export async function approveAndFileAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, caseRow } = await assertCaseOwner(caseId);
+    assertNotSuspended(me.status, "approve filings");
+    if (caseRow.status !== "client_approval") {
+      throw new Error("This case isn't awaiting your approval right now.");
+    }
+    // .select().single() converts a 0-row RLS-filtered result into a
+    // PGRST116 error so we can't silently succeed if the policy blocks the
+    // update.
+    const { data, error } = await supabase
+      .from("cases")
+      .update({ status: "filed" })
+      .eq("id", caseId)
+      .eq("status", "client_approval")
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error("Approval didn't take. Try again.");
+    revalidatePath(`/client/cases/${caseId}`);
+    revalidatePath("/client");
+    revalidatePath("/accountant");
+    revalidatePath(`/accountant/cases/${caseId}`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Approval failed.",
+    };
   }
-  // .select().single() converts a 0-row RLS-filtered result into a PGRST116
-  // error so we can't silently succeed if the policy blocks the update.
-  const { data, error } = await supabase
-    .from("cases")
-    .update({ status: "filed" })
-    .eq("id", caseId)
-    .eq("status", "client_approval")
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Approval didn't take. Try again.");
-  revalidatePath(`/client/cases/${caseId}`);
-  revalidatePath("/client");
-  revalidatePath("/accountant");
-  revalidatePath(`/accountant/cases/${caseId}`);
 }
 
 // -------------------------------------------------------------------------

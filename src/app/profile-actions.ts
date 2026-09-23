@@ -192,55 +192,65 @@ export type AdminProfileEdit = {
   email: string;
 };
 
+export type ActionResult = { ok: true } | { ok: false; error: string };
+
 export async function updateAdminProfileAction(
   edit: AdminProfileEdit,
   avatarFile: File | null,
-) {
-  const me = await requireRole("admin");
-  const admin = createAdminClient();
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
 
-  const name = edit.name.trim();
-  const contactNumber = edit.contact_number.trim();
-  const email = edit.email.trim();
+    const name = edit.name.trim();
+    const contactNumber = edit.contact_number.trim();
+    const email = edit.email.trim();
 
-  if (!name) throw new Error("Name is required.");
-  if (!contactNumber) throw new Error("Contact number is required.");
-  if (!email) throw new Error("Email is required.");
+    if (!name) throw new Error("Name is required.");
+    if (!contactNumber) throw new Error("Contact number is required.");
+    if (!email) throw new Error("Email is required.");
 
-  const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
+    const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
 
-  const patch: Record<string, string> = {
-    name,
-    contact_number: contactNumber,
-  };
-  if (avatarPath) patch.avatar_path = avatarPath;
+    const patch: Record<string, string> = {
+      name,
+      contact_number: contactNumber,
+    };
+    if (avatarPath) patch.avatar_path = avatarPath;
 
-  const { error: profErr } = await admin
-    .from("admin_profiles")
-    .upsert(
-      { user_id: me.id, ...patch },
-      { onConflict: "user_id" },
-    );
-  if (profErr) throw new Error(profErr.message);
+    const { error: profErr } = await admin
+      .from("admin_profiles")
+      .upsert(
+        { user_id: me.id, ...patch },
+        { onConflict: "user_id" },
+      );
+    if (profErr) throw new Error(profErr.message);
 
-  if (email !== me.email) {
-    // Keep public.users.email + auth.users.email in sync. Update auth first
-    // so a failure there doesn't leave the two rows divergent.
-    const { error: authErr } = await admin.auth.admin.updateUserById(me.id, {
-      email,
-      email_confirm: true,
-    });
-    if (authErr) throw new Error(authErr.message);
+    if (email !== me.email) {
+      // Keep public.users.email + auth.users.email in sync. Update auth
+      // first so a failure there doesn't leave the two rows divergent.
+      const { error: authErr } = await admin.auth.admin.updateUserById(me.id, {
+        email,
+        email_confirm: true,
+      });
+      if (authErr) throw new Error(authErr.message);
 
-    const { error: usersErr } = await admin
-      .from("users")
-      .update({ email })
-      .eq("id", me.id);
-    if (usersErr) throw new Error(usersErr.message);
+      const { error: usersErr } = await admin
+        .from("users")
+        .update({ email })
+        .eq("id", me.id);
+      if (usersErr) throw new Error(usersErr.message);
+    }
+
+    revalidatePath("/admin/profile");
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Save failed.",
+    };
   }
-
-  revalidatePath("/admin/profile");
-  revalidatePath("/admin");
 }
 
 // ---------------------------------------------------------------------------

@@ -3,8 +3,10 @@
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
 
+type ApproveResult = { ok: true } | { ok: false; error: string };
+
 type Props = {
-  approve: () => Promise<void>;
+  approve: () => Promise<ApproveResult>;
 };
 
 // Shown on the client's case detail when status = client_approval. Kept as a
@@ -43,11 +45,8 @@ export function ApproveAndFileButton({ approve }: Props) {
           action={() => {
             setError(null);
             start(async () => {
-              try {
-                await approve();
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Approval failed.");
-              }
+              const res = await approve();
+              if (!res.ok) setError(res.error);
             });
           }}
           className="shrink-0"

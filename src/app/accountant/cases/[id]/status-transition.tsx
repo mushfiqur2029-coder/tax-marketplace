@@ -13,12 +13,14 @@ const NEXT: Record<string, { label: string; next: string } | null> = {
   draft: null,
 };
 
+type AdvanceResult = { ok: true } | { ok: false; error: string };
+
 export function StatusTransition({
   current,
   advance,
 }: {
   current: string;
-  advance: (next: string) => Promise<void>;
+  advance: (next: string) => Promise<AdvanceResult>;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +40,8 @@ export function StatusTransition({
           action={() => {
             setError(null);
             start(async () => {
-              try {
-                await advance(step.next);
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Update failed.");
-              }
+              const res = await advance(step.next);
+              if (!res.ok) setError(res.error);
             });
           }}
         >

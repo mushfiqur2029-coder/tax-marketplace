@@ -87,7 +87,7 @@ export default async function CaseDetailPage({
   };
   const approve = async () => {
     "use server";
-    await approveAndFileAction(id);
+    return approveAndFileAction(id);
   };
   const uploadAttachment = async (caseId: string, fd: FormData) => {
     "use server";
