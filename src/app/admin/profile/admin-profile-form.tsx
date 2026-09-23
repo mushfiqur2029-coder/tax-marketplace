@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
-import { Avatar } from "@/components/avatar";
 import { AvatarPicker } from "@/components/avatar-picker";
 
 type Current = {
@@ -58,16 +57,14 @@ export function AdminProfileForm({ current, currentAvatarPath, submit }: Props) 
         >
           Profile picture
         </span>
-        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-          <Avatar
-            path={currentAvatarPath}
-            name={form.name}
-            email={form.email}
+        <div className="w-full min-w-0">
+          <AvatarPicker
+            onChange={setAvatarFile}
             size={72}
+            currentPath={currentAvatarPath}
+            currentName={form.name}
+            currentEmail={form.email}
           />
-          <div className="w-full min-w-0 sm:flex-1">
-            <AvatarPicker onChange={setAvatarFile} size={72} />
-          </div>
         </div>
       </div>
 

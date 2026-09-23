@@ -47,13 +47,21 @@ export function ClientNav({ active }: { active?: ClientTab }) {
 // Sub-nav specifically for the Cases page, so the filter is a URL param.
 type CasesFilter = "in_progress" | "completed" | "pending";
 
+export type ClientCaseCounts = Record<CasesFilter, number>;
+
 const CASE_FILTERS: { key: CasesFilter; label: string }[] = [
   { key: "in_progress", label: "In progress" },
   { key: "completed", label: "Completed" },
   { key: "pending", label: "Pending" },
 ];
 
-export function ClientCasesFilter({ active }: { active: CasesFilter }) {
+export function ClientCasesFilter({
+  active,
+  counts,
+}: {
+  active: CasesFilter;
+  counts?: ClientCaseCounts;
+}) {
   const params = useSearchParams();
   return (
     <div className="mb-6 inline-flex rounded-full border border-line bg-paper p-1">
@@ -61,19 +69,35 @@ export function ClientCasesFilter({ active }: { active: CasesFilter }) {
         const isActive = active === f.key;
         const next = new URLSearchParams(params?.toString());
         next.set("view", f.key);
+        const n = counts?.[f.key] ?? 0;
         return (
           <Link
             key={f.key}
             href={`/client?${next.toString()}`}
             aria-pressed={isActive}
             className={
-              "rounded-full px-4 py-1.5 text-xs font-semibold transition " +
+              "inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition " +
               (isActive
                 ? "bg-navy-deep text-white"
                 : "text-slate hover:text-navy-deep")
             }
           >
             {f.label}
+            {n > 0 ? (
+              <span
+                className={
+                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold " +
+                  (isActive ? "bg-white text-navy-deep" : "text-white")
+                }
+                style={
+                  isActive
+                    ? undefined
+                    : { background: "linear-gradient(135deg, var(--sky), var(--mint))" }
+                }
+              >
+                {n}
+              </span>
+            ) : null}
           </Link>
         );
       })}

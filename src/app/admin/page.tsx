@@ -10,10 +10,38 @@ import { Avatar } from "@/components/avatar";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
 import { Bell } from "@/components/bell";
+import {
+  AdminCasesFilter,
+  type AdminCaseView,
+  type AdminCaseCounts,
+} from "./cases-filter";
+import { AdminCasesRealtimeRefresh } from "./cases-realtime-refresh";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminDashboard() {
+// Bucket the case status values into the four tabs the filter renders.
+// Kept in sync with client-side IN_PROGRESS to match the client's view.
+const IN_PROGRESS_STATUSES = new Set([
+  "submitted",
+  "in_review",
+  "prepared",
+  "client_approval",
+  "filed",
+]);
+
+export default async function AdminDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view: viewRaw } = await searchParams;
+  const view: AdminCaseView =
+    viewRaw === "in_progress" ||
+    viewRaw === "completed" ||
+    viewRaw === "pending"
+      ? viewRaw
+      : "all";
+
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
@@ -38,17 +66,33 @@ export default async function AdminDashboard() {
     getAdminNavCounts(),
   ]);
 
-  const totalCases = cases?.length ?? 0;
-  const paidCases = (cases ?? []).filter(
+  const allCases = cases ?? [];
+  const totalCases = allCases.length;
+  const paidCases = allCases.filter(
     (c) => c.stripe_payment_status === "succeeded",
   ).length;
-  const assignedCases = (cases ?? []).filter((c) => c.accountant_id).length;
-  const unassignedPaid = (cases ?? []).filter(
+  const assignedCases = allCases.filter((c) => c.accountant_id).length;
+  const unassignedPaid = allCases.filter(
     (c) =>
       c.accountant_id === null &&
       c.status === "submitted" &&
       c.stripe_payment_status === "succeeded",
   ).length;
+
+  const caseCounts: AdminCaseCounts = {
+    all: allCases.length,
+    in_progress: allCases.filter((c) => IN_PROGRESS_STATUSES.has(c.status)).length,
+    completed: allCases.filter((c) => c.status === "complete").length,
+    pending: allCases.filter((c) => c.status === "draft").length,
+  };
+
+  const filteredCases = allCases.filter((c) => {
+    if (view === "all") return true;
+    if (view === "in_progress") return IN_PROGRESS_STATUSES.has(c.status);
+    if (view === "completed") return c.status === "complete";
+    if (view === "pending") return c.status === "draft";
+    return true;
+  });
 
   const relevantUserIds = Array.from(
     new Set([
@@ -159,17 +203,32 @@ export default async function AdminDashboard() {
 
       {/* Cases */}
       <section>
-        <h2
-          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          All cases ({totalCases})
-        </h2>
-        {!cases || cases.length === 0 ? (
-          <EmptyState title="No cases yet." hint="Cases will appear here as clients submit them." />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2
+            className="text-sm font-semibold uppercase tracking-wider text-slate"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            Cases ({filteredCases.length})
+          </h2>
+        </div>
+        <AdminCasesRealtimeRefresh />
+        <AdminCasesFilter active={view} counts={caseCounts} />
+        {filteredCases.length === 0 ? (
+          <EmptyState
+            title={
+              totalCases === 0
+                ? "No cases yet."
+                : "Nothing to show in this view."
+            }
+            hint={
+              totalCases === 0
+                ? "Cases will appear here as clients submit them."
+                : "Switch tabs above to see cases in other states."
+            }
+          />
         ) : (
           <ul className="grid gap-3">
-            {cases.map((c) => {
+            {filteredCases.map((c) => {
               const seg = getSegment(c.segment);
               const tier = getTier(c.tier);
               return (

@@ -8,9 +8,10 @@ import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { formatDate } from "@/lib/format";
-import { ClientNav, ClientCasesFilter } from "./client-nav";
+import { ClientNav, ClientCasesFilter, type ClientCaseCounts } from "./client-nav";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "./suspension-banner";
+import { ClientCasesRealtimeRefresh } from "./cases-realtime-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,12 @@ export default async function ClientDashboard({
     return IN_PROGRESS.has(c.status);
   });
 
+  const counts: ClientCaseCounts = {
+    in_progress: all.filter((c) => IN_PROGRESS.has(c.status)).length,
+    completed: all.filter((c) => c.status === "complete").length,
+    pending: all.filter((c) => c.status === "draft").length,
+  };
+
   return (
     <DashboardShell
       eyebrow="Client workspace"
@@ -62,9 +69,10 @@ export default async function ClientDashboard({
       bell={<Bell userId={me.id} role={me.role} />}
     >
       <ClientSuspensionBanner />
+      <ClientCasesRealtimeRefresh clientId={me.id} />
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <ClientCasesFilter active={view} />
+        <ClientCasesFilter active={view} counts={counts} />
         {me.status !== "suspended" ? (
           <SLLink href="/client/new" variant="primary">
             Start a new return

@@ -2,13 +2,27 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SLButton } from "@/components/sl-button";
+import { Avatar } from "@/components/avatar";
 
 type Props = {
   onChange: (file: File | null) => void;
   size?: number;
+  // When the user hasn't chosen a new file yet, the built-in preview shows
+  // the current avatar instead of the person-silhouette placeholder — this
+  // is what gets displayed today, not a "before/after" pair. Pass the same
+  // fields the Avatar component takes.
+  currentPath?: string | null;
+  currentName?: string | null;
+  currentEmail?: string | null;
 };
 
-export function AvatarPicker({ onChange, size = 96 }: Props) {
+export function AvatarPicker({
+  onChange,
+  size = 96,
+  currentPath = null,
+  currentName = null,
+  currentEmail = null,
+}: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [mode, setMode] = useState<"idle" | "camera">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -128,33 +142,24 @@ export function AvatarPicker({ onChange, size = 96 }: Props) {
 
   return (
     <div className="flex items-center gap-4">
-      <div
-        className="relative shrink-0 overflow-hidden rounded-full border border-line bg-cloud"
-        style={{ width: size, height: size }}
-      >
-        {previewUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={previewUrl}
-            alt="Selected avatar"
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-slate">
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            >
-              <circle cx="12" cy="8" r="4" />
-              <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
-            </svg>
-          </div>
-        )}
-      </div>
+      {previewUrl ? (
+        // A file is selected — show the new photo as an inline preview.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={previewUrl}
+          alt="Selected avatar"
+          className="shrink-0 rounded-full border border-line object-cover"
+          style={{ width: size, height: size }}
+        />
+      ) : (
+        // No new file yet — render the current avatar (photo or initials).
+        <Avatar
+          path={currentPath}
+          name={currentName}
+          email={currentEmail}
+          size={size}
+        />
+      )}
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex flex-wrap gap-2">
           <SLButton type="button" variant="outline" onClick={openCamera}>
