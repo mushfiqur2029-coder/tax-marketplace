@@ -3,6 +3,7 @@ import { loadClientCase } from "@/lib/case";
 import { updateIntakeAction } from "@/app/client/actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
+import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { IntakeForm } from "./intake-form";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
@@ -34,6 +35,7 @@ export default async function IntakePage({
       role={data.me.role}
       bell={<Bell userId={data.me.id} role={data.me.role} />}
     >
+      <ClientSuspensionBanner />
       <div className="mb-8">
         <StepTracker steps={buildSteps(id, data, "intake")} />
       </div>

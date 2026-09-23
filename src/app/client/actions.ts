@@ -24,11 +24,24 @@ async function assertCaseOwner(caseId: string) {
   return { me, supabase, caseRow: data };
 }
 
+// Suspended clients keep read access to their existing cases (via the
+// existing SELECT policies) but every mutating server action goes through
+// this gate. Enforced at server-action layer rather than RLS because a
+// broader block would also stop admin support-chat replies from being read.
+function assertNotSuspended(status: string, action: string): void {
+  if (status === "suspended") {
+    throw new Error(
+      `Your account is suspended and can't ${action}. Contact support to reinstate.`,
+    );
+  }
+}
+
 // -------------------------------------------------------------------------
 // Create a case draft with segment + tier, then redirect into intake.
 // -------------------------------------------------------------------------
 export async function createCaseAction(formData: FormData) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "start a new return");
   const segment = String(formData.get("segment") ?? "") as SegmentId;
   const tier = String(formData.get("tier") ?? "") as TierId;
   const deadlineRaw = String(formData.get("deadline") ?? "").trim();
@@ -164,7 +177,8 @@ export async function deleteDocumentAction(caseId: string, documentId: string) {
 // Create a Stripe Checkout session and redirect the user to it.
 // -------------------------------------------------------------------------
 export async function startCheckoutAction(caseId: string) {
-  const { supabase, caseRow } = await assertCaseOwner(caseId);
+  const { me, supabase, caseRow } = await assertCaseOwner(caseId);
+  assertNotSuspended(me.status, "make payments");
   if (caseRow.status !== "draft") throw new Error("Case already submitted.");
 
   const seg = getSegment(caseRow.segment);
@@ -259,7 +273,8 @@ export async function reconcilePaymentAction(caseId: string) {
 // return can never be marked filed without the client's explicit sign-off.
 // -------------------------------------------------------------------------
 export async function approveAndFileAction(caseId: string) {
-  const { supabase, caseRow } = await assertCaseOwner(caseId);
+  const { me, supabase, caseRow } = await assertCaseOwner(caseId);
+  assertNotSuspended(me.status, "approve filings");
   if (caseRow.status !== "client_approval") {
     throw new Error("This case isn't awaiting your approval right now.");
   }

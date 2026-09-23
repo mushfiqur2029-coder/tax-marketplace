@@ -9,6 +9,47 @@ import { insertWithdrawalPaidNotification } from "@/lib/notifications";
 const BUCKET = "case-documents";
 
 // -------------------------------------------------------------------------
+// Toggle a client's account status. Suspended clients stay signed-in and
+// keep read-only access to their existing cases, but assertActiveClient in
+// src/app/client/actions.ts blocks mutating server actions (createCase,
+// startCheckout, approveAndFile).
+// -------------------------------------------------------------------------
+export async function setClientStatusAction(
+  clientId: string,
+  status: "active" | "suspended",
+  note: string | null,
+) {
+  const me = await requireRole("admin");
+  const admin = createAdminClient();
+
+  const { data: target } = await admin
+    .from("users")
+    .select("id, role")
+    .eq("id", clientId)
+    .single();
+  if (!target || target.role !== "client") {
+    throw new Error("That user isn't a client.");
+  }
+
+  const { error: updateErr } = await admin
+    .from("users")
+    .update({ status })
+    .eq("id", clientId);
+  if (updateErr) throw new Error(updateErr.message);
+
+  await admin.from("admin_actions").insert({
+    target_user_id: clientId,
+    admin_id: me.id,
+    action: status === "suspended" ? "suspend" : "reinstate",
+    note: note?.trim() || null,
+  });
+
+  revalidatePath("/admin/clients");
+  revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath("/admin");
+}
+
+// -------------------------------------------------------------------------
 // Approve or reject a pending accountant.
 // -------------------------------------------------------------------------
 export async function setAccountantApprovalAction(

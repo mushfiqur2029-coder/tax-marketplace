@@ -34,7 +34,13 @@ export type CaseDoc = {
 };
 
 export type CaseData = {
-  me: { id: string; email: string; role: Role; name?: string | null };
+  me: {
+    id: string;
+    email: string;
+    role: Role;
+    name?: string | null;
+    status: "active" | "warned" | "suspended";
+  };
   row: CaseRow;
   segment: Segment;
   tier: PlanTier;

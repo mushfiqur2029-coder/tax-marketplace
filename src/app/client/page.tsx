@@ -10,6 +10,7 @@ import { DeadlinePill } from "@/components/case/deadline-pill";
 import { formatDate } from "@/lib/format";
 import { ClientNav, ClientCasesFilter } from "./client-nav";
 import { Bell } from "@/components/bell";
+import { ClientSuspensionBanner } from "./suspension-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -60,14 +61,18 @@ export default async function ClientDashboard({
       subnav={<ClientNav active="cases" />}
       bell={<Bell userId={me.id} role={me.role} />}
     >
+      <ClientSuspensionBanner />
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <ClientCasesFilter active={view} />
-        <SLLink href="/client/new" variant="primary">
-          Start a new return
-          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M4 10h12M11 5l5 5-5 5" />
-          </svg>
-        </SLLink>
+        {me.status !== "suspended" ? (
+          <SLLink href="/client/new" variant="primary">
+            Start a new return
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M4 10h12M11 5l5 5-5 5" />
+            </svg>
+          </SLLink>
+        ) : null}
       </div>
 
       {filtered.length === 0 ? (

@@ -7,6 +7,7 @@ import type { AdminNavCounts } from "./admin-counts";
 export type AdminTab =
   | "dashboard"
   | "accountants"
+  | "clients"
   | "withdrawals"
   | "admins"
   | "profile-changes"
@@ -22,6 +23,7 @@ type TabDef = {
 const TABS: TabDef[] = [
   { key: "dashboard", label: "Dashboard", href: "/admin", countKey: "unreadNotifications" },
   { key: "accountants", label: "Accountants", href: "/admin/accountants", countKey: "accountants" },
+  { key: "clients", label: "Clients", href: "/admin/clients", countKey: "suspendedClients" },
   { key: "withdrawals", label: "Withdrawals", href: "/admin/withdrawals", countKey: "withdrawals" },
   { key: "admins", label: "Admins", href: "/admin/admins" },
   { key: "profile-changes", label: "Profile changes", href: "/admin/profile-changes", countKey: "profileChanges" },
@@ -31,6 +33,7 @@ const TABS: TabDef[] = [
 function tabFromPath(pathname: string | null): AdminTab {
   if (!pathname) return "dashboard";
   if (pathname.startsWith("/admin/accountants")) return "accountants";
+  if (pathname.startsWith("/admin/clients")) return "clients";
   if (pathname.startsWith("/admin/withdrawals")) return "withdrawals";
   if (pathname.startsWith("/admin/admins")) return "admins";
   if (pathname.startsWith("/admin/profile-changes")) return "profile-changes";

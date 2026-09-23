@@ -6,6 +6,7 @@ import {
 } from "@/app/profile-actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
+import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { ClientNav } from "@/app/client/client-nav";
 import { ClientProfileForm } from "./client-profile-form";
 import { ChangePasswordForm } from "@/components/change-password-form";
@@ -56,6 +57,7 @@ export default async function ClientAccountPage() {
       subnav={<ClientNav active="profile" />}
       bell={<Bell userId={me.id} role={me.role} />}
     >
+      <ClientSuspensionBanner />
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"

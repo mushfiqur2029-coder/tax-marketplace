@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 // subnav prop.
 export type AdminNavCounts = {
   accountants: number;
+  clients: number;
+  suspendedClients: number;
   withdrawals: number;
   profileChanges: number;
   unreadNotifications: number;
@@ -20,6 +22,8 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
 
   const [
     { count: accountants },
+    { count: clients },
+    { count: suspendedClients },
     { count: withdrawals },
     { count: profileChanges },
     { count: unreadNotifications },
@@ -28,6 +32,15 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
       .from("accountant_profiles")
       .select("user_id", { count: "exact", head: true })
       .eq("approval_status", "pending"),
+    admin
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "client"),
+    admin
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "client")
+      .eq("status", "suspended"),
     admin
       .from("withdrawal_requests")
       .select("id", { count: "exact", head: true })
@@ -47,6 +60,8 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
 
   return {
     accountants: accountants ?? 0,
+    clients: clients ?? 0,
+    suspendedClients: suspendedClients ?? 0,
     withdrawals: withdrawals ?? 0,
     profileChanges: profileChanges ?? 0,
     unreadNotifications: unreadNotifications ?? 0,

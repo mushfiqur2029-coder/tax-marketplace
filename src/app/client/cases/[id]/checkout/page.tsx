@@ -4,6 +4,7 @@ import { loadClientCase } from "@/lib/case";
 import { startCheckoutAction } from "@/app/client/actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
+import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { SLButton } from "@/components/sl-button";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
@@ -25,6 +26,11 @@ export default async function CheckoutPage({
   if (!data.progress.intakeDone) {
     redirect(`/client/cases/${id}/intake`);
   }
+  // Suspended clients can't take payments; send them back to their case
+  // page where the banner explains why.
+  if (data.me.status === "suspended") {
+    redirect(`/client/cases/${id}`);
+  }
 
   const bound = async () => {
     "use server";
@@ -41,6 +47,7 @@ export default async function CheckoutPage({
       role={data.me.role}
       bell={<Bell userId={data.me.id} role={data.me.role} />}
     >
+      <ClientSuspensionBanner />
       <div className="mb-8">
         <StepTracker steps={buildSteps(id, data, "checkout")} />
       </div>

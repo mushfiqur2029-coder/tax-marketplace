@@ -6,6 +6,7 @@ import { getTier } from "@/lib/plans";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { ClientNav } from "@/app/client/client-nav";
 import { Bell } from "@/components/bell";
+import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export default async function ClientPaymentsPage() {
       subnav={<ClientNav active="payments" />}
       bell={<Bell userId={me.id} role={me.role} />}
     >
+      <ClientSuspensionBanner />
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
         <StatCard label="Payments made" value={String(cases?.length ?? 0)} />
         <StatCard label="Total paid" value={`£${(totalPence / 100).toFixed(2)}`} />

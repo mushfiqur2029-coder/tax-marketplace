@@ -3,6 +3,7 @@ import { loadClientCase } from "@/lib/case";
 import { reconcilePaymentAction, approveAndFileAction } from "@/app/client/actions";
 import { ApproveAndFileButton } from "./approve-and-file-button";
 import { Bell } from "@/components/bell";
+import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import {
   sendMessageAction,
   uploadMessageAttachmentAction,
@@ -111,6 +112,7 @@ export default async function CaseDetailPage({
       role={data.me.role}
       bell={<Bell userId={data.me.id} role={data.me.role} />}
     >
+      <ClientSuspensionBanner />
       {paid === "1" && data.progress.paid ? (
         <div
           role="status"
@@ -135,7 +137,7 @@ export default async function CaseDetailPage({
         ) : null}
       </div>
 
-      {data.row.status === "client_approval" ? (
+      {data.row.status === "client_approval" && data.me.status !== "suspended" ? (
         <ApproveAndFileButton approve={approve} />
       ) : null}
 
