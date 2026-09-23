@@ -263,12 +263,17 @@ export async function approveAndFileAction(caseId: string) {
   if (caseRow.status !== "client_approval") {
     throw new Error("This case isn't awaiting your approval right now.");
   }
-  const { error } = await supabase
+  // .select().single() converts a 0-row RLS-filtered result into a PGRST116
+  // error so we can't silently succeed if the policy blocks the update.
+  const { data, error } = await supabase
     .from("cases")
     .update({ status: "filed" })
     .eq("id", caseId)
-    .eq("status", "client_approval");
+    .eq("status", "client_approval")
+    .select("id")
+    .single();
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Approval didn't take. Try again.");
   revalidatePath(`/client/cases/${caseId}`);
   revalidatePath("/client");
   revalidatePath("/accountant");
