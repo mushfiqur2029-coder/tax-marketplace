@@ -152,6 +152,74 @@ export async function signInAction(
   redirect(`/${userRow.role}`);
 }
 
+// -------------------------------------------------------------------------
+// Forgot password: send a reset link to the user's inbox.
+//
+// Intentionally returns the same "if it exists" info message regardless of
+// whether the email is registered — Supabase's resetPasswordForEmail already
+// behaves this way, and echoing account existence would let an attacker
+// enumerate valid emails.
+// -------------------------------------------------------------------------
+export async function sendPasswordResetAction(
+  _prev: AuthState,
+  formData: FormData,
+): Promise<AuthState> {
+  const email = String(formData.get("email") ?? "").trim();
+  if (!email) return { error: "Enter your email address." };
+
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const redirectTo = `${site.replace(/\/+$/, "")}/reset-password`;
+
+  const supabase = await createClient();
+  await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  // Do not surface errors from resetPasswordForEmail — some (like "user not
+  // found") would leak account existence. Rate-limit errors, if any, will
+  // manifest as no email arriving, which is acceptable UX.
+
+  return {
+    info: "If that email exists, a reset link has been sent. Check your inbox.",
+  };
+}
+
+// -------------------------------------------------------------------------
+// Complete the password reset. Called from /reset-password after the user
+// has landed there via the Supabase recovery link — which the client-side
+// Supabase SDK converts into a valid session cookie automatically.
+// updateUser then targets that session's user.
+// -------------------------------------------------------------------------
+export async function completePasswordResetAction(
+  _prev: AuthState,
+  formData: FormData,
+): Promise<AuthState> {
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+
+  if (password.length < 8) {
+    return { error: "New password must be at least 8 characters." };
+  }
+  if (password !== confirm) {
+    return { error: "Passwords do not match." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return {
+      error:
+        "Reset link is invalid or expired. Request a fresh one from the login page.",
+    };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: error.message };
+
+  // Sign the recovery session out so the fresh password is the only path in.
+  await supabase.auth.signOut();
+  redirect("/login?reset=1");
+}
+
 export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();

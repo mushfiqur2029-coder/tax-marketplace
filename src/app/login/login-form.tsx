@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
 import { signInAction, type AuthState } from "@/app/actions";
 import { SLButton } from "@/components/sl-button";
 import { PasswordField } from "@/components/password-field";
@@ -10,11 +12,33 @@ export function LoginForm() {
     signInAction,
     null,
   );
+  const params = useSearchParams();
+  const justReset = params?.get("reset") === "1";
 
   return (
     <form action={formAction} className="space-y-4">
       <Field label="Email" name="email" type="email" autoComplete="email" />
-      <PasswordField name="password" autoComplete="current-password" required />
+      <div className="space-y-1.5">
+        <PasswordField name="password" autoComplete="current-password" required />
+        <div className="text-right">
+          <Link
+            href="/forgot-password"
+            className="text-xs font-semibold text-navy-deep underline-offset-4 hover:text-sky hover:underline"
+          >
+            Forgot password?
+          </Link>
+        </div>
+      </div>
+
+      {justReset && !state?.error ? (
+        <p
+          className="rounded-lg px-3 py-2 text-sm font-medium"
+          role="status"
+          style={{ background: "rgba(19,217,160,0.14)", color: "#0E9E77" }}
+        >
+          Password updated. Sign in with your new one.
+        </p>
+      ) : null}
 
       {state?.error ? (
         <p
