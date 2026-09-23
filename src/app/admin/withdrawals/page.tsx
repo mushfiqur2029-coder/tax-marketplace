@@ -45,7 +45,7 @@ export default async function AdminWithdrawalsPage() {
 
   const markPaid = async (requestId: string, fd: FormData) => {
     "use server";
-    await markWithdrawalPaidAction(requestId, fd);
+    return markWithdrawalPaidAction(requestId, fd);
   };
   const signReceipt = async (path: string) => {
     "use server";

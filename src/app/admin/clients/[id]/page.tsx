@@ -78,7 +78,7 @@ export default async function AdminClientDetail({
     note: string | null,
   ) => {
     "use server";
-    await setClientStatusAction(clientId, status, note);
+    return setClientStatusAction(clientId, status, note);
   };
 
   return (

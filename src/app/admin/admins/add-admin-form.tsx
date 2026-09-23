@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 export function AddAdminForm({
   create,
@@ -10,7 +11,7 @@ export function AddAdminForm({
     name: string;
     email: string;
     password: string;
-  }) => Promise<void>;
+  }) => Promise<ActionResult<string>>;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,14 +34,14 @@ export function AddAdminForm({
         setError(null);
         setOk(null);
         start(async () => {
-          try {
-            await create({ name, email, password });
+          const res = await create({ name, email, password });
+          if (res.ok) {
             setOk(`${email} added. Temporary password: ${password}`);
             setName("");
             setEmail("");
             setPassword("");
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed.");
+          } else {
+            setError(res.error);
           }
         });
       }}

@@ -1,20 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import type { ActionResult } from "@/lib/action-result";
 
 export function ReceiptLink({
   path,
   sign,
 }: {
   path: string;
-  sign: (path: string) => Promise<string>;
+  sign: (path: string) => Promise<ActionResult<string>>;
 }) {
   const [busy, setBusy] = useState(false);
   const open = async () => {
     setBusy(true);
     try {
-      const url = await sign(path);
-      window.open(url, "_blank", "noopener");
+      const res = await sign(path);
+      if (res.ok) window.open(res.data, "_blank", "noopener");
     } finally {
       setBusy(false);
     }

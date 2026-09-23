@@ -5,12 +5,16 @@ import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { insertWithdrawalRequestedNotifications } from "@/lib/notifications";
+import { type ActionResult, fail } from "@/lib/action-result";
+
+export type { ActionResult };
 
 export async function requestWithdrawalAction(input: {
   accountName: string;
   sortCode: string;
   accountNumber: string;
-}) {
+}): Promise<ActionResult> {
+  try {
   const me = await requireApprovedAccountant();
   const accountName = input.accountName.trim();
   const sortCode = input.sortCode.trim();
@@ -50,4 +54,8 @@ export async function requestWithdrawalAction(input: {
   }
 
   revalidatePath("/accountant/wallet");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }

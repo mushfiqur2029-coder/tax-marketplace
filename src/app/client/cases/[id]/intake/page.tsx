@@ -22,7 +22,7 @@ export default async function IntakePage({
 
   const bound = async (fd: FormData) => {
     "use server";
-    await updateIntakeAction(id, fd);
+    return updateIntakeAction(id, fd);
   };
 
   return (

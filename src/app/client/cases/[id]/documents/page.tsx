@@ -28,11 +28,11 @@ export default async function DocumentsPage({
 
   const uploadBound = async (fd: FormData) => {
     "use server";
-    await uploadDocumentAction(id, fd);
+    return uploadDocumentAction(id, fd);
   };
   const deleteBound = async (docId: string) => {
     "use server";
-    await deleteDocumentAction(id, docId);
+    return deleteDocumentAction(id, docId);
   };
 
   return (

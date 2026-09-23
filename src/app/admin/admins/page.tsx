@@ -29,7 +29,7 @@ export default async function AdminAdminsPage() {
     password: string;
   }) => {
     "use server";
-    await createAdminAction(input);
+    return createAdminAction(input);
   };
 
   return (

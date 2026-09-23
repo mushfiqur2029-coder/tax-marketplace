@@ -3,10 +3,11 @@
 import { useTransition } from "react";
 import type { CaseDoc } from "@/lib/case";
 import { formatDateTime } from "@/lib/format";
+import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
   docs: CaseDoc[];
-  onDelete: (docId: string) => Promise<void>;
+  onDelete: (docId: string) => Promise<ActionResult>;
 };
 
 export function DocumentList({ docs, onDelete }: Props) {
@@ -42,7 +43,7 @@ export function DocumentList({ docs, onDelete }: Props) {
           </div>
           <button
             type="button"
-            onClick={() => start(() => onDelete(d.id))}
+            onClick={() => start(async () => { await onDelete(d.id); })}
             disabled={pending}
             className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
           >

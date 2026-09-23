@@ -52,7 +52,7 @@ export default async function WalletPage({
 
   const request = async (input: Parameters<typeof requestWithdrawalAction>[0]) => {
     "use server";
-    await requestWithdrawalAction(input);
+    return requestWithdrawalAction(input);
   };
   const signReceipt = async (path: string) => {
     "use server";

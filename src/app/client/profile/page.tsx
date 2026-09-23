@@ -38,7 +38,7 @@ export default async function ClientAccountPage() {
     avatar: File | null,
   ) => {
     "use server";
-    await submitClientProfileChangeAction(edit, avatar);
+    return submitClientProfileChangeAction(edit, avatar);
   };
 
   const change = async (current: string, next: string, confirm: string) => {

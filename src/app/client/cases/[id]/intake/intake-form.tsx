@@ -3,11 +3,14 @@
 import { useState } from "react";
 import type { Segment } from "@/lib/segments";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
   segment: Segment;
   initial: Record<string, string>;
-  action: (fd: FormData) => Promise<void>;
+  // Server action redirects on success; ok path never resolves. On error
+  // the action returns the message and we render it inline.
+  action: (fd: FormData) => Promise<ActionResult>;
 };
 
 export function IntakeForm({ segment, initial, action }: Props) {
@@ -19,12 +22,9 @@ export function IntakeForm({ segment, initial, action }: Props) {
       action={async (fd) => {
         setError(null);
         setPending(true);
-        try {
-          await action(fd);
-        } catch (e) {
-          setPending(false);
-          setError(e instanceof Error ? e.message : "Could not save.");
-        }
+        const res = await action(fd);
+        setPending(false);
+        if (!res.ok) setError(res.error);
       }}
       className="space-y-5"
     >

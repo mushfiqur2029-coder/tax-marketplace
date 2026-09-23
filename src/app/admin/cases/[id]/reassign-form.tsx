@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 type Option = { id: string; email: string };
 
@@ -14,7 +15,7 @@ export function ReassignForm({
   caseId: string;
   current: string | null;
   options: Option[];
-  reassign: (accountantId: string, note: string | null) => Promise<void>;
+  reassign: (accountantId: string, note: string | null) => Promise<ActionResult>;
 }) {
   void caseId;
   const [selected, setSelected] = useState<string>(current ?? "");
@@ -38,12 +39,9 @@ export function ReassignForm({
           return;
         }
         start(async () => {
-          try {
-            await reassign(selected, note || null);
-            setSaved(true);
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Reassign failed.");
-          }
+          const res = await reassign(selected, note || null);
+          if (res.ok) setSaved(true);
+          else setError(res.error);
         });
       }}
     >

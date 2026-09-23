@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 export function ReviewActions({
   id,
@@ -9,8 +10,8 @@ export function ReviewActions({
   reject,
 }: {
   id: string;
-  approve: (id: string, note: string | null) => Promise<void>;
-  reject: (id: string, note: string | null) => Promise<void>;
+  approve: (id: string, note: string | null) => Promise<ActionResult>;
+  reject: (id: string, note: string | null) => Promise<ActionResult>;
 }) {
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
@@ -19,12 +20,9 @@ export function ReviewActions({
   const go = (fn: typeof approve) => {
     setError(null);
     start(async () => {
-      try {
-        await fn(id, note || null);
-        setNote("");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Update failed.");
-      }
+      const res = await fn(id, note || null);
+      if (res.ok) setNote("");
+      else setError(res.error);
     });
   };
 

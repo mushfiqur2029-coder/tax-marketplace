@@ -3,10 +3,11 @@
 import { useState, useTransition } from "react";
 import type { CaseDoc } from "@/lib/case";
 import { formatDateTime } from "@/lib/format";
+import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
   docs: CaseDoc[];
-  signUrl: (path: string) => Promise<string>;
+  signUrl: (path: string) => Promise<ActionResult<string>>;
 };
 
 export function DocumentsList({ docs, signUrl }: Props) {
@@ -25,8 +26,8 @@ export function DocumentsList({ docs, signUrl }: Props) {
     setBusyId(doc.id);
     start(async () => {
       try {
-        const url = await signUrl(doc.file_url);
-        window.open(url, "_blank", "noopener");
+        const res = await signUrl(doc.file_url);
+        if (res.ok) window.open(res.data, "_blank", "noopener");
       } finally {
         setBusyId(null);
       }

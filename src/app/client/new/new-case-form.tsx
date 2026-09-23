@@ -4,10 +4,13 @@ import { useMemo, useState } from "react";
 import type { Segment, SegmentId } from "@/lib/segments";
 import { tiersForSegment, type PlanTier, type TierId } from "@/lib/plans";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
   segments: Segment[];
-  action: (fd: FormData) => Promise<void>;
+  // On success the action redirects (never resolves normally). If it does
+  // resolve, it returned an error which we render inline.
+  action: (fd: FormData) => Promise<ActionResult>;
 };
 
 export function NewCaseForm({ segments, action }: Props) {
@@ -35,12 +38,10 @@ export function NewCaseForm({ segments, action }: Props) {
       action={async (fd) => {
         setError(null);
         setPending(true);
-        try {
-          await action(fd);
-        } catch (e) {
-          setPending(false);
-          setError(e instanceof Error ? e.message : "Something went wrong.");
-        }
+        const res = await action(fd);
+        setPending(false);
+        if (!res.ok) setError(res.error);
+        // ok path: server action redirected before returning; nothing to do
       }}
       className="space-y-10"
     >

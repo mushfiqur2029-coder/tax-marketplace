@@ -10,7 +10,7 @@ type Props = {
     id: string,
     status: "active" | "suspended",
     note: string | null,
-  ) => Promise<void>;
+  ) => Promise<import("@/lib/action-result").ActionResult>;
 };
 
 // Toggle button that mirrors the accountant-detail approve/reject pattern.
@@ -28,12 +28,9 @@ export function SuspendActions({ clientId, currentStatus, setStatus }: Props) {
   const go = () => {
     setError(null);
     start(async () => {
-      try {
-        await setStatus(clientId, next, note || null);
-        setNote("");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Update failed.");
-      }
+      const res = await setStatus(clientId, next, note || null);
+      if (res.ok) setNote("");
+      else setError(res.error);
     });
   };
 

@@ -17,7 +17,7 @@ type Props = {
   current: Current;
   currentAvatarPath: string | null;
   pending: Record<string, string> | null;
-  submit: (edit: Current, avatar: File | null) => Promise<void>;
+  submit: (edit: Current, avatar: File | null) => Promise<import("@/lib/action-result").ActionResult>;
 };
 
 export function AccountantProfileForm({
@@ -45,12 +45,12 @@ export function AccountantProfileForm({
         setError(null);
         setOk(false);
         start(async () => {
-          try {
-            await submit(form, avatarFile);
+          const res = await submit(form, avatarFile);
+          if (res.ok) {
             setOk(true);
             setAvatarFile(null);
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Save failed.");
+          } else {
+            setError(res.error);
           }
         });
       }}

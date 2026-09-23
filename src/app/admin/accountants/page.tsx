@@ -60,7 +60,7 @@ export default async function AccountantsPage() {
     note: string | null,
   ) => {
     "use server";
-    await setAccountantApprovalAction(accountantId, decision, note);
+    return setAccountantApprovalAction(accountantId, decision, note);
   };
 
   const groups = {

@@ -12,7 +12,7 @@ export function ApprovalActions({
     id: string,
     decision: "approved" | "rejected",
     note: string | null,
-  ) => Promise<void>;
+  ) => Promise<import("@/lib/action-result").ActionResult>;
 }) {
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
@@ -21,12 +21,9 @@ export function ApprovalActions({
   const go = (decision: "approved" | "rejected") => {
     setError(null);
     start(async () => {
-      try {
-        await decide(accountantId, decision, note || null);
-        setNote("");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Update failed.");
-      }
+      const res = await decide(accountantId, decision, note || null);
+      if (res.ok) setNote("");
+      else setError(res.error);
     });
   };
 

@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { SLButton } from "@/components/sl-button";
 import { formatTime } from "@/lib/format";
 import type { MessageChannel } from "@/app/messages";
+import type { ActionResult } from "@/lib/action-result";
 
 export type ChatMessage = {
   id: string;
@@ -48,12 +49,12 @@ type Props = {
     attachmentPath?: string | null;
     attachmentName?: string | null;
     attachmentType?: string | null;
-  }) => Promise<ChatMessage>;
+  }) => Promise<ActionResult<ChatMessage>>;
   uploadAttachment: (
     caseId: string,
     fd: FormData,
-  ) => Promise<{ path: string; name: string; type: string }>;
-  getAttachmentUrl: (path: string) => Promise<string>;
+  ) => Promise<ActionResult<{ path: string; name: string; type: string }>>;
+  getAttachmentUrl: (path: string) => Promise<ActionResult<string>>;
 };
 
 // Same tiny WebAudio beep as the queue bell.
@@ -249,33 +250,37 @@ function ChatView({
     if (!body && !pendingFile) return;
     setError(null);
     startTransition(async () => {
-      try {
-        let attachmentPath: string | null = null;
-        let attachmentName: string | null = null;
-        let attachmentType: string | null = null;
-        if (pendingFile) {
-          const fd = new FormData();
-          fd.set("file", pendingFile);
-          const up = await uploadAttachment(caseId, fd);
-          attachmentPath = up.path;
-          attachmentName = up.name;
-          attachmentType = up.type;
+      let attachmentPath: string | null = null;
+      let attachmentName: string | null = null;
+      let attachmentType: string | null = null;
+      if (pendingFile) {
+        const fd = new FormData();
+        fd.set("file", pendingFile);
+        const up = await uploadAttachment(caseId, fd);
+        if (!up.ok) {
+          setError(up.error);
+          return;
         }
-        const inserted = await send({
-          caseId,
-          channel: thread.channel,
-          body,
-          attachmentPath,
-          attachmentName,
-          attachmentType,
-        });
-        onSent(inserted);
-        setText("");
-        setPendingFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not send.");
+        attachmentPath = up.data.path;
+        attachmentName = up.data.name;
+        attachmentType = up.data.type;
       }
+      const res = await send({
+        caseId,
+        channel: thread.channel,
+        body,
+        attachmentPath,
+        attachmentName,
+        attachmentType,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      onSent(res.data);
+      setText("");
+      setPendingFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     });
   };
 
@@ -386,7 +391,7 @@ function MessageBubble({
   m: ChatMessage;
   meId: string;
   senderLabel: string;
-  getAttachmentUrl: (path: string) => Promise<string>;
+  getAttachmentUrl: (path: string) => Promise<ActionResult<string>>;
 }) {
   const isMe = m.sender_id === meId;
   return (
@@ -440,14 +445,14 @@ function AttachmentLink({
   name: string;
   type: string;
   isMe: boolean;
-  getAttachmentUrl: (path: string) => Promise<string>;
+  getAttachmentUrl: (path: string) => Promise<ActionResult<string>>;
 }) {
   const [busy, setBusy] = useState(false);
   const open = async () => {
     setBusy(true);
     try {
-      const url = await getAttachmentUrl(path);
-      window.open(url, "_blank", "noopener");
+      const res = await getAttachmentUrl(path);
+      if (res.ok) window.open(res.data, "_blank", "noopener");
     } finally {
       setBusy(false);
     }

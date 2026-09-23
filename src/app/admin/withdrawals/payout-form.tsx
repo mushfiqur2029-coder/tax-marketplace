@@ -2,13 +2,14 @@
 
 import { useRef, useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 export function PayoutForm({
   requestId,
   markPaid,
 }: {
   requestId: string;
-  markPaid: (requestId: string, fd: FormData) => Promise<void>;
+  markPaid: (requestId: string, fd: FormData) => Promise<ActionResult>;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -20,11 +21,8 @@ export function PayoutForm({
       action={(fd) => {
         setError(null);
         start(async () => {
-          try {
-            await markPaid(requestId, fd);
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed.");
-          }
+          const res = await markPaid(requestId, fd);
+          if (!res.ok) setError(res.error);
         });
       }}
       className="flex flex-col items-stretch gap-2 sm:items-end"

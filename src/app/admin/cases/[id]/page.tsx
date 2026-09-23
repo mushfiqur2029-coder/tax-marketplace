@@ -129,7 +129,7 @@ export default async function AdminCasePage({
   };
   const reassign = async (accountantId: string, note: string | null) => {
     "use server";
-    await reassignCaseAction(id, accountantId, note);
+    return reassignCaseAction(id, accountantId, note);
   };
 
   return (

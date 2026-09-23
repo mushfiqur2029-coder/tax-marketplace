@@ -37,7 +37,7 @@ export default async function AccountantAccountPage() {
     avatar: File | null,
   ) => {
     "use server";
-    await submitAccountantProfileChangeAction(edit, avatar);
+    return submitAccountantProfileChangeAction(edit, avatar);
   };
 
   const change = async (current: string, next: string, confirm: string) => {

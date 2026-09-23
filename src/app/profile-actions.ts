@@ -5,6 +5,9 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { insertProfileChangeNotifications } from "@/lib/notifications";
+import { type ActionResult, fail } from "@/lib/action-result";
+
+export type { ActionResult };
 
 // Name / Contact number / Email are REQUIRED on every edit.
 // A future phase will add SMS + email verification via a confirmation code,
@@ -62,124 +65,144 @@ async function uploadAvatarIfProvided(
 export async function submitClientProfileChangeAction(
   edit: ClientProfileEdit,
   avatarFile: File | null,
-) {
-  const me = await requireRole("client");
-  const supabase = await createClient();
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("client");
+    const supabase = await createClient();
 
-  const name = edit.name.trim();
-  const contactNumber = edit.contact_number.trim();
-  const email = edit.email.trim();
-  const address = edit.address.trim();
+    const name = edit.name.trim();
+    const contactNumber = edit.contact_number.trim();
+    const email = edit.email.trim();
+    const address = edit.address.trim();
 
-  if (!name) throw new Error("Name is required.");
-  if (!contactNumber) throw new Error("Contact number is required.");
-  if (!email) throw new Error("Email is required.");
+    if (!name) throw new Error("Name is required.");
+    if (!contactNumber) throw new Error("Contact number is required.");
+    if (!email) throw new Error("Email is required.");
 
-  const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
+    const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
 
-  // Withdraw any previously-pending change from this user so only the latest
-  // request sits in the admin queue.
-  await supabase
-    .from("pending_profile_changes")
-    .delete()
-    .eq("user_id", me.id)
-    .eq("status", "pending");
+    // Withdraw any previously-pending change from this user so only the
+    // latest request sits in the admin queue.
+    await supabase
+      .from("pending_profile_changes")
+      .delete()
+      .eq("user_id", me.id)
+      .eq("status", "pending");
 
-  const proposed: Record<string, string> = {
-    name,
-    contact_number: contactNumber,
-    email,
-    address,
-  };
-  if (avatarPath) proposed.avatar_path = avatarPath;
+    const proposed: Record<string, string> = {
+      name,
+      contact_number: contactNumber,
+      email,
+      address,
+    };
+    if (avatarPath) proposed.avatar_path = avatarPath;
 
-  const { error } = await supabase.from("pending_profile_changes").insert({
-    user_id: me.id,
-    role: "client",
-    proposed,
-  });
-  if (error) throw new Error(error.message);
+    const { error } = await supabase.from("pending_profile_changes").insert({
+      user_id: me.id,
+      role: "client",
+      proposed,
+    });
+    if (error) throw new Error(error.message);
 
-  await insertProfileChangeNotifications({ submitterEmail: me.email });
+    await insertProfileChangeNotifications({ submitterEmail: me.email });
 
-  revalidatePath("/client/profile");
-  revalidatePath("/admin/profile-changes");
+    revalidatePath("/client/profile");
+    revalidatePath("/admin/profile-changes");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 export async function submitAccountantProfileChangeAction(
   edit: AccountantProfileEdit,
   avatarFile: File | null,
-) {
-  const me = await requireRole("accountant");
-  const supabase = await createClient();
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("accountant");
+    const supabase = await createClient();
 
-  const name = edit.name.trim();
-  const contactNumber = edit.contact_number.trim();
-  const email = edit.email.trim();
-  const companyName = edit.company_name?.trim() ?? "";
-  const companyEmail = edit.company_email?.trim() ?? "";
+    const name = edit.name.trim();
+    const contactNumber = edit.contact_number.trim();
+    const email = edit.email.trim();
+    const companyName = edit.company_name?.trim() ?? "";
+    const companyEmail = edit.company_email?.trim() ?? "";
 
-  if (!name) throw new Error("Name is required.");
-  if (!contactNumber) throw new Error("Contact number is required.");
-  if (!email) throw new Error("Email is required.");
+    if (!name) throw new Error("Name is required.");
+    if (!contactNumber) throw new Error("Contact number is required.");
+    if (!email) throw new Error("Email is required.");
 
-  const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
+    const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
 
-  await supabase
-    .from("pending_profile_changes")
-    .delete()
-    .eq("user_id", me.id)
-    .eq("status", "pending");
+    await supabase
+      .from("pending_profile_changes")
+      .delete()
+      .eq("user_id", me.id)
+      .eq("status", "pending");
 
-  const proposed: Record<string, string> = {
-    name,
-    contact_number: contactNumber,
-    email,
-    company_name: companyName,
-    company_email: companyEmail,
-  };
-  if (avatarPath) proposed.avatar_path = avatarPath;
+    const proposed: Record<string, string> = {
+      name,
+      contact_number: contactNumber,
+      email,
+      company_name: companyName,
+      company_email: companyEmail,
+    };
+    if (avatarPath) proposed.avatar_path = avatarPath;
 
-  const { error } = await supabase.from("pending_profile_changes").insert({
-    user_id: me.id,
-    role: "accountant",
-    proposed,
-  });
-  if (error) throw new Error(error.message);
+    const { error } = await supabase.from("pending_profile_changes").insert({
+      user_id: me.id,
+      role: "accountant",
+      proposed,
+    });
+    if (error) throw new Error(error.message);
 
-  await insertProfileChangeNotifications({ submitterEmail: me.email });
+    await insertProfileChangeNotifications({ submitterEmail: me.email });
 
-  revalidatePath("/accountant/profile");
-  revalidatePath("/admin/profile-changes");
+    revalidatePath("/accountant/profile");
+    revalidatePath("/admin/profile-changes");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // Admin: apply or reject a pending change via the security-definer RPCs.
 export async function approveProfileChangeAction(
   changeId: string,
   note: string | null,
-) {
-  await requireRole("admin");
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("apply_profile_change", {
-    p_change_id: changeId,
-    p_note: note,
-  });
-  if (error) throw new Error(error.message);
-  revalidatePath("/admin/profile-changes");
+): Promise<ActionResult> {
+  try {
+    await requireRole("admin");
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("apply_profile_change", {
+      p_change_id: changeId,
+      p_note: note,
+    });
+    if (error) throw new Error(error.message);
+    revalidatePath("/admin/profile-changes");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 export async function rejectProfileChangeAction(
   changeId: string,
   note: string | null,
-) {
-  await requireRole("admin");
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("reject_profile_change", {
-    p_change_id: changeId,
-    p_note: note,
-  });
-  if (error) throw new Error(error.message);
-  revalidatePath("/admin/profile-changes");
+): Promise<ActionResult> {
+  try {
+    await requireRole("admin");
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("reject_profile_change", {
+      p_change_id: changeId,
+      p_note: note,
+    });
+    if (error) throw new Error(error.message);
+    revalidatePath("/admin/profile-changes");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,8 +214,6 @@ export type AdminProfileEdit = {
   contact_number: string;
   email: string;
 };
-
-export type ActionResult = { ok: true } | { ok: false; error: string };
 
 export async function updateAdminProfileAction(
   edit: AdminProfileEdit,
@@ -246,10 +267,7 @@ export async function updateAdminProfileAction(
     revalidatePath("/admin");
     return { ok: true };
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Save failed.",
-    };
+    return fail(e, "Save failed.");
   }
 }
 

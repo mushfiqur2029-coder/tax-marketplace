@@ -5,6 +5,9 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { insertWithdrawalPaidNotification } from "@/lib/notifications";
+import { type ActionResult, fail } from "@/lib/action-result";
+
+export type { ActionResult };
 
 const BUCKET = "case-documents";
 
@@ -18,35 +21,40 @@ export async function setClientStatusAction(
   clientId: string,
   status: "active" | "suspended",
   note: string | null,
-) {
-  const me = await requireRole("admin");
-  const admin = createAdminClient();
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
 
-  const { data: target } = await admin
-    .from("users")
-    .select("id, role")
-    .eq("id", clientId)
-    .single();
-  if (!target || target.role !== "client") {
-    throw new Error("That user isn't a client.");
+    const { data: target } = await admin
+      .from("users")
+      .select("id, role")
+      .eq("id", clientId)
+      .single();
+    if (!target || target.role !== "client") {
+      throw new Error("That user isn't a client.");
+    }
+
+    const { error: updateErr } = await admin
+      .from("users")
+      .update({ status })
+      .eq("id", clientId);
+    if (updateErr) throw new Error(updateErr.message);
+
+    await admin.from("admin_actions").insert({
+      target_user_id: clientId,
+      admin_id: me.id,
+      action: status === "suspended" ? "suspend" : "reinstate",
+      note: note?.trim() || null,
+    });
+
+    revalidatePath("/admin/clients");
+    revalidatePath(`/admin/clients/${clientId}`);
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
   }
-
-  const { error: updateErr } = await admin
-    .from("users")
-    .update({ status })
-    .eq("id", clientId);
-  if (updateErr) throw new Error(updateErr.message);
-
-  await admin.from("admin_actions").insert({
-    target_user_id: clientId,
-    admin_id: me.id,
-    action: status === "suspended" ? "suspend" : "reinstate",
-    note: note?.trim() || null,
-  });
-
-  revalidatePath("/admin/clients");
-  revalidatePath(`/admin/clients/${clientId}`);
-  revalidatePath("/admin");
 }
 
 // -------------------------------------------------------------------------
@@ -56,26 +64,31 @@ export async function setAccountantApprovalAction(
   accountantId: string,
   decision: "approved" | "rejected",
   note: string | null,
-) {
-  const me = await requireRole("admin");
-  const admin = createAdminClient();
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
 
-  const { error: updateErr } = await admin
-    .from("accountant_profiles")
-    .update({ approval_status: decision })
-    .eq("user_id", accountantId);
-  if (updateErr) throw new Error(updateErr.message);
+    const { error: updateErr } = await admin
+      .from("accountant_profiles")
+      .update({ approval_status: decision })
+      .eq("user_id", accountantId);
+    if (updateErr) throw new Error(updateErr.message);
 
-  await admin.from("admin_actions").insert({
-    target_user_id: accountantId,
-    admin_id: me.id,
-    action: decision === "approved" ? "approve_accountant" : "reject_accountant",
-    note: note?.trim() || null,
-  });
+    await admin.from("admin_actions").insert({
+      target_user_id: accountantId,
+      admin_id: me.id,
+      action: decision === "approved" ? "approve_accountant" : "reject_accountant",
+      note: note?.trim() || null,
+    });
 
-  revalidatePath("/admin/accountants");
-  revalidatePath(`/admin/accountants/${accountantId}`);
-  revalidatePath("/admin");
+    revalidatePath("/admin/accountants");
+    revalidatePath(`/admin/accountants/${accountantId}`);
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -85,29 +98,31 @@ export async function createAdminAction(input: {
   name: string;
   email: string;
   password: string;
-}) {
-  await requireRole("admin");
-  const admin = createAdminClient();
-  const name = input.name.trim();
-  const email = input.email.trim();
-  if (!name || !email) throw new Error("Name and email are required.");
-  if (input.password.length < 8) {
-    throw new Error("Temporary password must be at least 8 characters.");
+}): Promise<ActionResult<string>> {
+  try {
+    await requireRole("admin");
+    const admin = createAdminClient();
+    const name = input.name.trim();
+    const email = input.email.trim();
+    if (!name || !email) throw new Error("Name and email are required.");
+    if (input.password.length < 8) {
+      throw new Error("Temporary password must be at least 8 characters.");
+    }
+
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { role: "admin", name },
+    });
+    if (error) throw new Error(error.message);
+    if (!data.user) throw new Error("Failed to create user.");
+
+    revalidatePath("/admin/admins");
+    return { ok: true, data: data.user.id };
+  } catch (e) {
+    return fail(e);
   }
-
-  const { data, error } = await admin.auth.admin.createUser({
-    email,
-    password: input.password,
-    email_confirm: true,
-    user_metadata: { role: "admin", name },
-  });
-  if (error) throw new Error(error.message);
-  if (!data.user) throw new Error("Failed to create user.");
-
-  // Trigger created a users row with role='admin' (from metadata) but no
-  // client_profiles / accountant_profiles row — that's what we want.
-  revalidatePath("/admin/admins");
-  return data.user.id;
 }
 
 // -------------------------------------------------------------------------
@@ -117,7 +132,8 @@ export async function reassignCaseAction(
   caseId: string,
   newAccountantId: string,
   note: string | null,
-) {
+): Promise<ActionResult> {
+  try {
   const me = await requireRole("admin");
   const supabase = await createClient();
 
@@ -174,6 +190,10 @@ export async function reassignCaseAction(
   revalidatePath(`/admin/cases/${caseId}`);
   revalidatePath(`/admin`);
   revalidatePath(`/accountant`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -184,7 +204,8 @@ export async function reassignCaseAction(
 export async function markWithdrawalPaidAction(
   requestId: string,
   formData: FormData,
-) {
+): Promise<ActionResult> {
+  try {
   await requireRole("admin");
   const supabase = await createClient();
   const admin = createAdminClient();
@@ -233,44 +254,54 @@ export async function markWithdrawalPaidAction(
 
   revalidatePath(`/admin/withdrawals`);
   revalidatePath(`/accountant/wallet`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // Signed URL for a receipt file. Callable by admin OR the owning accountant.
 // The path always has the shape "receipts/{withdrawal_id}/..." — we look up
 // the withdrawal and verify caller access before minting the URL.
-export async function getReceiptSignedUrl(path: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in.");
+export async function getReceiptSignedUrl(
+  path: string,
+): Promise<ActionResult<string>> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not signed in.");
 
-  const parts = path.split("/");
-  if (parts[0] !== "receipts" || parts.length < 3) {
-    throw new Error("Not a receipt path.");
+    const parts = path.split("/");
+    if (parts[0] !== "receipts" || parts.length < 3) {
+      throw new Error("Not a receipt path.");
+    }
+    const requestId = parts[1];
+
+    const admin = createAdminClient();
+    const { data: req } = await admin
+      .from("withdrawal_requests")
+      .select("accountant_id")
+      .eq("id", requestId)
+      .single();
+    if (!req) throw new Error("Withdrawal not found.");
+
+    const { data: me } = await admin
+      .from("users")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    const isAdmin = me?.role === "admin";
+    const isOwner = req.accountant_id === user.id;
+    if (!isAdmin && !isOwner) throw new Error("Not allowed.");
+
+    const { data, error } = await admin.storage
+      .from(BUCKET)
+      .createSignedUrl(path, 60);
+    if (error || !data) throw new Error(error?.message ?? "Sign URL failed.");
+    return { ok: true, data: data.signedUrl };
+  } catch (e) {
+    return fail(e);
   }
-  const requestId = parts[1];
-
-  const admin = createAdminClient();
-  const { data: req } = await admin
-    .from("withdrawal_requests")
-    .select("accountant_id")
-    .eq("id", requestId)
-    .single();
-  if (!req) throw new Error("Withdrawal not found.");
-
-  const { data: me } = await admin
-    .from("users")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-  const isAdmin = me?.role === "admin";
-  const isOwner = req.accountant_id === user.id;
-  if (!isAdmin && !isOwner) throw new Error("Not allowed.");
-
-  const { data, error } = await admin.storage
-    .from(BUCKET)
-    .createSignedUrl(path, 60);
-  if (error || !data) throw new Error(error?.message ?? "Sign URL failed.");
-  return data.signedUrl;
 }

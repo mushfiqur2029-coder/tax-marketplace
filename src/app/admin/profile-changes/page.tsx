@@ -36,11 +36,11 @@ export default async function AdminProfileChangesPage() {
 
   const approve = async (id: string, note: string | null) => {
     "use server";
-    await approveProfileChangeAction(id, note);
+    return approveProfileChangeAction(id, note);
   };
   const reject = async (id: string, note: string | null) => {
     "use server";
-    await rejectProfileChangeAction(id, note);
+    return rejectProfileChangeAction(id, note);
   };
 
   const pending = (changes ?? []).filter((c) => c.status === "pending");

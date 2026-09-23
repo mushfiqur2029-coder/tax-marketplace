@@ -5,9 +5,9 @@ import { startCheckoutAction } from "@/app/client/actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { SLButton } from "@/components/sl-button";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
+import { PayButton } from "./pay-button";
 
 export default async function CheckoutPage({
   params,
@@ -34,7 +34,7 @@ export default async function CheckoutPage({
 
   const bound = async () => {
     "use server";
-    await startCheckoutAction(id);
+    return startCheckoutAction(id);
   };
 
   return (
@@ -109,11 +109,10 @@ export default async function CheckoutPage({
             {data.tier.tagline}
             {data.tier.priceGbpSubtitle ? ` · ${data.tier.priceGbpSubtitle}` : ""}
           </p>
-          <form action={bound} className="mt-6">
-            <SLButton type="submit" variant="primary" block>
-              Pay £{data.tier.priceGbp} with card
-            </SLButton>
-          </form>
+          <PayButton
+            amountLabel={`£${data.tier.priceGbp}`}
+            start={bound}
+          />
           <p className="mt-3 text-[11px] text-slate">
             You'll be redirected to Stripe. Test card <code className="font-mono">4242 4242 4242 4242</code>, any future date, any CVC.
           </p>

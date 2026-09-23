@@ -2,9 +2,10 @@
 
 import { useRef, useState } from "react";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
-  action: (fd: FormData) => Promise<void>;
+  action: (fd: FormData) => Promise<ActionResult>;
 };
 
 export function DocumentUploader({ action }: Props) {
@@ -18,14 +19,13 @@ export function DocumentUploader({ action }: Props) {
       action={async (fd) => {
         setError(null);
         setPending(true);
-        try {
-          await action(fd);
+        const res = await action(fd);
+        setPending(false);
+        if (res.ok) {
           if (inputRef.current) inputRef.current.value = "";
           setFileName(null);
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Upload failed.");
-        } finally {
-          setPending(false);
+        } else {
+          setError(res.error);
         }
       }}
       className="rounded-2xl border-2 border-dashed border-line p-6 text-center transition hover:border-sky/50"

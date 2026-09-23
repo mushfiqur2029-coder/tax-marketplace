@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
+import type { ActionResult } from "@/lib/action-result";
 
 function formatMoney(pence: number) {
   return `£${(pence / 100).toFixed(2)}`;
@@ -16,7 +17,7 @@ export function WithdrawalRequestForm({
     accountName: string;
     sortCode: string;
     accountNumber: string;
-  }) => Promise<void>;
+  }) => Promise<ActionResult>;
 }) {
   const [accountName, setAccountName] = useState("");
   const [sortCode, setSortCode] = useState("");
@@ -33,14 +34,14 @@ export function WithdrawalRequestForm({
         setError(null);
         setSaved(false);
         start(async () => {
-          try {
-            await request({ accountName, sortCode, accountNumber });
+          const res = await request({ accountName, sortCode, accountNumber });
+          if (res.ok) {
             setAccountName("");
             setSortCode("");
             setAccountNumber("");
             setSaved(true);
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Request failed.");
+          } else {
+            setError(res.error);
           }
         });
       }}

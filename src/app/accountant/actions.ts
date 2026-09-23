@@ -3,18 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { type ActionResult, fail } from "@/lib/action-result";
 
-// Return-as-data shape for user-invoked mutations. Server actions catch their
-// own errors internally so Next.js never digests them into an opaque "React
-// error #441" — the caller reads res.error and renders a readable message.
-export type ActionResult = { ok: true } | { ok: false; error: string };
-
-function fail(e: unknown): ActionResult {
-  return {
-    ok: false,
-    error: e instanceof Error ? e.message : "Something went wrong.",
-  };
-}
+export type { ActionResult };
 
 type CaseStatus =
   | "draft"
@@ -126,14 +117,18 @@ export async function updateCaseStatusAction(
 export async function getDocSignedUrlForAccountant(
   caseId: string,
   filePath: string,
-) {
-  const { me, supabase, row } = await loadCaseForAccountant(caseId);
-  if (row.accountant_id !== me.id) {
-    throw new Error("You haven't taken this case.");
+): Promise<ActionResult<string>> {
+  try {
+    const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    if (row.accountant_id !== me.id) {
+      throw new Error("You haven't taken this case.");
+    }
+    const { data, error } = await supabase.storage
+      .from("case-documents")
+      .createSignedUrl(filePath, 60);
+    if (error || !data) throw new Error(error?.message ?? "Sign URL failed.");
+    return { ok: true, data: data.signedUrl };
+  } catch (e) {
+    return fail(e);
   }
-  const { data, error } = await supabase.storage
-    .from("case-documents")
-    .createSignedUrl(filePath, 60);
-  if (error || !data) throw new Error(error?.message ?? "Sign URL failed.");
-  return data.signedUrl;
 }
