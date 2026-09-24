@@ -6,7 +6,9 @@ export type NotificationType =
   | "case_status_change"
   | "profile_change_request"
   | "withdrawal_requested"
-  | "withdrawal_paid";
+  | "withdrawal_paid"
+  | "case_reassigned"
+  | "accountant_approval_decision";
 
 export type NotificationRow = {
   id: string;
@@ -97,5 +99,68 @@ export async function insertWithdrawalPaidNotification(params: {
     type: "withdrawal_paid",
     case_id: null,
     message: `Your £${(params.amountPence / 100).toFixed(2)} withdrawal was paid.`,
+  });
+}
+
+// Notify both sides of a case reassignment. Used by reassignCaseAction so
+// the person losing the case AND the person gaining it both find out
+// without having to poll their queue.
+export async function insertReassignmentNotifications(params: {
+  caseId: string;
+  prevAccountantId: string | null;
+  newAccountantId: string | null;
+  note: string | null;
+}) {
+  const admin = createAdminClient();
+  const rows: Array<{
+    recipient_id: string;
+    type: "case_reassigned";
+    case_id: string;
+    message: string;
+  }> = [];
+  const reason = params.note?.trim() ? ` (${params.note.trim()})` : "";
+  if (
+    params.prevAccountantId &&
+    params.prevAccountantId !== params.newAccountantId
+  ) {
+    rows.push({
+      recipient_id: params.prevAccountantId,
+      type: "case_reassigned",
+      case_id: params.caseId,
+      message: `A case was reassigned away from you${reason}.`,
+    });
+  }
+  if (
+    params.newAccountantId &&
+    params.newAccountantId !== params.prevAccountantId
+  ) {
+    rows.push({
+      recipient_id: params.newAccountantId,
+      type: "case_reassigned",
+      case_id: params.caseId,
+      message: `A case was assigned to you${reason}.`,
+    });
+  }
+  if (rows.length) await admin.from("notifications").insert(rows);
+}
+
+// Notify the accountant when admin approves or rejects their application.
+export async function insertAccountantApprovalNotification(params: {
+  accountantId: string;
+  decision: "approved" | "rejected";
+  note: string | null;
+}) {
+  const admin = createAdminClient();
+  const message =
+    params.decision === "approved"
+      ? "Your Sterling Ledger account has been approved. Welcome aboard."
+      : `Your account application wasn't approved${
+          params.note?.trim() ? `: ${params.note.trim()}` : "."
+        }`;
+  await admin.from("notifications").insert({
+    recipient_id: params.accountantId,
+    type: "accountant_approval_decision",
+    case_id: null,
+    message,
   });
 }

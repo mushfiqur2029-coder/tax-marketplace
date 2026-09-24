@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { insertWithdrawalPaidNotification } from "@/lib/notifications";
+import {
+  insertWithdrawalPaidNotification,
+  insertReassignmentNotifications,
+  insertAccountantApprovalNotification,
+} from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
 
 export type { ActionResult };
@@ -80,6 +84,12 @@ export async function setAccountantApprovalAction(
       admin_id: me.id,
       action: decision === "approved" ? "approve_accountant" : "reject_accountant",
       note: note?.trim() || null,
+    });
+
+    await insertAccountantApprovalNotification({
+      accountantId,
+      decision,
+      note,
     });
 
     revalidatePath("/admin/accountants");
@@ -186,6 +196,13 @@ export async function reassignCaseAction(
   if (rows.length) {
     await supabase.from("admin_actions").insert(rows);
   }
+
+  await insertReassignmentNotifications({
+    caseId,
+    prevAccountantId,
+    newAccountantId,
+    note,
+  });
 
   revalidatePath(`/admin/cases/${caseId}`);
   revalidatePath(`/admin`);

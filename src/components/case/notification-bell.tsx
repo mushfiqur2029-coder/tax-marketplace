@@ -30,6 +30,10 @@ function linkFor(n: NotificationRow, role: Role): string {
       return "/accountant/wallet";
     case "new_queue_case":
       return `/accountant/cases/${n.case_id}`;
+    case "accountant_approval_decision":
+      return "/accountant";
+    case "case_reassigned":
+      return n.case_id ? `/${role}/cases/${n.case_id}` : `/${role}`;
     case "new_message":
     case "case_status_change":
       if (!n.case_id) return `/${role}`;
@@ -68,8 +72,13 @@ export function NotificationBell({
   const [unread, setUnread] = useState(initial.unread);
   const [pulse, setPulse] = useState(false);
   const [open, setOpen] = useState(false);
+  const [toasts, setToasts] = useState<NotificationRow[]>([]);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   const applyNew = useCallback((row: NotificationRow) => {
     setItems((prev) => {
@@ -80,6 +89,15 @@ export function NotificationBell({
     setPulse(true);
     playNotificationBeep();
     window.setTimeout(() => setPulse(false), 900);
+    // Also push an on-screen toast so the notification is visible without
+    // opening the bell. Cap the stack at 3, auto-dismiss after 6s.
+    setToasts((prev) => {
+      if (prev.some((p) => p.id === row.id)) return prev;
+      return [row, ...prev].slice(0, 3);
+    });
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== row.id));
+    }, 6000);
   }, []);
 
   // Realtime subscription: postgres_changes on this user's notifications.
@@ -276,6 +294,58 @@ export function NotificationBell({
           </div>
         </div>
       ) : null}
+
+      {/*
+        Toast stack — fixed to the viewport so the notification is visible
+        without opening the bell. Rendered inside the bell's tree so it
+        naturally lives on every dashboard page (Bell is in DashboardShell).
+        Auto-dismiss timer is set in applyNew; user can also dismiss by
+        clicking the toast (which also navigates + marks read).
+      */}
+      {toasts.length > 0 ? (
+        <div
+          className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
+          aria-live="polite"
+        >
+          {toasts.map((n) => (
+            <div
+              key={n.id}
+              className="animate-in slide-in-from-right-4 fade-in-0 duration-300 pointer-events-auto relative rounded-2xl border border-line bg-paper shadow-xl"
+              role="alert"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  dismissToast(n.id);
+                  onNotifClick(n);
+                }}
+                className="block w-full rounded-2xl p-4 text-left transition hover:bg-sky/[0.03]"
+              >
+                <div
+                  className="text-[11px] font-bold uppercase tracking-widest text-navy-deep"
+                  style={{ fontFamily: "var(--font-mono)" }}
+                >
+                  {typeLabel(n.type)}
+                </div>
+                <p className="mt-1 text-sm font-semibold text-ink">
+                  {n.message}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => dismissToast(n.id)}
+                aria-label="Dismiss"
+                className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-lg text-slate hover:bg-slate/10 hover:text-navy-deep"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -294,5 +364,9 @@ function typeLabel(t: NotificationType): string {
       return "Withdrawal";
     case "withdrawal_paid":
       return "Payout";
+    case "case_reassigned":
+      return "Reassignment";
+    case "accountant_approval_decision":
+      return "Approval";
   }
 }
