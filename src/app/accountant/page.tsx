@@ -17,6 +17,7 @@ import {
   type ViewCounts,
 } from "./cases-filter";
 import { AccountantCasesRealtimeRefresh } from "./cases-realtime-refresh";
+import { AccountantSuspensionBanner } from "./suspension-banner";
 import { formatDate, formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -142,6 +143,7 @@ export default async function AccountantDashboard({
       subnav={<AccountantNav active="cases" />}
       bell={<Bell userId={me.id} role={me.role} />}
     >
+      <AccountantSuspensionBanner />
       <AccountantCasesRealtimeRefresh accountantId={me.id} />
       <AccountantCasesFilter view={view} urgency={urgency} income={income} date={date} counts={viewCounts} />
 

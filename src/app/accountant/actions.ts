@@ -7,6 +7,18 @@ import { type ActionResult, fail } from "@/lib/action-result";
 
 export type { ActionResult };
 
+// Suspended accountants keep read access to their assigned cases (RLS is
+// unchanged), but every case-mutating server action goes through this
+// gate. Blocking here rather than in RLS means Realtime subscriptions and
+// SELECTs still work — only the mutations are refused.
+function assertNotSuspended(status: string, action: string): void {
+  if (status === "suspended") {
+    throw new Error(
+      `Your account is suspended and can't ${action}. Contact support to reinstate.`,
+    );
+  }
+}
+
 type CaseStatus =
   | "draft"
   | "submitted"
@@ -49,6 +61,7 @@ async function loadCaseForAccountant(caseId: string) {
 export async function takeCaseAction(caseId: string): Promise<ActionResult> {
   try {
     const me = await requireApprovedAccountant();
+    assertNotSuspended(me.status, "take new cases");
     const supabase = await createClient();
 
     const { data, error } = await supabase
@@ -87,6 +100,7 @@ export async function updateCaseStatusAction(
 ): Promise<ActionResult> {
   try {
     const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    assertNotSuspended(me.status, "advance case status");
     if (row.accountant_id !== me.id) {
       throw new Error("You haven't taken this case.");
     }

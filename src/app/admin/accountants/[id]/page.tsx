@@ -12,6 +12,8 @@ import { formatDateTime } from "@/lib/format";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
 import { Bell } from "@/components/bell";
+import { setAccountantStatusAction } from "@/app/admin/actions";
+import { SuspendActions } from "./suspend-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +108,28 @@ export default async function AdminAccountantDetail({
             <ProfileRow label="Company email" value={profile.company_email} />
             <ProfileRow label="Account status" value={user.status} />
           </dl>
+
+          <div className="mt-6 border-t border-line pt-4">
+            <span
+              className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              Account controls
+            </span>
+            <SuspendActions
+              accountantId={user.id}
+              currentStatus={user.status}
+              setStatus={async (accId, status, note) => {
+                "use server";
+                return setAccountantStatusAction(accId, status, note);
+              }}
+            />
+            <p className="mt-3 text-[11px] text-slate">
+              Suspended accountants stay signed-in with read-only access
+              to their assigned cases. They can&apos;t take new cases from
+              the queue or advance case status until reinstated.
+            </p>
+          </div>
         </aside>
 
         {/* Money + cases */}

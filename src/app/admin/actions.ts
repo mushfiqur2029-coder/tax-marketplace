@@ -62,6 +62,53 @@ export async function setClientStatusAction(
 }
 
 // -------------------------------------------------------------------------
+// Toggle an accountant's account status. Suspended accountants stay
+// signed-in and keep read-only access to their assigned cases, but the
+// accountant/actions.ts guards block takeCaseAction and
+// updateCaseStatusAction. Approval status (accountant_profiles.approval_status)
+// is a separate axis and is unchanged here.
+// -------------------------------------------------------------------------
+export async function setAccountantStatusAction(
+  accountantId: string,
+  status: "active" | "suspended",
+  note: string | null,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
+
+    const { data: target } = await admin
+      .from("users")
+      .select("id, role")
+      .eq("id", accountantId)
+      .single();
+    if (!target || target.role !== "accountant") {
+      throw new Error("That user isn't an accountant.");
+    }
+
+    const { error: updateErr } = await admin
+      .from("users")
+      .update({ status })
+      .eq("id", accountantId);
+    if (updateErr) throw new Error(updateErr.message);
+
+    await admin.from("admin_actions").insert({
+      target_user_id: accountantId,
+      admin_id: me.id,
+      action: status === "suspended" ? "suspend" : "reinstate",
+      note: note?.trim() || null,
+    });
+
+    revalidatePath("/admin/accountants");
+    revalidatePath(`/admin/accountants/${accountantId}`);
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
 // Approve or reject a pending accountant.
 // -------------------------------------------------------------------------
 export async function setAccountantApprovalAction(

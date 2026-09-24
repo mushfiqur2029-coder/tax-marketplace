@@ -13,6 +13,7 @@ import {
 } from "@/app/messages";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
+import { AccountantSuspensionBanner } from "@/app/accountant/suspension-banner";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { ProgressBar } from "@/components/case/progress-bar";
@@ -111,10 +112,13 @@ export default async function AccountantCaseDetailPage({
       role={data.me.role}
       bell={<Bell userId={data.me.id} role={data.me.role} />}
     >
+      <AccountantSuspensionBanner />
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={data.row.status} />
         {data.row.deadline ? <DeadlinePill deadline={data.row.deadline} /> : null}
-        {data.canTake ? <TakeCaseForm take={take} /> : null}
+        {data.canTake && data.me.status !== "suspended" ? (
+          <TakeCaseForm take={take} />
+        ) : null}
       </div>
 
       {data.isMine ? (
@@ -175,7 +179,14 @@ export default async function AccountantCaseDetailPage({
               >
                 Progress
               </h3>
-              <StatusTransition current={data.row.status} advance={advance} />
+              {data.me.status === "suspended" ? (
+                <p className="text-sm text-slate">
+                  Account suspended — status advances are locked until an
+                  admin reinstates you.
+                </p>
+              ) : (
+                <StatusTransition current={data.row.status} advance={advance} />
+              )}
             </section>
           ) : null}
         </div>

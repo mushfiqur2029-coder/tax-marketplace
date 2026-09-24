@@ -8,7 +8,13 @@ import type { CaseRow, CaseDoc } from "@/lib/case";
 import type { ChatMessage } from "@/components/case/multi-thread-chat";
 
 export type AccountantCaseData = {
-  me: { id: string; email: string; role: Role; name?: string | null };
+  me: {
+    id: string;
+    email: string;
+    role: Role;
+    name?: string | null;
+    status: "active" | "warned" | "suspended";
+  };
   row: CaseRow;
   segment: Segment;
   tier: PlanTier;
