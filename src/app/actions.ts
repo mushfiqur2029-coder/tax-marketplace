@@ -129,7 +129,31 @@ export async function signInAction(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: error.message };
+  if (error) {
+    // Distinguish "no such account" from "wrong password" so users can tell
+    // whether to fix a typo, sign up, or hit Forgot password. Anything more
+    // sensitive (suspended / pending approval) still gets the generic
+    // "wrong password" phrasing here — those states have their own UI once
+    // the user is actually signed in.
+    //
+    // Trade-off flagged in the spec: this makes account existence
+    // enumerable through the login form. Accepted at this stage.
+    const admin = createAdminClient();
+    const { data: existing } = await admin
+      .from("users")
+      .select("id")
+      .ilike("email", email)
+      .maybeSingle();
+    if (!existing) {
+      return {
+        error:
+          "No account found with that email. Check the email or create an account.",
+      };
+    }
+    return {
+      error: "Incorrect password. Try again or use Forgot password.",
+    };
+  }
 
   const {
     data: { user },
