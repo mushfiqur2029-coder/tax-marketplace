@@ -6,6 +6,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type AuthState = {
   error?: string;
+  // Optional link rendered next to the error message (e.g. "log in instead"
+  // when the email is already registered). Kept separate from the string
+  // so we don't have to embed markup in a translated/user-facing message.
+  errorHref?: string;
+  errorHrefLabel?: string;
   info?: string;
 } | null;
 
@@ -48,6 +53,25 @@ export async function signUpAction(
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
+  }
+
+  // Check public.users first — Supabase's own signUp with an existing
+  // confirmed email silently no-ops (email-enumeration protection), which
+  // leaves the user confused when they never receive a confirmation. This
+  // is the same account-existence trade-off we already accept on
+  // signInAction: readable error > silent failure.
+  const preadmin = createAdminClient();
+  const { data: existing } = await preadmin
+    .from("users")
+    .select("role")
+    .ilike("email", email)
+    .maybeSingle();
+  if (existing) {
+    return {
+      error: `This email is already registered as a ${existing.role}.`,
+      errorHref: "/login",
+      errorHrefLabel: "Log in instead",
+    };
   }
 
   const metadata: Record<string, string> = {

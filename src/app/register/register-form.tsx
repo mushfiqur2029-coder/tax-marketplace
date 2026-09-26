@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { signUpAction, type AuthState } from "@/app/actions";
 import { SLButton } from "@/components/sl-button";
@@ -149,6 +150,18 @@ export function RegisterForm() {
           style={{ background: "rgba(220,38,38,0.08)" }}
         >
           {state.error}
+          {state.errorHref ? (
+            <>
+              {" "}
+              <Link
+                href={state.errorHref}
+                className="font-semibold underline underline-offset-4 hover:text-red-900"
+              >
+                {state.errorHrefLabel ?? "More"}
+              </Link>
+              .
+            </>
+          ) : null}
         </p>
       ) : null}
       {state?.info ? (

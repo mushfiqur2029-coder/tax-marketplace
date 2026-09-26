@@ -34,7 +34,42 @@ export default async function AccountantCaseDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const data = await loadAccountantCase(id);
+  const load = await loadAccountantCase(id);
+
+  // If the case has been taken by a different accountant, render a
+  // helpful explanation instead of a bare 404.
+  if (load.kind === "taken") {
+    return (
+      <DashboardShell
+        eyebrow={`${load.segment.title} · ${load.tier.title}`}
+        title="Already taken"
+        description="Another accountant picked this case up first."
+        name={load.me.name}
+        email={load.me.email}
+        role={load.me.role}
+        bell={<Bell userId={load.me.id} role={load.me.role} />}
+      >
+        <AccountantSuspensionBanner />
+        <div className="card-sl max-w-xl p-6 sm:p-8">
+          <p className="text-sm text-slate">
+            This case was in the queue when you last looked, but another
+            accountant claimed it before you got here. Head back to the
+            queue for the next one.
+          </p>
+          <div className="mt-5">
+            <Link
+              href="/accountant?view=queue"
+              className="btn-sl btn-sl-primary"
+            >
+              Back to the queue
+            </Link>
+          </div>
+        </div>
+      </DashboardShell>
+    );
+  }
+
+  const data = load;
   const seg = data.segment;
   const answers = (data.row.intake_answers ?? {}) as Record<string, string>;
 
