@@ -67,8 +67,9 @@ export async function signUpAction(
     .ilike("email", email)
     .maybeSingle();
   if (existing) {
+    const article = /^[aeiou]/i.test(existing.role) ? "an" : "a";
     return {
-      error: `This email is already registered as a ${existing.role}.`,
+      error: `This email is already registered as ${article} ${existing.role}.`,
       errorHref: "/login",
       errorHrefLabel: "Log in instead",
     };
