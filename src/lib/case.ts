@@ -24,6 +24,8 @@ export type CaseRow = {
   submitted_at: string | null;
   created_at: string;
   deadline: string | null;
+  is_urgent: boolean;
+  urgent_fee_pence: number;
 };
 
 export type CaseDoc = {
@@ -59,7 +61,7 @@ export async function loadClientCase(caseId: string): Promise<CaseData> {
   const { data: caseRow, error } = await supabase
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence",
     )
     .eq("id", caseId)
     .single();

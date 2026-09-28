@@ -7,8 +7,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment, type SegmentId } from "@/lib/segments";
 import { getTier, type TierId } from "@/lib/plans";
+import type Stripe from "stripe";
 import { stripe, siteUrl } from "@/lib/stripe";
 import { type ActionResult, fail } from "@/lib/action-result";
+import {
+  URGENT_FEE_PENCE,
+  validateDeadline,
+} from "@/lib/working-days";
 
 export type { ActionResult };
 
@@ -19,7 +24,7 @@ async function assertCaseOwner(caseId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("cases")
-    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status")
+    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status, deadline, is_urgent, urgent_fee_pence")
     .eq("id", caseId)
     .single();
   if (error || !data) throw new Error("Case not found.");
@@ -54,16 +59,40 @@ export async function createCaseAction(
     const segment = String(formData.get("segment") ?? "") as SegmentId;
     const tier = String(formData.get("tier") ?? "") as TierId;
     const deadlineRaw = String(formData.get("deadline") ?? "").trim();
+    // is_urgent comes in as a checkbox — treat "on"/"true" as truthy.
+    const isUrgent = ["on", "true", "1"].includes(
+      String(formData.get("is_urgent") ?? "").toLowerCase(),
+    );
 
     if (!getSegment(segment)) throw new Error("Please pick a segment.");
     if (!getTier(tier)) throw new Error("Please pick a plan.");
 
-    let deadline: string | null = null;
-    if (deadlineRaw) {
-      const d = new Date(deadlineRaw);
-      if (isNaN(d.getTime())) throw new Error("Please pick a valid deadline.");
-      deadline = d.toISOString();
+    // A deadline is required now that we have a minimum-working-day rule
+    // to enforce — the form always sends one.
+    if (!deadlineRaw) throw new Error("Please pick a filing deadline.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineRaw)) {
+      throw new Error("Please pick a valid deadline.");
     }
+
+    // Server-side gate: at least 5 working days for standard, at least
+    // the next working day for urgent. Both computed in Europe/London and
+    // exclude UK bank holidays.
+    const check = await validateDeadline(deadlineRaw, isUrgent);
+    if (!check.ok) {
+      throw new Error(
+        check.reason === "too_early_standard"
+          ? `Standard deadlines need at least 5 working days. Earliest available: ${check.earliest}. Tick "Urgent filing" for sooner.`
+          : `Even urgent needs the next working day at minimum. Earliest available: ${check.earliest}.`,
+      );
+    }
+
+    // Store deadline as a UTC ISO timestamp anchored at midnight London
+    // date. The picker gives us the calendar date; adding T00:00 in
+    // London and converting to ISO keeps the semantics stable across
+    // machines.
+    const deadline = new Date(`${deadlineRaw}T00:00:00Z`).toISOString();
+
+    const urgentFeePence = isUrgent ? URGENT_FEE_PENCE : 0;
 
     const supabase = await createClient();
     const { data, error } = await supabase
@@ -75,6 +104,8 @@ export async function createCaseAction(
         status: "draft",
         stripe_payment_status: "pending",
         deadline,
+        is_urgent: isUrgent,
+        urgent_fee_pence: urgentFeePence,
       })
       .select("id")
       .single();
@@ -230,27 +261,61 @@ export async function startCheckoutAction(
       throw new Error("Fill in the intake questions first.");
     }
 
+    // Re-check the deadline right before payment. The user may have taken
+    // a few days to reach checkout; if standard-mode no longer meets the
+    // 5-working-day rule from today, block and ask them to update.
+    if (caseRow.deadline) {
+      const check = await validateDeadline(caseRow.deadline, !!caseRow.is_urgent);
+      if (!check.ok) {
+        throw new Error(
+          caseRow.is_urgent
+            ? `Your deadline is too soon even for urgent. Earliest available: ${check.earliest}. Go back and update.`
+            : `Your deadline no longer meets the 5-working-day minimum. Earliest standard: ${check.earliest}. Go back and either update the deadline or tick Urgent (+£100).`,
+        );
+      }
+    }
+
+    // Build Stripe line items. Plan always; urgent as a separate line so
+    // the receipt reads clearly.
+    const isUrgent = !!caseRow.is_urgent;
+    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+      {
+        quantity: 1,
+        price_data: {
+          currency: "gbp",
+          unit_amount: tier.priceGbp * 100,
+          product_data: {
+            name: `${tier.title}. ${seg.title}`,
+            description: tier.tagline,
+          },
+        },
+      },
+    ];
+    if (isUrgent) {
+      // Server-authoritative fee — never trust anything the client sent.
+      line_items.push({
+        quantity: 1,
+        price_data: {
+          currency: "gbp",
+          unit_amount: URGENT_FEE_PENCE,
+          product_data: {
+            name: "Urgent processing",
+            description: "Fast-track under the standard 5-working-day rule.",
+          },
+        },
+      });
+    }
+
     const base = siteUrl();
     const session = await stripe().checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "gbp",
-            unit_amount: tier.priceGbp * 100,
-            product_data: {
-              name: `${tier.title}. ${seg.title}`,
-              description: tier.tagline,
-            },
-          },
-        },
-      ],
+      line_items,
       metadata: {
         case_id: caseId,
         segment: seg.id,
         tier: tier.id,
+        is_urgent: isUrgent ? "1" : "0",
       },
       success_url: `${base}/client/cases/${caseId}?paid=1`,
       cancel_url: `${base}/client/cases/${caseId}/checkout?canceled=1`,
