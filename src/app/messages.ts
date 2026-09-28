@@ -7,7 +7,9 @@ import { type ActionResult, fail } from "@/lib/action-result";
 export type { ActionResult };
 
 const BUCKET = "case-documents";
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+// Matches the case-documents uploader cap (uploadDocumentAction) so the
+// two paths behave identically.
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 export type MessageChannel =
   | "client_accountant"

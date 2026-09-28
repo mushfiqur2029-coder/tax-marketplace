@@ -85,7 +85,7 @@ function beep() {
 }
 
 // Kept in sync with MAX_ATTACHMENT_BYTES in src/app/messages.ts.
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
