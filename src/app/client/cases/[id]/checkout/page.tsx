@@ -93,24 +93,40 @@ export default async function CheckoutPage({
 
         <aside className="card-sl p-6">
           <span className="eyebrow">Order summary</span>
-          <div className="mt-4 flex items-baseline justify-between">
-            <div className="font-semibold text-ink">{data.tier.title}</div>
-            <div className="text-2xl font-bold text-ink" style={{ fontFamily: "var(--font-heading)" }}>
-              £{data.tier.priceGbp}
-              {data.tier.pricePer ? (
-                <span className="text-sm font-semibold text-slate"> {data.tier.pricePer}</span>
-              ) : null}
-              {data.tier.priceSuffix ? (
-                <span className="text-sm font-semibold text-slate"> {data.tier.priceSuffix}</span>
-              ) : null}
+          <dl className="mt-4 space-y-2.5 text-sm">
+            <div className="flex items-baseline justify-between">
+              <dt className="text-ink">{data.tier.title}</dt>
+              <dd className="font-semibold text-ink">£{data.tier.priceGbp}</dd>
             </div>
-          </div>
-          <p className="mt-1 text-xs text-slate">
+            {data.row.is_urgent ? (
+              <div className="flex items-baseline justify-between">
+                <dt className="text-ink">Urgent processing</dt>
+                <dd className="font-semibold text-ink">
+                  +£{(data.row.urgent_fee_pence ?? 0) / 100}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-baseline justify-between border-t border-line pt-2.5">
+              <dt
+                className="text-[11px] font-bold uppercase tracking-widest text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Total
+              </dt>
+              <dd
+                className="text-2xl font-bold text-ink"
+                style={{ fontFamily: "var(--font-heading)" }}
+              >
+                £{data.tier.priceGbp + (data.row.urgent_fee_pence ?? 0) / 100}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-xs text-slate">
             {data.tier.tagline}
             {data.tier.priceGbpSubtitle ? ` · ${data.tier.priceGbpSubtitle}` : ""}
           </p>
           <PayButton
-            amountLabel={`£${data.tier.priceGbp}`}
+            amountLabel={`£${data.tier.priceGbp + (data.row.urgent_fee_pence ?? 0) / 100}`}
             start={bound}
           />
           <p className="mt-3 text-[11px] text-slate">

@@ -7,12 +7,24 @@ import { redirect } from "next/navigation";
 import { SEGMENTS } from "@/lib/segments";
 import { createCaseAction } from "@/app/client/actions";
 import { NewCaseForm } from "./new-case-form";
+import {
+  earliestStandardDeadline,
+  earliestUrgentDeadline,
+  URGENT_FEE_PENCE,
+} from "@/lib/working-days";
 
 export default async function NewCasePage() {
   const me = await requireRole("client");
   // Suspended clients can't start new cases; kick them back to their
   // dashboard where the banner explains the state.
   if (me.status === "suspended") redirect("/client");
+
+  // Compute deadline bounds server-side so the picker can enforce them
+  // via the `min` attribute even before the form is submitted.
+  const [earliestStandard, earliestUrgent] = await Promise.all([
+    earliestStandardDeadline(),
+    earliestUrgentDeadline(),
+  ]);
 
   return (
     <DashboardShell
@@ -25,7 +37,13 @@ export default async function NewCasePage() {
       bell={<Bell userId={me.id} role={me.role} />}
     >
       <ClientSuspensionBanner />
-      <NewCaseForm segments={SEGMENTS} action={createCaseAction} />
+      <NewCaseForm
+        segments={SEGMENTS}
+        action={createCaseAction}
+        earliestStandard={earliestStandard}
+        earliestUrgent={earliestUrgent}
+        urgentFeePence={URGENT_FEE_PENCE}
+      />
       <p className="mt-8 text-sm text-slate">
         Changed your mind?{" "}
         <Link href="/client" className="font-semibold text-navy-deep underline underline-offset-4 hover:text-sky">

@@ -11,16 +11,59 @@ type Props = {
   // On success the action redirects (never resolves normally). If it does
   // resolve, it returned an error which we render inline.
   action: (fd: FormData) => Promise<ActionResult>;
+  // YYYY-MM-DD strings, computed server-side in Europe/London with UK bank
+  // holidays excluded. Used as the picker's `min` and as helper copy.
+  earliestStandard: string;
+  earliestUrgent: string;
+  urgentFeePence: number;
 };
 
-export function NewCaseForm({ segments, action }: Props) {
+// Pretty format a YYYY-MM-DD string as "Mon 6 Oct 2026".
+function formatDay(ymd: string): string {
+  if (!ymd) return "";
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function NewCaseForm({
+  segments,
+  action,
+  earliestStandard,
+  earliestUrgent,
+  urgentFeePence,
+}: Props) {
   const [segment, setSegment] = useState<SegmentId | null>(null);
   const [tier, setTier] = useState<TierId | null>(null);
   const [deadline, setDeadline] = useState<string>("");
+  const [isUrgent, setIsUrgent] = useState<boolean>(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const tiers = useMemo(() => tiersForSegment(segment), [segment]);
+  const selectedTier = useMemo(
+    () => tiers.find((t) => t.id === tier) ?? null,
+    [tiers, tier],
+  );
+
+  const minDate = isUrgent ? earliestUrgent : earliestStandard;
+  const urgentFeeGbp = urgentFeePence / 100;
+
+  // When the urgent toggle flips off, snap any too-early date back to
+  // empty so the picker doesn't quietly submit an invalid value.
+  const onToggleUrgent = (next: boolean) => {
+    setIsUrgent(next);
+    const newMin = next ? earliestUrgent : earliestStandard;
+    if (deadline && deadline < newMin) {
+      setDeadline("");
+    }
+  };
 
   const handleSegment = (nextId: SegmentId) => {
     setSegment(nextId);
@@ -48,6 +91,7 @@ export function NewCaseForm({ segments, action }: Props) {
       <input type="hidden" name="segment" value={segment ?? ""} />
       <input type="hidden" name="tier" value={tier ?? ""} />
       <input type="hidden" name="deadline" value={deadline} />
+      <input type="hidden" name="is_urgent" value={isUrgent ? "true" : "false"} />
 
       {/* Segment picker */}
       <section>
@@ -149,28 +193,115 @@ export function NewCaseForm({ segments, action }: Props) {
         </section>
       ) : null}
 
-      {/* Deadline */}
+      {/* Deadline + order summary */}
       <section>
         <SectionHeading eyebrow="Step 3" title="When do you need it filed by?" />
-        <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-          <label className="block max-w-xs">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-4">
+            <label className="block max-w-xs">
+              <span
+                className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Filing deadline
+              </span>
+              <input
+                type="date"
+                required
+                className="input-sl"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                min={minDate}
+              />
+            </label>
+            <p className="text-xs text-slate">
+              Earliest standard date:{" "}
+              <span className="font-semibold text-ink">
+                {formatDay(earliestStandard)}
+              </span>
+              . Need it sooner? Tick <span className="font-semibold">Urgent</span>.
+            </p>
+            <label
+              className="flex items-start gap-3 rounded-xl border border-line bg-paper p-3 cursor-pointer transition hover:border-sky/50"
+              style={
+                isUrgent
+                  ? {
+                      background: "rgba(25,156,217,0.06)",
+                      borderColor: "rgba(25,156,217,0.55)",
+                    }
+                  : undefined
+              }
+            >
+              <input
+                type="checkbox"
+                checked={isUrgent}
+                onChange={(e) => onToggleUrgent(e.target.checked)}
+                className="mt-1 h-4 w-4 shrink-0"
+              />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-ink">
+                  Urgent filing (+£{urgentFeeGbp})
+                </div>
+                <div className="mt-0.5 text-xs text-slate">
+                  Any date from the next working day.{" "}
+                  {isUrgent
+                    ? `Earliest urgent date: ${formatDay(earliestUrgent)}.`
+                    : "Ticking this widens the picker below."}
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* Live order summary */}
+          <aside className="card-sl h-fit p-5">
             <span
-              className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate"
+              className="text-[11px] font-semibold uppercase tracking-widest text-slate"
               style={{ fontFamily: "var(--font-mono)" }}
             >
-              Filing deadline (optional)
+              Order summary
             </span>
-            <input
-              type="date"
-              className="input-sl"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              min={new Date().toISOString().slice(0, 10)}
-            />
-          </label>
-          <p className="text-xs text-slate">
-            Your accountant sees this as a coloured urgency indicator.
-          </p>
+            {selectedTier ? (
+              <dl className="mt-4 space-y-2.5 text-sm">
+                <div className="flex items-baseline justify-between">
+                  <dt className="text-ink">{selectedTier.title}</dt>
+                  <dd className="font-semibold text-ink">
+                    £{selectedTier.priceGbp}
+                  </dd>
+                </div>
+                {isUrgent ? (
+                  <div className="flex items-baseline justify-between">
+                    <dt className="text-ink">Urgent processing</dt>
+                    <dd className="font-semibold text-ink">
+                      +£{urgentFeeGbp}
+                    </dd>
+                  </div>
+                ) : null}
+                <div
+                  className="flex items-baseline justify-between border-t border-line pt-2.5"
+                >
+                  <dt
+                    className="text-[11px] font-bold uppercase tracking-widest text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Total
+                  </dt>
+                  <dd
+                    className="text-lg font-bold text-ink"
+                    style={{ fontFamily: "var(--font-heading)" }}
+                  >
+                    £{selectedTier.priceGbp + (isUrgent ? urgentFeeGbp : 0)}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="mt-4 text-xs text-slate">
+                Pick a plan above to see the total.
+              </p>
+            )}
+            <p className="mt-3 text-[11px] text-slate">
+              Charged at checkout after intake. Nothing today.
+            </p>
+          </aside>
         </div>
       </section>
 
@@ -184,7 +315,7 @@ export function NewCaseForm({ segments, action }: Props) {
         <SLButton
           type="submit"
           variant="primary"
-          disabled={pending || !segment || !tier}
+          disabled={pending || !segment || !tier || !deadline}
         >
           {pending ? "Creating…" : "Continue"}
         </SLButton>

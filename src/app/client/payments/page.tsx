@@ -18,7 +18,7 @@ export default async function ClientPaymentsPage() {
   const { data: cases } = await supabase
     .from("cases")
     .select(
-      "id, segment, tier, status, stripe_payment_status, stripe_payment_id, stripe_checkout_session_id, submitted_at, created_at",
+      "id, segment, tier, status, stripe_payment_status, stripe_payment_id, stripe_checkout_session_id, submitted_at, created_at, is_urgent, urgent_fee_pence",
     )
     .eq("client_id", me.id)
     .eq("stripe_payment_status", "succeeded")
@@ -26,7 +26,7 @@ export default async function ClientPaymentsPage() {
 
   const totalPence = (cases ?? []).reduce((sum, c) => {
     const t = getTier(c.tier);
-    return sum + (t?.priceGbp ?? 0) * 100;
+    return sum + (t?.priceGbp ?? 0) * 100 + (c.urgent_fee_pence ?? 0);
   }, 0);
 
   return (
@@ -86,11 +86,28 @@ export default async function ClientPaymentsPage() {
                       />
                     </dl>
                   </div>
-                  <div
-                    className="text-right text-xl font-bold text-ink"
-                    style={{ fontFamily: "var(--font-heading)" }}
-                  >
-                    £{tier?.priceGbp ?? "."}
+                  <div className="text-right">
+                    {c.is_urgent && (c.urgent_fee_pence ?? 0) > 0 ? (
+                      <>
+                        <div className="text-[11px] text-slate">
+                          Plan £{tier?.priceGbp ?? "."} + Urgent £
+                          {(c.urgent_fee_pence ?? 0) / 100}
+                        </div>
+                        <div
+                          className="text-xl font-bold text-ink"
+                          style={{ fontFamily: "var(--font-heading)" }}
+                        >
+                          £{(tier?.priceGbp ?? 0) + (c.urgent_fee_pence ?? 0) / 100}
+                        </div>
+                      </>
+                    ) : (
+                      <div
+                        className="text-xl font-bold text-ink"
+                        style={{ fontFamily: "var(--font-heading)" }}
+                      >
+                        £{tier?.priceGbp ?? "."}
+                      </div>
+                    )}
                   </div>
                 </div>
               </li>
