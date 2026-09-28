@@ -14,6 +14,7 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
+import { UrgentPill } from "@/components/case/urgent-pill";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
 import { ProgressBar } from "@/components/case/progress-bar";
@@ -129,6 +130,7 @@ export default async function CaseDetailPage({
 
       <div className="mb-8 flex flex-wrap items-center gap-3">
         <StatusPill status={data.row.status} />
+        {data.row.is_urgent ? <UrgentPill /> : null}
         {data.row.deadline ? <DeadlinePill deadline={data.row.deadline} /> : null}
         {isDraft ? (
           <SLLink href={nextHref} variant="primary">

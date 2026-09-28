@@ -13,6 +13,7 @@ import { reassignCaseAction } from "@/app/admin/actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
+import { UrgentPill } from "@/components/case/urgent-pill";
 import { ProgressBar } from "@/components/case/progress-bar";
 import {
   MultiThreadChat,
@@ -39,7 +40,7 @@ export default async function AdminCasePage({
   const { data: row } = await admin
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence",
     )
     .eq("id", id)
     .single();
@@ -145,6 +146,7 @@ export default async function AdminCasePage({
     >
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={row.status} />
+        {row.is_urgent ? <UrgentPill /> : null}
         {row.deadline ? <DeadlinePill deadline={row.deadline} /> : null}
       </div>
 

@@ -6,6 +6,7 @@ import { getTier } from "@/lib/plans";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
+import { UrgentPill } from "@/components/case/urgent-pill";
 import { Avatar } from "@/components/avatar";
 import { AdminNav } from "@/app/admin/admin-nav";
 import { getAdminNavCounts } from "@/app/admin/admin-counts";
@@ -55,7 +56,7 @@ export default async function AdminDashboard({
     admin
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, client_id, accountant_id",
+        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, client_id, accountant_id, is_urgent",
       )
       .order("created_at", { ascending: false }),
     admin.from("users").select("id", { count: "exact", head: true }).eq("role", "client"),
@@ -270,6 +271,7 @@ export default async function AdminDashboard({
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <StatusPill status={c.status} />
+                      {c.is_urgent ? <UrgentPill size="sm" /> : null}
                       {c.deadline ? (
                         <DeadlinePill deadline={c.deadline} size="sm" />
                       ) : null}

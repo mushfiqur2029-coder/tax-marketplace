@@ -7,6 +7,7 @@ import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
+import { UrgentPill } from "@/components/case/urgent-pill";
 import { formatDate } from "@/lib/format";
 import { ClientNav, ClientCasesFilter, type ClientCaseCounts } from "./client-nav";
 import { Bell } from "@/components/bell";
@@ -39,7 +40,7 @@ export default async function ClientDashboard({
   const { data: cases } = await supabase
     .from("cases")
     .select(
-      "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline",
+      "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, is_urgent",
     )
     .eq("client_id", me.id)
     .order("created_at", { ascending: false });
@@ -133,6 +134,7 @@ export default async function ClientDashboard({
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <StatusPill status={c.status} />
+                    {c.is_urgent ? <UrgentPill size="sm" /> : null}
                     {c.deadline ? (
                       <DeadlinePill deadline={c.deadline} size="sm" />
                     ) : null}
