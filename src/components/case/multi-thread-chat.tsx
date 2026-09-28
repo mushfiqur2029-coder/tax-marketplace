@@ -84,6 +84,31 @@ function beep() {
   }
 }
 
+// Kept in sync with MAX_ATTACHMENT_BYTES in src/app/messages.ts.
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// One item in the composer's pending-attachment tray. Each is uploaded to
+// storage the moment it's added; only ones with status='done' can be sent.
+type PendingAttachment = {
+  id: string;
+  file: File;
+  status: "uploading" | "done" | "error";
+  path?: string;
+  serverName?: string;
+  serverType?: string;
+  error?: string;
+};
+
+// Small counter for stable local ids on pending files (React key + dedup key).
+let _pendingSeq = 0;
+const nextPendingId = () => `pf_${Date.now()}_${++_pendingSeq}`;
+
 export function MultiThreadChat({
   caseId,
   meId,
@@ -234,10 +259,12 @@ function ChatView({
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
+  const [dragDepth, setDragDepth] = useState(0);
   const [pending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -245,47 +272,152 @@ function ChatView({
     el.scrollTop = el.scrollHeight;
   }, [messages.length, thread.channel]);
 
+  // Add files to the pending tray and kick off upload for each immediately.
+  // Client-side validation before hitting the server so we can show the
+  // error state on the chip without a round-trip.
+  const addFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+      const items: PendingAttachment[] = files.map((file) => {
+        const id = nextPendingId();
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          return {
+            id,
+            file,
+            status: "error",
+            error: `Over the ${formatBytes(MAX_ATTACHMENT_BYTES)} limit.`,
+          };
+        }
+        return { id, file, status: "uploading" };
+      });
+      setPendingFiles((prev) => [...prev, ...items]);
+
+      // Kick off uploads (only the ones that passed validation).
+      for (const item of items) {
+        if (item.status !== "uploading") continue;
+        (async () => {
+          const fd = new FormData();
+          fd.set("file", item.file);
+          const res = await uploadAttachment(caseId, fd);
+          setPendingFiles((prev) =>
+            prev.map((p) =>
+              p.id !== item.id
+                ? p
+                : res.ok
+                  ? {
+                      ...p,
+                      status: "done",
+                      path: res.data.path,
+                      serverName: res.data.name,
+                      serverType: res.data.type,
+                    }
+                  : { ...p, status: "error", error: res.error },
+            ),
+          );
+        })();
+      }
+    },
+    [caseId, uploadAttachment],
+  );
+
+  const removePending = useCallback((id: string) => {
+    setPendingFiles((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const hasUploading = pendingFiles.some((p) => p.status === "uploading");
+  const readyAttachments = pendingFiles.filter((p) => p.status === "done");
+  const anyContent = text.trim().length > 0 || readyAttachments.length > 0;
+  const submitDisabled = pending || hasUploading || !anyContent;
+
   const submit = () => {
-    const body = text.trim();
-    if (!body && !pendingFile) return;
+    if (submitDisabled) return;
     setError(null);
+    const body = text.trim();
     startTransition(async () => {
-      let attachmentPath: string | null = null;
-      let attachmentName: string | null = null;
-      let attachmentType: string | null = null;
-      if (pendingFile) {
-        const fd = new FormData();
-        fd.set("file", pendingFile);
-        const up = await uploadAttachment(caseId, fd);
-        if (!up.ok) {
-          setError(up.error);
+      // One message per attachment (schema stores a single attachment per
+      // row). The first message carries the text body; the rest are
+      // attachment-only. If there are no attachments, one plain text
+      // message.
+      if (readyAttachments.length === 0) {
+        const res = await send({
+          caseId,
+          channel: thread.channel,
+          body,
+        });
+        if (!res.ok) {
+          setError(res.error);
           return;
         }
-        attachmentPath = up.data.path;
-        attachmentName = up.data.name;
-        attachmentType = up.data.type;
+        onSent(res.data);
+      } else {
+        for (let i = 0; i < readyAttachments.length; i++) {
+          const a = readyAttachments[i];
+          const res = await send({
+            caseId,
+            channel: thread.channel,
+            body: i === 0 ? body : "",
+            attachmentPath: a.path ?? null,
+            attachmentName: a.serverName ?? a.file.name,
+            attachmentType: a.serverType ?? a.file.type,
+          });
+          if (!res.ok) {
+            setError(res.error);
+            return;
+          }
+          onSent(res.data);
+        }
       }
-      const res = await send({
-        caseId,
-        channel: thread.channel,
-        body,
-        attachmentPath,
-        attachmentName,
-        attachmentType,
-      });
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      onSent(res.data);
       setText("");
-      setPendingFile(null);
+      // Clear only successfully-sent items; leave errored ones so the user
+      // sees why they didn't go and can remove them explicitly.
+      setPendingFiles((prev) => prev.filter((p) => p.status === "error"));
       if (fileInputRef.current) fileInputRef.current.value = "";
     });
   };
 
+  // Drag & drop over the whole chat panel. dragDepth counter avoids the
+  // dragleave/dragenter flicker when the pointer crosses child elements.
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setDragDepth((d) => d + 1);
+  };
+  const onDragOver = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const onDragLeave = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setDragDepth((d) => Math.max(0, d - 1));
+  };
+  const onDrop = (e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setDragDepth(0);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length) addFiles(files);
+  };
+
+  // Clipboard paste on the textarea — pulls out any files (mostly images).
+  const onPaste = (e: React.ClipboardEvent) => {
+    const files = Array.from(e.clipboardData.files ?? []);
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  };
+
   return (
-    <>
+    <div
+      ref={panelRef}
+      className="relative flex flex-1 flex-col"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div
         ref={scrollRef}
         className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-line bg-cloud/40 p-4"
@@ -319,21 +451,21 @@ function ChatView({
         }}
         className="mt-3 space-y-2"
       >
-        {pendingFile ? (
-          <div className="flex items-center justify-between rounded-lg border border-line bg-paper px-3 py-2 text-xs">
-            <span className="truncate font-semibold text-ink">📎 {pendingFile.name}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setPendingFile(null);
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-              className="ml-2 text-slate hover:text-red-600"
-            >
-              Remove
-            </button>
-          </div>
+        {pendingFiles.length > 0 ? (
+          <ul
+            className="flex flex-wrap gap-2"
+            aria-label="Files ready to send"
+          >
+            {pendingFiles.map((p) => (
+              <AttachmentChip
+                key={p.id}
+                item={p}
+                onRemove={() => removePending(p.id)}
+              />
+            ))}
+          </ul>
         ) : null}
+
         <div className="flex items-end gap-2">
           <textarea
             value={text}
@@ -344,6 +476,7 @@ function ChatView({
                 submit();
               }
             }}
+            onPaste={onPaste}
             rows={2}
             placeholder="Type your message…"
             className="input-sl min-h-[52px] resize-none"
@@ -351,14 +484,20 @@ function ChatView({
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             className="sr-only"
-            onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              addFiles(files);
+              // Reset so selecting the same file twice re-triggers change.
+              if (e.target) e.target.value = "";
+            }}
           />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            aria-label="Attach file"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-line text-navy-deep hover:border-sky/50 hover:bg-sky/5"
+            aria-label="Attach files"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line text-navy-deep hover:border-sky/50 hover:bg-sky/5"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -367,9 +506,13 @@ function ChatView({
           <SLButton
             type="submit"
             variant="primary"
-            disabled={pending || (!text.trim() && !pendingFile)}
+            disabled={submitDisabled}
           >
-            {pending ? "Sending…" : "Send"}
+            {pending
+              ? "Sending…"
+              : hasUploading
+                ? "Uploading…"
+                : "Send"}
           </SLButton>
         </div>
         {error ? (
@@ -378,7 +521,111 @@ function ChatView({
           </p>
         ) : null}
       </form>
-    </>
+
+      {dragDepth > 0 ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed"
+          style={{
+            background: "rgba(25,156,217,0.10)",
+            borderColor: "rgba(25,156,217,0.55)",
+            backdropFilter: "blur(1px)",
+          }}
+          aria-hidden="true"
+        >
+          <p
+            className="text-sm font-bold uppercase tracking-widest text-navy-deep"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            Drop files to attach
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AttachmentChip({
+  item,
+  onRemove,
+}: {
+  item: PendingAttachment;
+  onRemove: () => void;
+}) {
+  const isError = item.status === "error";
+  const isDone = item.status === "done";
+  const bg = isError
+    ? "rgba(220,38,38,0.08)"
+    : isDone
+      ? "rgba(19,217,160,0.10)"
+      : "var(--paper)";
+  const borderColor = isError
+    ? "rgba(220,38,38,0.35)"
+    : isDone
+      ? "rgba(19,217,160,0.35)"
+      : "var(--color-line)";
+  return (
+    <li
+      className="inline-flex max-w-full items-center gap-2 rounded-xl border px-2.5 py-1.5"
+      style={{ background: bg, borderColor }}
+    >
+      <span aria-hidden="true">📎</span>
+      <div className="min-w-0 max-w-[220px]">
+        <div className="truncate text-xs font-semibold text-ink">
+          {item.file.name}
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-slate">
+          <span>{formatBytes(item.file.size)}</span>
+          {item.status === "uploading" ? (
+            <span aria-live="polite">Uploading…</span>
+          ) : isDone ? (
+            <span
+              className="inline-flex items-center gap-0.5 font-semibold"
+              style={{ color: "#0E9E77" }}
+              aria-label="Uploaded"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Ready
+            </span>
+          ) : (
+            <span
+              className="truncate font-semibold text-red-700"
+              title={item.error}
+            >
+              {item.error ?? "Upload failed"}
+            </span>
+          )}
+        </div>
+        {item.status === "uploading" ? (
+          <div
+            className="mt-1 h-1 w-full overflow-hidden rounded-full"
+            style={{ background: "rgba(25,156,217,0.15)" }}
+            role="progressbar"
+            aria-label="Upload progress"
+          >
+            <div
+              className="h-full w-1/3 animate-[pulse_1.2s_ease-in-out_infinite] rounded-full"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--sky), var(--mint))",
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${item.file.name}`}
+        className="ml-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-slate hover:bg-slate/10 hover:text-navy-deep"
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </li>
   );
 }
 
