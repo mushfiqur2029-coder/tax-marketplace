@@ -63,7 +63,7 @@ export default async function AdminCasePage({
         .order("uploaded_at", { ascending: false }),
       admin
         .from("messages")
-        .select("id, case_id, channel, sender_id, body, attachment_path, attachment_name, attachment_type, created_at")
+        .select("id, case_id, channel, sender_id, body, attachments, attachment_path, attachment_name, attachment_type, created_at")
         .eq("case_id", id)
         .order("created_at", { ascending: true }),
       admin

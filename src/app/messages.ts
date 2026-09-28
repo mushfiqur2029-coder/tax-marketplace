@@ -16,12 +16,23 @@ export type MessageChannel =
   | "client_admin"
   | "accountant_admin";
 
+// Post-migration 0017, `attachments` is authoritative. The legacy singular
+// columns are still SELECT-able on old rows but null on new inserts; the
+// client falls back to them only if `attachments` is empty (defence in
+// depth in case the migration hasn't run yet).
+export type MessageAttachment = {
+  path: string;
+  name: string;
+  type: string;
+};
+
 export type ChatMessageRow = {
   id: string;
   case_id: string;
   channel: MessageChannel;
   sender_id: string;
   body: string;
+  attachments: MessageAttachment[];
   attachment_path: string | null;
   attachment_name: string | null;
   attachment_type: string | null;
@@ -40,9 +51,7 @@ export async function sendMessageAction(input: {
   caseId: string;
   channel: MessageChannel;
   body: string;
-  attachmentPath?: string | null;
-  attachmentName?: string | null;
-  attachmentType?: string | null;
+  attachments?: MessageAttachment[];
 }): Promise<ActionResult<ChatMessageRow>> {
   try {
     const supabase = await createClient();
@@ -52,7 +61,8 @@ export async function sendMessageAction(input: {
     if (!user) throw new Error("Not signed in.");
 
     const body = input.body.trim();
-    if (!body && !input.attachmentPath) {
+    const attachments = input.attachments ?? [];
+    if (!body && attachments.length === 0) {
       throw new Error("Message can't be empty.");
     }
     if (body.length > 4000) throw new Error("Message is too long.");
@@ -64,12 +74,10 @@ export async function sendMessageAction(input: {
         channel: input.channel,
         sender_id: user.id,
         body,
-        attachment_path: input.attachmentPath ?? null,
-        attachment_name: input.attachmentName ?? null,
-        attachment_type: input.attachmentType ?? null,
+        attachments,
       })
       .select(
-        "id, case_id, channel, sender_id, body, attachment_path, attachment_name, attachment_type, created_at",
+        "id, case_id, channel, sender_id, body, attachments, attachment_path, attachment_name, attachment_type, created_at",
       )
       .single();
     if (error) throw new Error(error.message);

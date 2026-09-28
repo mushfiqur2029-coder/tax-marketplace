@@ -14,17 +14,45 @@ import { formatTime } from "@/lib/format";
 import type { MessageChannel } from "@/app/messages";
 import type { ActionResult } from "@/lib/action-result";
 
+export type MessageAttachment = {
+  path: string;
+  name: string;
+  type: string;
+};
+
 export type ChatMessage = {
   id: string;
   case_id: string;
   channel: MessageChannel;
   sender_id: string;
   body: string;
-  attachment_path: string | null;
-  attachment_name: string | null;
-  attachment_type: string | null;
+  // Post-migration 0017 the array is authoritative. Legacy singular
+  // columns are read only as a fallback (defence in depth if migration
+  // hasn't run yet on some environment).
+  attachments: MessageAttachment[];
+  attachment_path?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
   created_at: string;
 };
+
+// Given a message, return its attachments — prefers the new jsonb array,
+// falls back to the legacy singular columns for unmigrated rows.
+function attachmentsOf(m: ChatMessage): MessageAttachment[] {
+  if (Array.isArray(m.attachments) && m.attachments.length > 0) {
+    return m.attachments;
+  }
+  if (m.attachment_path && m.attachment_name) {
+    return [
+      {
+        path: m.attachment_path,
+        name: m.attachment_name,
+        type: m.attachment_type ?? "",
+      },
+    ];
+  }
+  return [];
+}
 
 export type ChatThread = {
   channel: MessageChannel;
@@ -46,9 +74,7 @@ type Props = {
     caseId: string;
     channel: MessageChannel;
     body: string;
-    attachmentPath?: string | null;
-    attachmentName?: string | null;
-    attachmentType?: string | null;
+    attachments?: MessageAttachment[];
   }) => Promise<ActionResult<ChatMessage>>;
   uploadAttachment: (
     caseId: string,
@@ -334,42 +360,27 @@ function ChatView({
     setError(null);
     const body = text.trim();
     startTransition(async () => {
-      // One message per attachment (schema stores a single attachment per
-      // row). The first message carries the text body; the rest are
-      // attachment-only. If there are no attachments, one plain text
-      // message.
-      if (readyAttachments.length === 0) {
-        const res = await send({
-          caseId,
-          channel: thread.channel,
-          body,
-        });
-        if (!res.ok) {
-          setError(res.error);
-          return;
-        }
-        onSent(res.data);
-      } else {
-        for (let i = 0; i < readyAttachments.length; i++) {
-          const a = readyAttachments[i];
-          const res = await send({
-            caseId,
-            channel: thread.channel,
-            body: i === 0 ? body : "",
-            attachmentPath: a.path ?? null,
-            attachmentName: a.serverName ?? a.file.name,
-            attachmentType: a.serverType ?? a.file.type,
-          });
-          if (!res.ok) {
-            setError(res.error);
-            return;
-          }
-          onSent(res.data);
-        }
+      // Post-migration 0017: N attachments go into ONE message row (jsonb
+      // array on messages). One row = one insert = one notification.
+      const attachments: MessageAttachment[] = readyAttachments.map((a) => ({
+        path: a.path ?? "",
+        name: a.serverName ?? a.file.name,
+        type: a.serverType ?? a.file.type,
+      }));
+      const res = await send({
+        caseId,
+        channel: thread.channel,
+        body,
+        attachments,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
       }
+      onSent(res.data);
       setText("");
-      // Clear only successfully-sent items; leave errored ones so the user
-      // sees why they didn't go and can remove them explicitly.
+      // Clear only successfully-sent items; errored ones stay so the user
+      // sees why and can dismiss them explicitly.
       setPendingFiles((prev) => prev.filter((p) => p.status === "error"));
       if (fileInputRef.current) fileInputRef.current.value = "";
     });
@@ -667,15 +678,16 @@ function MessageBubble({
           {senderLabel} · {formatTime(m.created_at)}
         </div>
         {m.body ? <div className="whitespace-pre-wrap">{m.body}</div> : null}
-        {m.attachment_path && m.attachment_name ? (
+        {attachmentsOf(m).map((a) => (
           <AttachmentLink
-            path={m.attachment_path}
-            name={m.attachment_name}
-            type={m.attachment_type ?? ""}
+            key={a.path}
+            path={a.path}
+            name={a.name}
+            type={a.type}
             isMe={isMe}
             getAttachmentUrl={getAttachmentUrl}
           />
-        ) : null}
+        ))}
       </div>
     </div>
   );

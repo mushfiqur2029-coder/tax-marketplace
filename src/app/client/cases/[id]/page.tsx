@@ -52,7 +52,7 @@ export default async function CaseDetailPage({
     const supabase = await createClient();
     const { data: msgs } = await supabase
       .from("messages")
-      .select("id, case_id, channel, sender_id, body, attachment_path, attachment_name, attachment_type, created_at")
+      .select("id, case_id, channel, sender_id, body, attachments, attachment_path, attachment_name, attachment_type, created_at")
       .eq("case_id", id)
       .in("channel", ["client_accountant", "client_admin"])
       .order("created_at", { ascending: true });
