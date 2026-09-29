@@ -11,7 +11,8 @@ export type NotificationType =
   | "accountant_approval_decision"
   | "addon_pending_admin"
   | "addon_ready_to_pay"
-  | "addon_review_decision";
+  | "addon_review_decision"
+  | "addon_paid";
 
 export type NotificationRow = {
   id: string;
@@ -292,6 +293,29 @@ export async function insertAddonReviewDecisionNotification(params: {
     { type: "addon_review_decision", caseId: params.caseId },
     error,
   );
+}
+
+// Notify the requesting accountant when the client pays for an add-on.
+// Fires from the Stripe checkout success path (webhook + fallback poll),
+// separately from any wallet-credit trigger.
+export async function insertAddonPaidNotification(params: {
+  caseId: string;
+  accountantId: string;
+  amountPence: number;
+  description: string;
+}) {
+  const admin = createAdminClient();
+  const short =
+    params.description.length > 60
+      ? params.description.slice(0, 57) + "..."
+      : params.description;
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.accountantId,
+    type: "addon_paid" as const,
+    case_id: params.caseId,
+    message: `Client paid £${(params.amountPence / 100).toFixed(2)} for ${short}.`,
+  });
+  logNotifyError({ type: "addon_paid", caseId: params.caseId }, error);
 }
 
 // Notify the accountant when admin approves or rejects their application.

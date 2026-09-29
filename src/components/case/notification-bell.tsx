@@ -34,6 +34,8 @@ function linkFor(n: NotificationRow, role: Role): string {
       return n.case_id ? `/client/cases/${n.case_id}` : "/client";
     case "addon_review_decision":
       return n.case_id ? `/accountant/cases/${n.case_id}` : "/accountant";
+    case "addon_paid":
+      return n.case_id ? `/accountant/cases/${n.case_id}` : "/accountant/wallet";
     case "new_queue_case":
       return `/accountant/cases/${n.case_id}`;
     case "accountant_approval_decision":
@@ -379,6 +381,8 @@ function typeLabel(t: NotificationType): string {
     case "addon_ready_to_pay":
       return "Add-on";
     case "addon_review_decision":
+      return "Add-on";
+    case "addon_paid":
       return "Add-on";
   }
 }

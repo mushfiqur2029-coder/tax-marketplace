@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { loadClientCase } from "@/lib/case";
-import { reconcilePaymentAction, approveAndFileAction } from "@/app/client/actions";
+import {
+  reconcilePaymentAction,
+  approveAndFileAction,
+  startAddonCheckoutAction,
+  reconcileAddonPaymentAction,
+} from "@/app/client/actions";
 import { ApproveAndFileButton } from "./approve-and-file-button";
+import { AddonPayBanner } from "./addon-pay-banner";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import {
@@ -32,20 +38,58 @@ export default async function CaseDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ paid?: string }>;
+  searchParams: Promise<{ paid?: string; addon_paid?: string }>;
 }) {
   const { id } = await params;
-  const { paid } = await searchParams;
+  const { paid, addon_paid } = await searchParams;
 
   if (paid === "1") {
     try {
       await reconcilePaymentAction(id);
     } catch {}
   }
+  // Fallback reconcile for add-on payments — the Stripe webhook usually
+  // wins, but on local dev / slow webhooks the page-load poll picks up
+  // the paid state and fires the accountant notification.
+  if (addon_paid) {
+    try {
+      await reconcileAddonPaymentAction(addon_paid);
+    } catch {}
+  }
 
   const data = await loadClientCase(id);
   const isDraft = data.row.status === "draft";
   const nextHref = `/client/cases/${id}/${data.progress.nextStep === "done" ? "" : data.progress.nextStep}`;
+
+  // Load add-ons on this case. Clients see:
+  //   • pending_payment as a prominent pay banner near the top
+  //   • paid / rejected in the history section below documents
+  // Custom rows in pending_admin never surface here — admin holds them.
+  type AddonRow = {
+    id: string;
+    kind: "preset" | "custom";
+    description: string;
+    amount_pence: number;
+    status: "pending_admin" | "pending_payment" | "paid" | "rejected";
+    created_at: string;
+    paid_at: string | null;
+    review_note: string | null;
+  };
+  let addons: AddonRow[] = [];
+  if (!isDraft) {
+    const supabase = await createClient();
+    const { data: addonRows } = await supabase
+      .from("case_addons")
+      .select(
+        "id, kind, description, amount_pence, status, created_at, paid_at, review_note",
+      )
+      .eq("case_id", id)
+      .in("status", ["pending_payment", "paid", "rejected"])
+      .order("created_at", { ascending: false });
+    addons = (addonRows ?? []) as AddonRow[];
+  }
+  const pendingPayAddons = addons.filter((a) => a.status === "pending_payment");
+  const historyAddons = addons.filter((a) => a.status !== "pending_payment");
 
   // Load client's chat threads: direct (client_accountant) and support (client_admin).
   let threads: ChatThread[] = [];
@@ -98,6 +142,10 @@ export default async function CaseDetailPage({
     "use server";
     return getMessageAttachmentSignedUrl(path);
   };
+  const startAddonCheckout = async (addonId: string) => {
+    "use server";
+    return startAddonCheckoutAction(addonId);
+  };
 
   return (
     <DashboardShell
@@ -143,6 +191,18 @@ export default async function CaseDetailPage({
         <ApproveAndFileButton approve={approve} />
       ) : null}
 
+      {!isDraft && data.me.status !== "suspended"
+        ? pendingPayAddons.map((a) => (
+            <AddonPayBanner
+              key={a.id}
+              addonId={a.id}
+              amountPence={a.amount_pence}
+              description={a.description}
+              startCheckout={startAddonCheckout}
+            />
+          ))
+        : null}
+
       {isDraft ? (
         <>
           <div className="mb-8">
@@ -160,29 +220,61 @@ export default async function CaseDetailPage({
             <ProgressBar status={data.row.status} />
           </div>
           <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-            <div className="card-sl p-6 sm:p-8">
-              <h3
-                className="text-sm font-semibold uppercase tracking-wider text-slate"
-                style={{ fontFamily: "var(--font-mono)" }}
-              >
-                Documents ({data.docs.length})
-              </h3>
-              {data.docs.length === 0 ? (
-                <p className="mt-3 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-slate">
-                  No documents uploaded.
-                </p>
-              ) : (
-                <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
-                  {data.docs.map((d) => (
-                    <li key={d.id} className="flex items-center justify-between px-4 py-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-ink">{d.file_name}</div>
-                        <div className="text-xs text-slate">{formatDateTime(d.uploaded_at)}</div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <div className="space-y-6">
+              <div className="card-sl p-6 sm:p-8">
+                <h3
+                  className="text-sm font-semibold uppercase tracking-wider text-slate"
+                  style={{ fontFamily: "var(--font-mono)" }}
+                >
+                  Documents ({data.docs.length})
+                </h3>
+                {data.docs.length === 0 ? (
+                  <p className="mt-3 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-slate">
+                    No documents uploaded.
+                  </p>
+                ) : (
+                  <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
+                    {data.docs.map((d) => (
+                      <li key={d.id} className="flex items-center justify-between px-4 py-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-ink">{d.file_name}</div>
+                          <div className="text-xs text-slate">{formatDateTime(d.uploaded_at)}</div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {historyAddons.length > 0 ? (
+                <div className="card-sl p-6 sm:p-8">
+                  <h3
+                    className="text-sm font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Add-ons ({historyAddons.length})
+                  </h3>
+                  <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
+                    {historyAddons.map((a) => (
+                      <li key={a.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-ink">
+                            £{(a.amount_pence / 100).toFixed(2)}
+                          </div>
+                          <p className="mt-0.5 text-slate">{a.description}</p>
+                          <p className="mt-1 text-[11px] text-slate">
+                            {a.paid_at ? <>Paid {formatDateTime(a.paid_at)}</> : null}
+                            {a.status === "rejected" ? (
+                              <>Rejected · &ldquo;{a.review_note ?? "no reason given"}&rdquo;</>
+                            ) : null}
+                          </p>
+                        </div>
+                        <ClientAddonStatusPill status={a.status} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
             <aside className="card-sl p-4 sm:p-6">
@@ -225,4 +317,32 @@ function stepLabel(step: "intake" | "documents" | "checkout" | "done") {
     default:
       return "Continue";
   }
+}
+
+function ClientAddonStatusPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    paid: {
+      label: "Paid",
+      bg: "rgba(19,217,160,0.14)",
+      color: "#0E9E77",
+    },
+    rejected: {
+      label: "Rejected",
+      bg: "rgba(220,38,38,0.12)",
+      color: "#B91C1C",
+    },
+  };
+  const cfg = map[status] ?? {
+    label: status,
+    bg: "rgba(15,30,77,0.08)",
+    color: "var(--navy-deep)",
+  };
+  return (
+    <span
+      className="shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+      style={{ background: cfg.bg, color: cfg.color, fontFamily: "var(--font-mono)" }}
+    >
+      {cfg.label}
+    </span>
+  );
 }

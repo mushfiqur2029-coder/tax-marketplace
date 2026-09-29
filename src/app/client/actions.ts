@@ -14,6 +14,7 @@ import {
   URGENT_FEE_PENCE,
   validateDeadline,
 } from "@/lib/working-days";
+import { insertAddonPaidNotification } from "@/lib/notifications";
 
 export type { ActionResult };
 
@@ -373,6 +374,146 @@ export async function reconcilePaymentAction(caseId: string) {
   }
   // Suppress unused-var complaint on caseRow in some setups
   void supabase;
+}
+
+// -------------------------------------------------------------------------
+// Add-on payment: create a Stripe Checkout session for a single add-on.
+// Amount is re-read from the case_addons row at this moment (never trusted
+// from the caller). Ownership is verified via a join on cases.client_id.
+// -------------------------------------------------------------------------
+export async function startAddonCheckoutAction(
+  addonId: string,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("client");
+    assertNotSuspended(me.status, "make payments");
+    const supabase = await createClient();
+
+    // Load the add-on and its case in one shot. Ownership is asserted below.
+    const { data: addon, error: addonErr } = await supabase
+      .from("case_addons")
+      .select(
+        "id, case_id, accountant_id, description, amount_pence, status",
+      )
+      .eq("id", addonId)
+      .single();
+    if (addonErr || !addon) throw new Error("Add-on not found.");
+
+    const { data: caseRow, error: caseErr } = await supabase
+      .from("cases")
+      .select("id, client_id")
+      .eq("id", addon.case_id)
+      .single();
+    if (caseErr || !caseRow) throw new Error("Case not found.");
+    if (caseRow.client_id !== me.id) throw new Error("Not your case.");
+
+    if (addon.status !== "pending_payment") {
+      throw new Error(
+        addon.status === "paid"
+          ? "This add-on is already paid."
+          : "This add-on isn't ready for payment.",
+      );
+    }
+    if (!Number.isFinite(addon.amount_pence) || addon.amount_pence <= 0) {
+      throw new Error("Add-on amount is invalid.");
+    }
+
+    const base = siteUrl();
+    const session = await stripe().checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "gbp",
+            unit_amount: addon.amount_pence, // server-authoritative
+            product_data: {
+              name: "Add-on service",
+              description: addon.description,
+            },
+          },
+        },
+      ],
+      // Only addon_id. Deliberately no case_id: if a stale or older webhook
+      // handler ever loses the addon branch, we do NOT want it to treat this
+      // session's metadata.case_id as a case payment and clobber the case
+      // row. The case can always be recovered from the add-on's DB row.
+      metadata: {
+        addon_id: addon.id,
+      },
+      success_url: `${base}/client/cases/${addon.case_id}?addon_paid=${addon.id}`,
+      cancel_url: `${base}/client/cases/${addon.case_id}?addon_canceled=${addon.id}`,
+    });
+
+    const admin = createAdminClient();
+    await admin
+      .from("case_addons")
+      .update({ stripe_checkout_session_id: session.id })
+      .eq("id", addon.id);
+
+    if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
+    redirect(session.url);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Fallback: if the Stripe webhook hasn't landed yet, poll the session once
+// and reconcile. Called from the client case-detail page after
+// ?addon_paid=<addonId>. Idempotent — safe to call after the webhook won
+// the race, since case_addons.status will already be 'paid'.
+// -------------------------------------------------------------------------
+export async function reconcileAddonPaymentAction(addonId: string) {
+  const me = await requireRole("client");
+  const admin = createAdminClient();
+
+  const { data: addon } = await admin
+    .from("case_addons")
+    .select(
+      "id, case_id, accountant_id, description, amount_pence, status, stripe_checkout_session_id",
+    )
+    .eq("id", addonId)
+    .single();
+  if (!addon) return;
+
+  const { data: caseRow } = await admin
+    .from("cases")
+    .select("client_id")
+    .eq("id", addon.case_id)
+    .single();
+  if (!caseRow || caseRow.client_id !== me.id) return;
+  if (addon.status === "paid") return;
+  if (!addon.stripe_checkout_session_id) return;
+
+  const session = await stripe().checkout.sessions.retrieve(
+    addon.stripe_checkout_session_id,
+  );
+  if (session.payment_status !== "paid") return;
+
+  await admin
+    .from("case_addons")
+    .update({
+      status: "paid",
+      stripe_payment_id:
+        typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : (session.payment_intent?.id ?? null),
+      paid_at: new Date().toISOString(),
+    })
+    .eq("id", addonId)
+    .eq("status", "pending_payment"); // race guard against the webhook
+
+  await insertAddonPaidNotification({
+    caseId: addon.case_id,
+    accountantId: addon.accountant_id,
+    amountPence: addon.amount_pence,
+    description: addon.description,
+  });
+
+  revalidatePath(`/client/cases/${addon.case_id}`);
+  revalidatePath(`/accountant/cases/${addon.case_id}`);
 }
 
 // -------------------------------------------------------------------------
