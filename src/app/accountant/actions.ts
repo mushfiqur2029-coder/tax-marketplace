@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { insertAddonPendingAdminNotifications } from "@/lib/notifications";
+import {
+  insertAddonPendingAdminNotifications,
+  insertAddonReadyToPayNotification,
+} from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
 
 export type { ActionResult };
@@ -145,7 +148,7 @@ export async function requestPresetAddonAction(
 
     const { data: caseRow, error: caseErr } = await supabase
       .from("cases")
-      .select("id, accountant_id, status")
+      .select("id, client_id, accountant_id, status")
       .eq("id", caseId)
       .single();
     if (caseErr || !caseRow) throw new Error("Case not found.");
@@ -167,16 +170,27 @@ export async function requestPresetAddonAction(
       throw new Error("That add-on is currently unavailable.");
     }
 
+    const snapshotDescription = `${preset.name} — ${preset.description}`;
     const { error: insertErr } = await supabase.from("case_addons").insert({
       case_id: caseId,
       accountant_id: me.id,
       kind: "preset",
       preset_key: preset.key,
-      description: `${preset.name} — ${preset.description}`,
+      description: snapshotDescription,
       amount_pence: preset.amount_pence,
       status: "pending_payment",
     });
     if (insertErr) throw new Error(insertErr.message);
+
+    // Preset add-ons skip admin review, so the client-facing notification
+    // fires here. The custom path fires the same notification from
+    // approveAddonAction once admin approves.
+    await insertAddonReadyToPayNotification({
+      caseId,
+      clientId: caseRow.client_id,
+      amountPence: preset.amount_pence,
+      description: snapshotDescription,
+    });
 
     revalidatePath(`/accountant/cases/${caseId}`);
     revalidatePath(`/client/cases/${caseId}`);

@@ -9,7 +9,9 @@ export type NotificationType =
   | "withdrawal_paid"
   | "case_reassigned"
   | "accountant_approval_decision"
-  | "addon_pending_admin";
+  | "addon_pending_admin"
+  | "addon_ready_to_pay"
+  | "addon_review_decision";
 
 export type NotificationRow = {
   id: string;
@@ -224,6 +226,70 @@ export async function insertAddonPendingAdminNotifications(params: {
       caseId: params.caseId,
       recipientCount: admins.length,
     },
+    error,
+  );
+}
+
+// Notify the case's client that an add-on is ready to pay. Fires from two
+// places: (1) accountant requests a preset (goes straight to pending_payment),
+// (2) admin approves a custom (transitions to pending_payment). Both paths
+// call this so the client's experience is identical.
+export async function insertAddonReadyToPayNotification(params: {
+  caseId: string;
+  clientId: string;
+  amountPence: number;
+  description: string;
+}) {
+  const admin = createAdminClient();
+  const short =
+    params.description.length > 80
+      ? params.description.slice(0, 77) + "..."
+      : params.description;
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.clientId,
+    type: "addon_ready_to_pay" as const,
+    case_id: params.caseId,
+    message: `Your accountant added £${(
+      params.amountPence / 100
+    ).toFixed(2)} to pay: ${short}`,
+  });
+  logNotifyError(
+    { type: "addon_ready_to_pay", caseId: params.caseId },
+    error,
+  );
+}
+
+// Notify the requesting accountant when admin approves or rejects a custom
+// add-on. Same-type-for-both-outcomes shape mirrors
+// accountant_approval_decision.
+export async function insertAddonReviewDecisionNotification(params: {
+  caseId: string;
+  accountantId: string;
+  decision: "approved" | "rejected";
+  amountPence: number;
+  description: string;
+  note: string | null;
+}) {
+  const admin = createAdminClient();
+  const short =
+    params.description.length > 60
+      ? params.description.slice(0, 57) + "..."
+      : params.description;
+  const money = `£${(params.amountPence / 100).toFixed(2)}`;
+  const message =
+    params.decision === "approved"
+      ? `Admin approved your ${money} add-on (${short}). Sent to the client for payment.`
+      : `Admin rejected your ${money} add-on (${short})${
+          params.note?.trim() ? `: ${params.note.trim()}` : "."
+        }`;
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.accountantId,
+    type: "addon_review_decision" as const,
+    case_id: params.caseId,
+    message,
+  });
+  logNotifyError(
+    { type: "addon_review_decision", caseId: params.caseId },
     error,
   );
 }

@@ -8,6 +8,8 @@ import {
   insertWithdrawalPaidNotification,
   insertReassignmentNotifications,
   insertAccountantApprovalNotification,
+  insertAddonReadyToPayNotification,
+  insertAddonReviewDecisionNotification,
 } from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
 
@@ -318,6 +320,139 @@ export async function markWithdrawalPaidAction(
 
   revalidatePath(`/admin/withdrawals`);
   revalidatePath(`/accountant/wallet`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Admin approve/reject for a custom add-on request.
+//
+// Approve flips pending_admin -> pending_payment, records the reviewer, and
+// notifies both the client (add-on ready to pay) and the requesting
+// accountant (approved, sent to client). Reject flips to 'rejected' and
+// notifies only the accountant with the reason.
+//
+// Preset add-ons never reach this action — they short-circuit past admin
+// review at insert time and go straight to pending_payment.
+// -------------------------------------------------------------------------
+export async function approveAddonAction(
+  addonId: string,
+  note: string | null,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
+
+    const { data: row, error: rowErr } = await admin
+      .from("case_addons")
+      .select(
+        "id, case_id, accountant_id, kind, status, amount_pence, description",
+      )
+      .eq("id", addonId)
+      .single();
+    if (rowErr || !row) throw new Error("Add-on not found.");
+    if (row.kind !== "custom") {
+      throw new Error("Only custom add-ons need admin review.");
+    }
+    if (row.status !== "pending_admin") {
+      throw new Error(`Add-on is already ${row.status}, can't approve again.`);
+    }
+
+    const { error: updateErr } = await admin
+      .from("case_addons")
+      .update({
+        status: "pending_payment",
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: me.id,
+        review_note: note?.trim() || null,
+      })
+      .eq("id", addonId)
+      .eq("status", "pending_admin"); // race guard
+    if (updateErr) throw new Error(updateErr.message);
+
+    // Look up the client for the ready-to-pay notification.
+    const { data: caseRow } = await admin
+      .from("cases")
+      .select("client_id")
+      .eq("id", row.case_id)
+      .single();
+    if (caseRow?.client_id) {
+      await insertAddonReadyToPayNotification({
+        caseId: row.case_id,
+        clientId: caseRow.client_id,
+        amountPence: row.amount_pence,
+        description: row.description,
+      });
+    }
+    await insertAddonReviewDecisionNotification({
+      caseId: row.case_id,
+      accountantId: row.accountant_id,
+      decision: "approved",
+      amountPence: row.amount_pence,
+      description: row.description,
+      note: note?.trim() || null,
+    });
+
+    revalidatePath("/admin/addon-requests");
+    revalidatePath(`/admin/cases/${row.case_id}`);
+    revalidatePath(`/accountant/cases/${row.case_id}`);
+    revalidatePath(`/client/cases/${row.case_id}`);
+    revalidatePath(`/client`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function rejectAddonAction(
+  addonId: string,
+  note: string | null,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
+
+    const { data: row, error: rowErr } = await admin
+      .from("case_addons")
+      .select(
+        "id, case_id, accountant_id, kind, status, amount_pence, description",
+      )
+      .eq("id", addonId)
+      .single();
+    if (rowErr || !row) throw new Error("Add-on not found.");
+    if (row.kind !== "custom") {
+      throw new Error("Only custom add-ons need admin review.");
+    }
+    if (row.status !== "pending_admin") {
+      throw new Error(`Add-on is already ${row.status}, can't reject.`);
+    }
+
+    const { error: updateErr } = await admin
+      .from("case_addons")
+      .update({
+        status: "rejected",
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: me.id,
+        review_note: note?.trim() || null,
+      })
+      .eq("id", addonId)
+      .eq("status", "pending_admin");
+    if (updateErr) throw new Error(updateErr.message);
+
+    await insertAddonReviewDecisionNotification({
+      caseId: row.case_id,
+      accountantId: row.accountant_id,
+      decision: "rejected",
+      amountPence: row.amount_pence,
+      description: row.description,
+      note: note?.trim() || null,
+    });
+
+    revalidatePath("/admin/addon-requests");
+    revalidatePath(`/admin/cases/${row.case_id}`);
+    revalidatePath(`/accountant/cases/${row.case_id}`);
     return { ok: true };
   } catch (e) {
     return fail(e);

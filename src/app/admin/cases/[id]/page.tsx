@@ -50,7 +50,7 @@ export default async function AdminCasePage({
   const tier = getTier(row.tier);
   if (!seg || !tier) notFound();
 
-  const [{ data: client }, { data: acc }, { data: allAccs }, { data: docs }, { data: msgs }, { data: actions }, navCounts] =
+  const [{ data: client }, { data: acc }, { data: allAccs }, { data: docs }, { data: msgs }, { data: actions }, { data: addons }, navCounts] =
     await Promise.all([
       admin.from("users").select("id, email").eq("id", row.client_id).single(),
       row.accountant_id
@@ -72,6 +72,11 @@ export default async function AdminCasePage({
         .select("id, target_user_id, action, note, created_at")
         .order("created_at", { ascending: false })
         .limit(5),
+      admin
+        .from("case_addons")
+        .select("id, kind, description, amount_pence, status, review_note, created_at, reviewed_at, paid_at")
+        .eq("case_id", id)
+        .order("created_at", { ascending: false }),
       getAdminNavCounts(),
     ]);
 
@@ -221,6 +226,43 @@ export default async function AdminCasePage({
               className="text-sm font-semibold uppercase tracking-wider text-slate"
               style={{ fontFamily: "var(--font-mono)" }}
             >
+              Add-ons ({addons?.length ?? 0})
+            </h3>
+            {!addons || addons.length === 0 ? (
+              <p className="mt-3 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-slate">
+                No add-ons on this case.
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
+                {addons.map((a) => (
+                  <li key={a.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-ink">
+                        £{(a.amount_pence / 100).toFixed(2)}{" "}
+                        <span className="text-xs font-normal text-slate">
+                          · {a.kind === "preset" ? "Preset" : "Custom"}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-sm text-slate">{a.description}</p>
+                      <p className="mt-1 text-[11px] text-slate">
+                        Requested {formatDateTime(a.created_at)}
+                        {a.reviewed_at ? <> · reviewed {formatDateTime(a.reviewed_at)}</> : null}
+                        {a.paid_at ? <> · paid {formatDateTime(a.paid_at)}</> : null}
+                        {a.review_note ? <> · &ldquo;{a.review_note}&rdquo;</> : null}
+                      </p>
+                    </div>
+                    <AddonStatusPill status={a.status} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="card-sl p-6 sm:p-8">
+            <h3
+              className="text-sm font-semibold uppercase tracking-wider text-slate"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
               Documents ({docs?.length ?? 0})
             </h3>
             {!docs || docs.length === 0 ? (
@@ -260,5 +302,43 @@ export default async function AdminCasePage({
       </div>
 
     </DashboardShell>
+  );
+}
+
+function AddonStatusPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    pending_admin: {
+      label: "Pending admin",
+      bg: "rgba(217,159,25,0.14)",
+      color: "#B57E12",
+    },
+    pending_payment: {
+      label: "Pending payment",
+      bg: "rgba(25,156,217,0.14)",
+      color: "var(--sky)",
+    },
+    paid: {
+      label: "Paid",
+      bg: "rgba(19,217,160,0.14)",
+      color: "#0E9E77",
+    },
+    rejected: {
+      label: "Rejected",
+      bg: "rgba(220,38,38,0.12)",
+      color: "#B91C1C",
+    },
+  };
+  const cfg = map[status] ?? {
+    label: status,
+    bg: "rgba(15,30,77,0.08)",
+    color: "var(--navy-deep)",
+  };
+  return (
+    <span
+      className="shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+      style={{ background: cfg.bg, color: cfg.color, fontFamily: "var(--font-mono)" }}
+    >
+      {cfg.label}
+    </span>
   );
 }
