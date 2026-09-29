@@ -324,6 +324,98 @@ export async function markWithdrawalPaidAction(
   }
 }
 
+// -------------------------------------------------------------------------
+// Add-on catalog CRUD. `key` is the stable PK referenced by case_addons.
+// preset_key snapshots — once created, the key cannot change. Name, price,
+// description, and active are editable at will; edits do not retroactively
+// rewrite existing case_addons rows (they snapshot at creation).
+// -------------------------------------------------------------------------
+export async function createAddonCatalogAction(input: {
+  key: string;
+  name: string;
+  description: string;
+  amountPence: number;
+}): Promise<ActionResult> {
+  try {
+    await requireRole("admin");
+    const admin = createAdminClient();
+
+    const key = input.key.trim().toLowerCase();
+    const name = input.name.trim();
+    const description = input.description.trim();
+    const amountPence = Math.round(input.amountPence);
+
+    if (!/^[a-z0-9_]+$/.test(key)) {
+      throw new Error("Key must be lowercase letters, digits, underscores.");
+    }
+    if (!name) throw new Error("Name is required.");
+    if (!description) throw new Error("Description is required.");
+    if (!Number.isFinite(amountPence) || amountPence <= 0) {
+      throw new Error("Amount must be greater than zero.");
+    }
+
+    const { error } = await admin.from("addon_catalog").insert({
+      key,
+      name,
+      description,
+      amount_pence: amountPence,
+    });
+    if (error) {
+      // 23505 = unique_violation
+      if ((error as { code?: string }).code === "23505") {
+        throw new Error(`An add-on with key "${key}" already exists.`);
+      }
+      throw new Error(error.message);
+    }
+
+    revalidatePath("/admin/addon-catalog");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function updateAddonCatalogAction(
+  key: string,
+  input: {
+    name: string;
+    description: string;
+    amountPence: number;
+    active: boolean;
+  },
+): Promise<ActionResult> {
+  try {
+    await requireRole("admin");
+    const admin = createAdminClient();
+
+    const name = input.name.trim();
+    const description = input.description.trim();
+    const amountPence = Math.round(input.amountPence);
+    if (!name) throw new Error("Name is required.");
+    if (!description) throw new Error("Description is required.");
+    if (!Number.isFinite(amountPence) || amountPence <= 0) {
+      throw new Error("Amount must be greater than zero.");
+    }
+
+    const { error } = await admin
+      .from("addon_catalog")
+      .update({
+        name,
+        description,
+        amount_pence: amountPence,
+        active: input.active,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("key", key);
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/addon-catalog");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 // Signed URL for a receipt file. Callable by admin OR the owning accountant.
 // The path always has the shape "receipts/{withdrawal_id}/..." — we look up
 // the withdrawal and verify caller access before minting the URL.
