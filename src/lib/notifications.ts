@@ -8,7 +8,8 @@ export type NotificationType =
   | "withdrawal_requested"
   | "withdrawal_paid"
   | "case_reassigned"
-  | "accountant_approval_decision";
+  | "accountant_approval_decision"
+  | "addon_pending_admin";
 
 export type NotificationRow = {
   id: string;
@@ -47,6 +48,32 @@ export async function getBellState(userId: string): Promise<BellState> {
   };
 }
 
+// Every helper below inserts on a best-effort basis: a failed notification
+// must not roll back the underlying business action (paid withdrawal, taken
+// case, etc.). But silent failures cost hours of debugging — see the
+// missing `addon_pending_admin` enum value that shipped this behaviour to
+// production and was invisible until someone asked "why didn't admin see
+// this?". Any insert error is checked and logged with enough context to
+// grep for later.
+function logNotifyError(
+  ctx: {
+    type: NotificationType;
+    caseId?: string | null;
+    recipientCount?: number;
+  },
+  error: { message?: string; code?: string } | null,
+) {
+  if (!error) return;
+  console.error(
+    `[notifications] insert failed type=${ctx.type}` +
+      (ctx.caseId ? ` case=${ctx.caseId}` : "") +
+      (ctx.recipientCount !== undefined
+        ? ` recipients=${ctx.recipientCount}`
+        : "") +
+      ` code=${error.code ?? "?"} message=${error.message ?? "?"}`,
+  );
+}
+
 // Server-side notification writes used by the entry points that don't have a
 // DB trigger (profile change submissions and withdrawal flows).
 
@@ -59,13 +86,17 @@ export async function insertProfileChangeNotifications(params: {
     .select("id")
     .eq("role", "admin");
   if (!admins?.length) return;
-  await admin.from("notifications").insert(
+  const { error } = await admin.from("notifications").insert(
     admins.map((a) => ({
       recipient_id: a.id,
       type: "profile_change_request" as const,
       case_id: null,
       message: `${params.submitterEmail} submitted a profile change.`,
     })),
+  );
+  logNotifyError(
+    { type: "profile_change_request", recipientCount: admins.length },
+    error,
   );
 }
 
@@ -79,13 +110,17 @@ export async function insertWithdrawalRequestedNotifications(params: {
     .select("id")
     .eq("role", "admin");
   if (!admins?.length) return;
-  await admin.from("notifications").insert(
+  const { error } = await admin.from("notifications").insert(
     admins.map((a) => ({
       recipient_id: a.id,
       type: "withdrawal_requested" as const,
       case_id: null,
       message: `${params.accountantEmail} requested £${(params.amountPence / 100).toFixed(2)} withdrawal.`,
     })),
+  );
+  logNotifyError(
+    { type: "withdrawal_requested", recipientCount: admins.length },
+    error,
   );
 }
 
@@ -94,12 +129,13 @@ export async function insertWithdrawalPaidNotification(params: {
   amountPence: number;
 }) {
   const admin = createAdminClient();
-  await admin.from("notifications").insert({
+  const { error } = await admin.from("notifications").insert({
     recipient_id: params.accountantId,
     type: "withdrawal_paid",
     case_id: null,
     message: `Your £${(params.amountPence / 100).toFixed(2)} withdrawal was paid.`,
   });
+  logNotifyError({ type: "withdrawal_paid" }, error);
 }
 
 // Notify both sides of a case reassignment. Used by reassignCaseAction so
@@ -141,7 +177,55 @@ export async function insertReassignmentNotifications(params: {
       message: `A case was assigned to you${reason}.`,
     });
   }
-  if (rows.length) await admin.from("notifications").insert(rows);
+  if (!rows.length) return;
+  const { error } = await admin.from("notifications").insert(rows);
+  logNotifyError(
+    {
+      type: "case_reassigned",
+      caseId: params.caseId,
+      recipientCount: rows.length,
+    },
+    error,
+  );
+}
+
+// Notify every admin when an accountant requests a custom add-on that needs
+// review before the client can see it. Preset add-ons skip this — they go
+// straight to the client for payment.
+export async function insertAddonPendingAdminNotifications(params: {
+  caseId: string;
+  accountantEmail: string;
+  amountPence: number;
+  description: string;
+}) {
+  const admin = createAdminClient();
+  const { data: admins } = await admin
+    .from("users")
+    .select("id")
+    .eq("role", "admin");
+  if (!admins?.length) return;
+  const short =
+    params.description.length > 80
+      ? params.description.slice(0, 77) + "..."
+      : params.description;
+  const { error } = await admin.from("notifications").insert(
+    admins.map((a) => ({
+      recipient_id: a.id,
+      type: "addon_pending_admin" as const,
+      case_id: params.caseId,
+      message: `${params.accountantEmail} requested a £${(
+        params.amountPence / 100
+      ).toFixed(2)} add-on: ${short}`,
+    })),
+  );
+  logNotifyError(
+    {
+      type: "addon_pending_admin",
+      caseId: params.caseId,
+      recipientCount: admins.length,
+    },
+    error,
+  );
 }
 
 // Notify the accountant when admin approves or rejects their application.
@@ -157,10 +241,11 @@ export async function insertAccountantApprovalNotification(params: {
       : `Your account application wasn't approved${
           params.note?.trim() ? `: ${params.note.trim()}` : "."
         }`;
-  await admin.from("notifications").insert({
+  const { error } = await admin.from("notifications").insert({
     recipient_id: params.accountantId,
     type: "accountant_approval_decision",
     case_id: null,
     message,
   });
+  logNotifyError({ type: "accountant_approval_decision" }, error);
 }

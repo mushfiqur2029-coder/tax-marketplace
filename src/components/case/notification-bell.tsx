@@ -28,6 +28,8 @@ function linkFor(n: NotificationRow, role: Role): string {
       return "/admin/withdrawals";
     case "withdrawal_paid":
       return "/accountant/wallet";
+    case "addon_pending_admin":
+      return "/admin/addon-requests";
     case "new_queue_case":
       return `/accountant/cases/${n.case_id}`;
     case "accountant_approval_decision":
@@ -368,5 +370,7 @@ function typeLabel(t: NotificationType): string {
       return "Reassignment";
     case "accountant_approval_decision":
       return "Approval";
+    case "addon_pending_admin":
+      return "Add-on";
   }
 }

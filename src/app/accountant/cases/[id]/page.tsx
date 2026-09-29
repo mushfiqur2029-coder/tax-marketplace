@@ -5,6 +5,8 @@ import {
   takeCaseAction,
   updateCaseStatusAction,
   getDocSignedUrlForAccountant,
+  requestPresetAddonAction,
+  requestCustomAddonAction,
 } from "@/app/accountant/actions";
 import {
   sendMessageAction,
@@ -26,6 +28,7 @@ import {
 import { TakeCaseForm } from "./take-case-form";
 import { StatusTransition } from "./status-transition";
 import { DocumentsList } from "./documents-list";
+import { AddonPanel, type AddonRow, type CatalogOption } from "./addon-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +76,31 @@ export default async function AccountantCaseDetailPage({
   const data = load;
   const seg = data.segment;
   const answers = (data.row.intake_answers ?? {}) as Record<string, string>;
+
+  // Add-ons on this case + the active catalog for the request picker.
+  // Loaded once whether or not the case is theirs; the panel is only
+  // rendered when data.isMine below.
+  let addons: AddonRow[] = [];
+  let catalog: CatalogOption[] = [];
+  if (data.isMine) {
+    const supabase = await createClient();
+    const [{ data: addonRows }, { data: catalogRows }] = await Promise.all([
+      supabase
+        .from("case_addons")
+        .select(
+          "id, kind, description, amount_pence, status, created_at, reviewed_at, review_note, paid_at",
+        )
+        .eq("case_id", id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("addon_catalog")
+        .select("key, name, description, amount_pence")
+        .eq("active", true)
+        .order("name", { ascending: true }),
+    ]);
+    addons = (addonRows ?? []) as AddonRow[];
+    catalog = (catalogRows ?? []) as CatalogOption[];
+  }
 
   // Chat threads (only available after taking): direct with client, support with admin.
   let threads: ChatThread[] = [];
@@ -132,6 +160,17 @@ export default async function AccountantCaseDetailPage({
   const getAttachmentUrl = async (path: string) => {
     "use server";
     return getMessageAttachmentSignedUrl(path);
+  };
+  const requestPreset = async (presetKey: string) => {
+    "use server";
+    return requestPresetAddonAction(id, presetKey);
+  };
+  const requestCustom = async (input: {
+    description: string;
+    amountPence: number;
+  }) => {
+    "use server";
+    return requestCustomAddonAction({ caseId: id, ...input });
   };
 
   return (
@@ -204,6 +243,39 @@ export default async function AccountantCaseDetailPage({
               </h3>
               <div className="mt-3">
                 <DocumentsList docs={data.docs} signUrl={signDocUrl} />
+              </div>
+            </section>
+          ) : null}
+
+          {data.isMine ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Add-ons ({addons.length})
+              </h3>
+              <p className="mt-1 text-xs text-slate">
+                Charge for extra work mid-case. Preset services go straight to
+                the client for payment; anything custom needs admin approval
+                first.
+              </p>
+              <div className="mt-4">
+                <AddonPanel
+                  addons={addons}
+                  catalog={catalog}
+                  requestPreset={requestPreset}
+                  requestCustom={requestCustom}
+                  disabled={
+                    data.row.status === "complete" ||
+                    data.me.status === "suspended"
+                  }
+                  disabledReason={
+                    data.me.status === "suspended"
+                      ? "Your account is suspended — add-on requests are locked until reinstated."
+                      : "Case is complete — no more add-ons."
+                  }
+                />
               </div>
             </section>
           ) : null}
