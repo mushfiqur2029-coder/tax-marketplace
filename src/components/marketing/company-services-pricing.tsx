@@ -1,37 +1,26 @@
 import Link from "next/link";
 import { COMPANY_TIERS } from "@/lib/plans";
 
-// Only rendered on /limited-company-tax-returns. Shows the full 6-card
-// company grid, pulling from the shared PLAN_TIERS source of truth so
-// prices stay in lockstep with the client wizard.
-const IDS = [
-  "vat_basic",
-  "vat_standard",
-  "vat_accounts",
-  "dormant",
-  "non_vat_reg",
-  "vat_reg",
-] as const;
-
-const TIERS = IDS
-  .map((id) => COMPANY_TIERS.find((t) => t.id === id))
-  .filter((t): t is NonNullable<typeof t> => t != null);
-
+// /limited-company-tax-returns renders this. Shows the three flat-fee
+// services the limited-company flow sells (Dormant, Non-VAT Registered,
+// VAT Registered), pulled from the shared PLAN_TIERS source so prices
+// stay in lockstep with the client wizard.
 export function CompanyServicesPricing() {
   return (
     <section id="company-pricing" className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="section-head center">
           <span className="eyebrow">Company services</span>
-          <h2>Fixed prices for company-level filings.</h2>
+          <h2>One flat fee per engagement.</h2>
           <p>
-            Separate from personal filing. Pick the tier that matches your
-            company&rsquo;s activity.
+            Pick the service that matches your company&rsquo;s activity. No
+            quarterly or monthly billing &mdash; one price covers the whole
+            engagement.
           </p>
         </div>
 
         <div className="pricing-grid">
-          {TIERS.map((t) => (
+          {COMPANY_TIERS.map((t) => (
             <div
               key={t.id}
               className={"price-card" + (t.featured ? " featured" : "")}

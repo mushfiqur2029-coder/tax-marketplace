@@ -68,32 +68,42 @@ export async function createCaseAction(
     if (!getSegment(segment)) throw new Error("Please pick a segment.");
     if (!getTier(tier)) throw new Error("Please pick a plan.");
 
-    // A deadline is required now that we have a minimum-working-day rule
-    // to enforce — the form always sends one.
-    if (!deadlineRaw) throw new Error("Please pick a filing deadline.");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineRaw)) {
-      throw new Error("Please pick a valid deadline.");
+    // Limited-company cases are flat-fee engagements. They don't have a
+    // filing deadline, don't support the urgent upgrade, and skip the
+    // 5-working-day rule — the engagement letter + payment flow runs
+    // first, then the per-service document checklist (handled downstream).
+    const isCompany = segment === "limited_company_vat";
+
+    let deadline: string | null = null;
+    let effectiveUrgent = false;
+    let urgentFeePence = 0;
+
+    if (!isCompany) {
+      if (!deadlineRaw) throw new Error("Please pick a filing deadline.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineRaw)) {
+        throw new Error("Please pick a valid deadline.");
+      }
+
+      // Server-side gate: at least 5 working days for standard, at least
+      // the next working day for urgent. Both computed in Europe/London and
+      // exclude UK bank holidays.
+      const check = await validateDeadline(deadlineRaw, isUrgent);
+      if (!check.ok) {
+        throw new Error(
+          check.reason === "too_early_standard"
+            ? `Standard deadlines need at least 5 working days. Earliest available: ${check.earliest}. Tick "Urgent filing" for sooner.`
+            : `Even urgent needs the next working day at minimum. Earliest available: ${check.earliest}.`,
+        );
+      }
+
+      // Store deadline as a UTC ISO timestamp anchored at midnight London
+      // date. The picker gives us the calendar date; adding T00:00 in
+      // London and converting to ISO keeps the semantics stable across
+      // machines.
+      deadline = new Date(`${deadlineRaw}T00:00:00Z`).toISOString();
+      effectiveUrgent = isUrgent;
+      urgentFeePence = isUrgent ? URGENT_FEE_PENCE : 0;
     }
-
-    // Server-side gate: at least 5 working days for standard, at least
-    // the next working day for urgent. Both computed in Europe/London and
-    // exclude UK bank holidays.
-    const check = await validateDeadline(deadlineRaw, isUrgent);
-    if (!check.ok) {
-      throw new Error(
-        check.reason === "too_early_standard"
-          ? `Standard deadlines need at least 5 working days. Earliest available: ${check.earliest}. Tick "Urgent filing" for sooner.`
-          : `Even urgent needs the next working day at minimum. Earliest available: ${check.earliest}.`,
-      );
-    }
-
-    // Store deadline as a UTC ISO timestamp anchored at midnight London
-    // date. The picker gives us the calendar date; adding T00:00 in
-    // London and converting to ISO keeps the semantics stable across
-    // machines.
-    const deadline = new Date(`${deadlineRaw}T00:00:00Z`).toISOString();
-
-    const urgentFeePence = isUrgent ? URGENT_FEE_PENCE : 0;
 
     const supabase = await createClient();
     const { data, error } = await supabase
@@ -105,7 +115,7 @@ export async function createCaseAction(
         status: "draft",
         stripe_payment_status: "pending",
         deadline,
-        is_urgent: isUrgent,
+        is_urgent: effectiveUrgent,
         urgent_fee_pence: urgentFeePence,
       })
       .select("id")
@@ -114,7 +124,15 @@ export async function createCaseAction(
     if (error || !data) throw new Error(error?.message ?? "Could not create case.");
 
     revalidatePath("/client");
-    redirect(`/client/cases/${data.id}/intake`);
+    // Limited-company cases pick up the engagement letter + payment +
+    // checklist flow (built in later batches). For now the case lands at
+    // the dashboard so there's no dead-end intake step; later batches
+    // will route the client straight into the engagement-letter step.
+    redirect(
+      isCompany
+        ? `/client/cases/${data.id}`
+        : `/client/cases/${data.id}/intake`,
+    );
   } catch (e) {
     return fail(e);
   }

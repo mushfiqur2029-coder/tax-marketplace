@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { PERSONAL_TIERS, type PlanTier } from "@/lib/plans";
+import {
+  PERSONAL_TIERS,
+  COMPANY_TIERS,
+  type PlanTier,
+} from "@/lib/plans";
 
 // Marketing pricing block. Personal tiers come from PLAN_TIERS so the
-// homepage stays in lockstep with the client checkout flow.
-// The Business/VAT track on the homepage shows only the three VAT plans;
-// the full 6-tier company grid lives on /limited-company-tax-returns via
-// CompanyServicesPricing.
-import { COMPANY_TIERS } from "@/lib/plans";
-const BUSINESS: PlanTier[] = COMPANY_TIERS.filter((t) =>
-  ["vat_basic", "vat_standard", "vat_accounts"].includes(t.id),
-);
+// homepage stays in lockstep with the client checkout flow. Business
+// shows the three limited-company flat-fee services (Dormant, Non-VAT
+// Registered, VAT Registered); the deeper breakdown lives on
+// /limited-company-tax-returns via CompanyServicesPricing.
+const BUSINESS: PlanTier[] = COMPANY_TIERS;
 
 export function PricingSection() {
   const [mode, setMode] = useState<"personal" | "business">("personal");

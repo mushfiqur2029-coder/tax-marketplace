@@ -5,13 +5,16 @@ export type TierId =
   | "basic"
   | "standard"
   | "premium"
-  // Limited-company / VAT
-  | "vat_basic"
-  | "vat_standard"
-  | "vat_accounts"
+  // Limited company (three flat-fee services, £400 each, temporary pricing)
   | "dormant"
   | "non_vat_reg"
   | "vat_reg";
+
+// Legacy limited-company tier IDs that are no longer sold. Kept as Postgres
+// enum values (vat_basic / vat_standard / vat_accounts) because dropping an
+// enum value is painful and we have no cases on them. They are intentionally
+// absent from PLAN_TIERS below so the wizard and marketing site can't show
+// them.
 
 export type PlanGroup = "personal" | "company";
 
@@ -94,80 +97,63 @@ export const PLAN_TIERS: PlanTier[] = [
       "If your situation is more complex, or you want year-round accountant support.",
   },
 
-  // ---------- Limited company / VAT ----------
-  {
-    id: "vat_basic",
-    group: "company",
-    title: "VAT Basic",
-    tagline: "One quarter, filed.",
-    priceGbp: 129,
-    priceGbpSubtitle: "one-off",
-    features: [
-      "Accountant prepares and files VAT",
-      "Accuracy guarantee",
-      "Secure document upload",
-      "Status tracking",
-    ],
-  },
-  {
-    id: "vat_standard",
-    group: "company",
-    title: "VAT Standard",
-    tagline: "Quarterly, on autopilot.",
-    priceGbp: 99,
-    pricePer: "/quarter",
-    featured: true,
-    features: [
-      "Filed every quarter automatically",
-      "Scheme review (flat rate vs standard)",
-      "HMRC letter support",
-      "Direct chat with your accountant",
-    ],
-  },
-  {
-    id: "vat_accounts",
-    group: "company",
-    title: "VAT + Accounts",
-    tagline: "Full business partner.",
-    priceGbp: 449,
-    priceGbpSubtitle: "one-off",
-    features: [
-      "Everything in VAT Standard",
-      "Year-end accounts included",
-      "Corporation tax return",
-      "Dedicated accountant",
-      "Annual turnover below £200k",
-    ],
-  },
+  // ---------- Limited company (3 flat-fee services, £400 each) ----------
+  //
+  // The three "services" from the Limited Company flow map 1:1 to a tier
+  // here. Picking the service IS picking the tier; there's no additional
+  // plan-tier step for the company path. Prices are temporary — the user
+  // will adjust them later once real-world data informs each one.
   {
     id: "dormant",
     group: "company",
-    title: "Dormant",
-    tagline: "For inactive companies.",
-    priceGbp: 89,
-    priceSuffix: "+VAT",
+    title: "Dormant company",
+    tagline: "For companies with no trading activity in the period.",
+    priceGbp: 400,
+    priceGbpSubtitle: "one-off",
+    features: [
+      "Dormant annual accounts prepared and filed",
+      "CT600 nil return to HMRC",
+      "Companies House submission",
+      "Flat fee, no surprises",
+    ],
     description:
-      "For companies that are inactive and have no business activity.",
+      "For companies that are inactive and have no business activity in the period.",
   },
   {
     id: "non_vat_reg",
     group: "company",
-    title: "Non-VAT registered",
-    tagline: "Company-level filings.",
-    priceGbp: 329,
-    priceSuffix: "+VAT",
+    title: "Non-VAT registered company",
+    tagline: "Full year-end accounts and corporation tax, done.",
+    priceGbp: 400,
+    priceGbpSubtitle: "one-off",
+    // All three limited-company services are the same £400 price, so no
+    // "Most chosen" badge on any of them — would just be arbitrary. The
+    // badge stays on the Personal path where tiers have genuinely
+    // different prices and a real recommendation.
+    features: [
+      "Annual accounts prepared and filed at Companies House",
+      "Corporation tax return (CT600) filed with HMRC",
+      "Bookkeeping from your bank statements",
+      "Flat fee, no surprises",
+    ],
     description:
-      "For all non-VAT registered companies, including non-trading companies.",
+      "For trading companies that are not VAT registered. Includes bookkeeping, year-end accounts, and corporation tax.",
   },
   {
     id: "vat_reg",
     group: "company",
-    title: "VAT-registered",
-    tagline: "Company-level filings.",
-    priceGbp: 419,
-    priceSuffix: "+VAT",
+    title: "VAT-registered company",
+    tagline: "Year-end accounts, corporation tax, and ongoing VAT returns.",
+    priceGbp: 400,
+    priceGbpSubtitle: "one-off",
+    features: [
+      "Everything in Non-VAT registered",
+      "VAT return filing for every period",
+      "Monthly, quarterly or annual VAT cycles supported",
+      "Flat fee, no surprises",
+    ],
     description:
-      "For VAT registered companies with an annual turnover below £200k.",
+      "For VAT registered trading companies. Covers year-end accounts, corporation tax, and each VAT return in the engagement period.",
   },
 ];
 

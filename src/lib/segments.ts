@@ -226,55 +226,17 @@ export const SEGMENTS: Segment[] = [
     suggestedDocs: ["P60", "Bonus / share vesting statements", "Pension provider statement"],
   },
   {
+    // Limited-company cases pick one of three £400 flat-fee services (tiers)
+    // instead of a tier + intake form. The real document checklist (Sections
+    // A/B/C, plus Section D for VAT Registered) lives in a dedicated flow
+    // that fires after the engagement letter is signed and the fee is paid,
+    // so there's no intake step here on the wizard. Intentionally empty.
     id: "limited_company_vat",
     title: "Limited company & VAT",
     tagline: "Corporation tax, VAT returns, and company filings.",
     numeral: "⑦",
-    intake: [
-      {
-        name: "company_number",
-        label: "Companies House number",
-        hint: "8 digits, on your certificate of incorporation",
-        type: "text",
-        required: true,
-      },
-      {
-        name: "vat_status",
-        label: "VAT status",
-        type: "select",
-        options: [
-          "Not VAT-registered",
-          "VAT-registered, standard scheme",
-          "VAT-registered, flat rate",
-          "Dormant (no activity)",
-        ],
-        required: true,
-      },
-      {
-        name: "annual_turnover",
-        label: "Approximate annual turnover",
-        prefix: "£",
-        type: "number",
-      },
-      {
-        name: "accounting_period_end",
-        label: "Accounting period end date (if known)",
-        hint: "e.g. 31/03 for a March year-end",
-        type: "text",
-      },
-      {
-        name: "notes",
-        label: "Anything else we should know?",
-        hint: "Recent changes, overseas income, employees, etc.",
-        type: "textarea",
-      },
-    ],
-    suggestedDocs: [
-      "Bank statements",
-      "Sales invoices",
-      "Purchase invoices / receipts",
-      "Previous year accounts (if any)",
-    ],
+    intake: [],
+    suggestedDocs: [],
   },
 ];
 

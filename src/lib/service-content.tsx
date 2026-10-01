@@ -437,30 +437,30 @@ export const mtdPage: ServicePageData = {
 export const limitedCompanyPage: ServicePageData = {
   slug: "limited-company-tax-returns",
   breadcrumb: "Limited company tax returns",
-  eyebrow: "Company tax returns",
-  h1: "Your company's tax return, filed properly.",
+  eyebrow: "Company accounts & tax",
+  h1: "Your company's accounts and tax, done properly.",
   lede:
-    "Corporation tax return prepared and filed by an accountant who understands your business, not a generic template.",
-  whoHeading: "Fits companies of every size.",
+    "One flat fee per engagement, covering your annual accounts, corporation tax, and VAT where applicable. Prepared and filed by a qualified UK accountant.",
+  whoHeading: "Three services, one flat fee each.",
   whoCards: [
     {
       numeral: "①",
-      title: "Small limited companies",
-      body: "Straightforward corporation tax returns, filed accurately and on time.",
+      title: "Dormant",
+      body: "For inactive companies with no trading activity. Dormant accounts and a nil CT600, filed at Companies House and HMRC.",
     },
     {
       numeral: "②",
-      title: "Companies with a director",
-      body: "Corporation tax and director self-assessment handled together.",
+      title: "Non-VAT registered",
+      body: "For trading companies not registered for VAT. Bookkeeping from your bank statements, year-end accounts, and corporation tax.",
     },
     {
       numeral: "③",
-      title: "Growing businesses",
-      body: "As your company grows, your accountant grows with it, not a new provider every year.",
+      title: "VAT registered",
+      body: "Everything in the non-VAT service, plus VAT return filing on every monthly, quarterly or annual period in the engagement.",
     },
   ],
   consultCopy:
-    "Not sure if your company structure is still the right one? Ask before your next filing.",
+    "Not sure which service matches your company's current activity? Ask before you sign up.",
   faqs: [
     {
       q: "When is my corporation tax return due?",
@@ -472,7 +472,11 @@ export const limitedCompanyPage: ServicePageData = {
     },
     {
       q: "Do I need an accountant if my company is dormant?",
-      a: "You still need to file a dormant company return. Cheaper than a trading return, but still required. we can handle it.",
+      a: "You still need to file dormant accounts and a nil CT600. Our Dormant service covers both at the same flat fee as the trading services, so there's no cheaper tier here. we handle the whole filing.",
+    },
+    {
+      q: "Does the VAT-registered service cover every VAT return?",
+      a: "Yes. one flat fee covers every monthly, quarterly or annual VAT return in the engagement period, plus the year-end accounts and corporation tax.",
     },
     {
       q: "What's the difference between this and my personal Self Assessment?",

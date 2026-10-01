@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { ServicePage } from "@/components/marketing/service-page";
 import { limitedCompanyPage } from "@/lib/service-content";
-import { SubscriptionSection } from "@/components/marketing/subscription-section";
 import { CompanyServicesPricing } from "@/components/marketing/company-services-pricing";
 
 export const metadata: Metadata = {
   title: "Limited company tax returns. Sterling Ledger",
   description:
-    "Corporation tax returns filed by qualified UK accountants. Ongoing subscription for bookkeeping and payroll available.",
+    "Flat-fee annual accounts, corporation tax and VAT filing for UK limited companies, prepared and filed by qualified accountants.",
 };
 
 export default function Page() {
@@ -15,7 +14,6 @@ export default function Page() {
     <ServicePage
       data={{
         ...limitedCompanyPage,
-        extraAfterWho: <SubscriptionSection />,
         extraAfterPricing: <CompanyServicesPricing />,
       }}
     />
