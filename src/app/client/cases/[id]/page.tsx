@@ -306,8 +306,12 @@ export default async function CaseDetailPage({
   );
 }
 
-function stepLabel(step: "intake" | "documents" | "checkout" | "done") {
+function stepLabel(
+  step: "engagement" | "intake" | "documents" | "checkout" | "done",
+) {
   switch (step) {
+    case "engagement":
+      return "Sign engagement letter";
     case "intake":
       return "Answer questions";
     case "documents":

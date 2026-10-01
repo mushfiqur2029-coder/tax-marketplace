@@ -19,6 +19,17 @@ export default async function IntakePage({
   if (data.row.status !== "draft") {
     redirect(`/client/cases/${id}`);
   }
+  // Limited-company cases don't have an intake form — they go
+  // engagement → checkout → per-service document checklist. If anyone
+  // lands here (stale bookmark, old step tracker), bounce them to the
+  // next step they actually need to complete.
+  if (data.segment.id === "limited_company_vat") {
+    redirect(
+      data.progress.engagementSigned
+        ? `/client/cases/${id}/checkout`
+        : `/client/cases/${id}/engagement`,
+    );
+  }
 
   const bound = async (fd: FormData) => {
     "use server";

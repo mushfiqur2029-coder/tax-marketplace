@@ -10,6 +10,8 @@ import {
   getMessageAttachmentSignedUrl,
 } from "@/app/messages";
 import { reassignCaseAction } from "@/app/admin/actions";
+import { getEngagementAssetSignedUrl } from "@/app/client/engagement-actions";
+import { SignedEngagementPanel } from "@/components/engagement/signed-engagement-panel";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -40,7 +42,7 @@ export default async function AdminCasePage({
   const { data: row } = await admin
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at",
     )
     .eq("id", id)
     .single();
@@ -137,6 +139,14 @@ export default async function AdminCasePage({
     "use server";
     return reassignCaseAction(id, accountantId, note);
   };
+  const getEngagementPdf = async () => {
+    "use server";
+    return getEngagementAssetSignedUrl(id, "pdf");
+  };
+  const getEngagementSignature = async () => {
+    "use server";
+    return getEngagementAssetSignedUrl(id, "signature");
+  };
 
   return (
     <DashboardShell
@@ -191,6 +201,24 @@ export default async function AdminCasePage({
               </ul>
             ) : null}
           </section>
+
+          {row.engagement_signed_at ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Engagement letter
+              </h3>
+              <div className="mt-4">
+                <SignedEngagementPanel
+                  signedAt={row.engagement_signed_at}
+                  getPdfUrl={getEngagementPdf}
+                  getSignatureUrl={getEngagementSignature}
+                />
+              </div>
+            </section>
+          ) : null}
 
           {/* Intake */}
           <section className="card-sl p-6 sm:p-8">

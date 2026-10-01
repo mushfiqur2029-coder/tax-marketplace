@@ -26,6 +26,10 @@ export type CaseRow = {
   deadline: string | null;
   is_urgent: boolean;
   urgent_fee_pence: number;
+  // Limited-company engagement letter: null on personal cases, set
+  // after the client signs on a limited-company case.
+  engagement_signed_at: string | null;
+  engagement_pdf_path: string | null;
 };
 
 export type CaseDoc = {
@@ -48,10 +52,18 @@ export type CaseData = {
   tier: PlanTier;
   docs: CaseDoc[];
   progress: {
+    // Personal-flow progress markers. Not applicable on limited-company
+    // cases (they short-circuit intake and documents via a different
+    // post-payment checklist that lands in Batch 3).
     intakeDone: boolean;
     hasDocs: boolean;
     paid: boolean;
-    nextStep: "intake" | "documents" | "checkout" | "done";
+    // Limited-company gate: true once the client has signed the
+    // engagement letter.
+    engagementSigned: boolean;
+    // What the client should do next on this case. "engagement" is only
+    // ever emitted for limited-company cases.
+    nextStep: "engagement" | "intake" | "documents" | "checkout" | "done";
   };
 };
 
@@ -61,7 +73,7 @@ export async function loadClientCase(caseId: string): Promise<CaseData> {
   const { data: caseRow, error } = await supabase
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at, engagement_pdf_path",
     )
     .eq("id", caseId)
     .single();
@@ -84,12 +96,25 @@ export async function loadClientCase(caseId: string): Promise<CaseData> {
   );
   const hasDocs = (docs?.length ?? 0) > 0;
   const paid = caseRow.stripe_payment_status === "succeeded";
+  const engagementSigned = !!caseRow.engagement_signed_at;
+  const isCompany = caseRow.segment === "limited_company_vat";
 
+  // Next-step calculation branches on the two flows. Personal cases keep
+  // their original intake → documents → checkout sequence. Limited-
+  // company cases skip intake entirely (engagement is the gate) and
+  // skip the documents step at this stage — the per-service document
+  // checklist arrives post-payment in a later batch.
   let nextStep: CaseData["progress"]["nextStep"];
-  if (!intakeDone) nextStep = "intake";
-  else if (!hasDocs) nextStep = "documents";
-  else if (!paid) nextStep = "checkout";
-  else nextStep = "done";
+  if (isCompany) {
+    if (!engagementSigned) nextStep = "engagement";
+    else if (!paid) nextStep = "checkout";
+    else nextStep = "done";
+  } else {
+    if (!intakeDone) nextStep = "intake";
+    else if (!hasDocs) nextStep = "documents";
+    else if (!paid) nextStep = "checkout";
+    else nextStep = "done";
+  }
 
   return {
     me,
@@ -97,6 +122,12 @@ export async function loadClientCase(caseId: string): Promise<CaseData> {
     segment,
     tier,
     docs: (docs ?? []) as CaseDoc[],
-    progress: { intakeDone, hasDocs, paid, nextStep },
+    progress: {
+      intakeDone,
+      hasDocs,
+      paid,
+      engagementSigned,
+      nextStep,
+    },
   };
 }

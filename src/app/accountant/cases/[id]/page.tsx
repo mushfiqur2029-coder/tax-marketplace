@@ -29,6 +29,8 @@ import { TakeCaseForm } from "./take-case-form";
 import { StatusTransition } from "./status-transition";
 import { DocumentsList } from "./documents-list";
 import { AddonPanel, type AddonRow, type CatalogOption } from "./addon-panel";
+import { getEngagementAssetSignedUrl } from "@/app/client/engagement-actions";
+import { SignedEngagementPanel } from "@/components/engagement/signed-engagement-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -172,6 +174,14 @@ export default async function AccountantCaseDetailPage({
     "use server";
     return requestCustomAddonAction({ caseId: id, ...input });
   };
+  const getEngagementPdf = async () => {
+    "use server";
+    return getEngagementAssetSignedUrl(id, "pdf");
+  };
+  const getEngagementSignature = async () => {
+    "use server";
+    return getEngagementAssetSignedUrl(id, "signature");
+  };
 
   return (
     <DashboardShell
@@ -205,6 +215,24 @@ export default async function AccountantCaseDetailPage({
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <div className="space-y-6">
+          {data.row.engagement_signed_at ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Engagement letter
+              </h3>
+              <div className="mt-4">
+                <SignedEngagementPanel
+                  signedAt={data.row.engagement_signed_at}
+                  getPdfUrl={getEngagementPdf}
+                  getSignatureUrl={getEngagementSignature}
+                />
+              </div>
+            </section>
+          ) : null}
+
           <section className="card-sl p-6 sm:p-8">
             <h3
               className="text-sm font-semibold uppercase tracking-wider text-slate"

@@ -25,7 +25,7 @@ async function assertCaseOwner(caseId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("cases")
-    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status, deadline, is_urgent, urgent_fee_pence")
+    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status, deadline, is_urgent, urgent_fee_pence, engagement_signed_at")
     .eq("id", caseId)
     .single();
   if (error || !data) throw new Error("Case not found.");
@@ -124,13 +124,11 @@ export async function createCaseAction(
     if (error || !data) throw new Error(error?.message ?? "Could not create case.");
 
     revalidatePath("/client");
-    // Limited-company cases pick up the engagement letter + payment +
-    // checklist flow (built in later batches). For now the case lands at
-    // the dashboard so there's no dead-end intake step; later batches
-    // will route the client straight into the engagement-letter step.
+    // Limited-company clients go straight to the engagement letter;
+    // personal clients continue with the existing intake form.
     redirect(
       isCompany
-        ? `/client/cases/${data.id}`
+        ? `/client/cases/${data.id}/engagement`
         : `/client/cases/${data.id}/intake`,
     );
   } catch (e) {
@@ -273,24 +271,37 @@ export async function startCheckoutAction(
     const tier = getTier(caseRow.tier);
     if (!seg || !tier) throw new Error("Case is missing segment or tier.");
 
-    if (
-      !caseRow.intake_answers ||
-      Object.keys(caseRow.intake_answers as Record<string, unknown>).length === 0
-    ) {
-      throw new Error("Fill in the intake questions first.");
-    }
+    const isCompany = seg.id === "limited_company_vat";
 
-    // Re-check the deadline right before payment. The user may have taken
-    // a few days to reach checkout; if standard-mode no longer meets the
-    // 5-working-day rule from today, block and ask them to update.
-    if (caseRow.deadline) {
-      const check = await validateDeadline(caseRow.deadline, !!caseRow.is_urgent);
-      if (!check.ok) {
+    if (isCompany) {
+      // Limited-company checkout gates on the engagement letter being
+      // signed (contractually required before we can take payment or
+      // start work). Intake / deadline don't apply to this flow.
+      if (!caseRow.engagement_signed_at) {
         throw new Error(
-          caseRow.is_urgent
-            ? `Your deadline is too soon even for urgent. Earliest available: ${check.earliest}. Go back and update.`
-            : `Your deadline no longer meets the 5-working-day minimum. Earliest standard: ${check.earliest}. Go back and either update the deadline or tick Urgent (+£100).`,
+          "Please sign the engagement letter before you can pay.",
         );
+      }
+    } else {
+      if (
+        !caseRow.intake_answers ||
+        Object.keys(caseRow.intake_answers as Record<string, unknown>).length === 0
+      ) {
+        throw new Error("Fill in the intake questions first.");
+      }
+
+      // Re-check the deadline right before payment. The user may have taken
+      // a few days to reach checkout; if standard-mode no longer meets the
+      // 5-working-day rule from today, block and ask them to update.
+      if (caseRow.deadline) {
+        const check = await validateDeadline(caseRow.deadline, !!caseRow.is_urgent);
+        if (!check.ok) {
+          throw new Error(
+            caseRow.is_urgent
+              ? `Your deadline is too soon even for urgent. Earliest available: ${check.earliest}. Go back and update.`
+              : `Your deadline no longer meets the 5-working-day minimum. Earliest standard: ${check.earliest}. Go back and either update the deadline or tick Urgent (+£100).`,
+          );
+        }
       }
     }
 
@@ -304,7 +315,10 @@ export async function startCheckoutAction(
           currency: "gbp",
           unit_amount: tier.priceGbp * 100,
           product_data: {
-            name: `${tier.title}. ${seg.title}`,
+            // "Dormant company. Limited company & VAT" would be redundant,
+            // so skip the segment on the limited-company path — the tier
+            // title already names the service.
+            name: isCompany ? tier.title : `${tier.title}. ${seg.title}`,
             description: tier.tagline,
           },
         },
