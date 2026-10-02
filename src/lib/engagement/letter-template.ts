@@ -133,15 +133,6 @@ export function renderEngagementLetterHtml(
   p { margin: 8px 0; }
   ul { margin: 6px 0 10px 20px; padding: 0; }
   li { margin: 3px 0; }
-  .eyebrow {
-    font-family: "Helvetica Neue", "Arial", sans-serif;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    font-size: 9pt;
-    color: #4b5c89;
-    margin: 0 0 6px 0;
-  }
   .meta {
     display: grid;
     grid-template-columns: 160px 1fr;
@@ -222,7 +213,6 @@ export function renderEngagementLetterHtml(
     </div>
   </header>
 
-  <p class="eyebrow">Engagement Letter</p>
   <h1>Engagement Letter</h1>
   <p>Effective Date: <strong>${esc(f.effectiveDate)}</strong></p>
 

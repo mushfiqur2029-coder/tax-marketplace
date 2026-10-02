@@ -350,7 +350,12 @@ export async function startCheckoutAction(
         tier: tier.id,
         is_urgent: isUrgent ? "1" : "0",
       },
-      success_url: `${base}/client/cases/${caseId}?paid=1`,
+      // Limited-company clients continue to the onboarding checklist
+      // after payment; everyone else returns to the case page where the
+      // "payment received" banner lands them.
+      success_url: isCompany
+        ? `${base}/client/cases/${caseId}/onboarding?paid=1`
+        : `${base}/client/cases/${caseId}?paid=1`,
       cancel_url: `${base}/client/cases/${caseId}/checkout?canceled=1`,
     });
 

@@ -70,20 +70,28 @@ export default async function AccountantDashboard({
   const me = await requireApprovedAccountant();
   const supabase = await createClient();
 
+  // Queue filter has a limited-company carve-out. Personal cases hit the
+  // queue the moment payment lands + status=submitted. Limited-company
+  // cases hit the queue only after onboarding_submitted_at is stamped,
+  // since the per-service document checklist (Sections A/B/C/D) runs
+  // post-payment and an accountant can't start work without it. We
+  // express this via .or(): "segment is not limited_company_vat, OR
+  // onboarding_submitted_at IS NOT NULL".
   const [queueRes, mineRes] = await Promise.all([
     supabase
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent",
+        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at",
       )
       .eq("status", "submitted")
       .eq("stripe_payment_status", "succeeded")
       .is("accountant_id", null)
+      .or("segment.neq.limited_company_vat,onboarding_submitted_at.not.is.null")
       .order("submitted_at", { ascending: true }),
     supabase
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent",
+        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at",
       )
       .eq("accountant_id", me.id)
       .order("created_at", { ascending: false }),

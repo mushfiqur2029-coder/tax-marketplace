@@ -5,7 +5,8 @@ export type ClientFlowStepKey =
   | "engagement"
   | "intake"
   | "documents"
-  | "checkout";
+  | "checkout"
+  | "onboarding";
 
 export function buildSteps(
   caseId: string,
@@ -15,11 +16,9 @@ export function buildSteps(
   const p = data.progress;
   const isCompany = data.segment.id === "limited_company_vat";
 
-  // Limited-company clients see a shorter stepper: sign → pay →
-  // submitted. The per-service document checklist (Sections A/B/C/D)
-  // lives post-payment in a later batch, so it's deliberately absent
-  // here — the client's attention needs to be on getting the engagement
-  // signed and the fee paid first.
+  // Limited-company clients see: sign → pay → onboarding checklist →
+  // submitted. The per-service onboarding (Sections A/B/C/D) lands
+  // post-payment and gates the "visible in accountant queue" step.
   if (isCompany) {
     return [
       {
@@ -37,10 +36,17 @@ export function buildSteps(
         current: current === "checkout",
       },
       {
+        key: "onboarding",
+        label: "Upload documents",
+        href: `/client/cases/${caseId}/onboarding`,
+        done: p.onboardingSubmitted,
+        current: current === "onboarding",
+      },
+      {
         key: "submitted",
         label: "Submitted",
         href: `/client/cases/${caseId}`,
-        done: data.row.status !== "draft",
+        done: p.onboardingSubmitted,
         current: false,
       },
     ];

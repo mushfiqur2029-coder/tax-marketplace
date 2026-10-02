@@ -5,6 +5,15 @@ import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
   action: (fd: FormData) => Promise<ActionResult>;
+  /**
+   * When false, the file picker only accepts one file at a time and the
+   * drop zone rejects extra files from a multi-file drop. Defaults to
+   * true to match the existing case-documents + chat-attachment usage.
+   * Onboarding checklist uses `false` for slots like Passport.
+   */
+  multiple?: boolean;
+  /** Hint shown under the drop-zone title. Overrides the default copy. */
+  hint?: string;
 };
 
 // Kept in sync with MAX in src/app/client/actions.ts (uploadDocumentAction).
@@ -29,7 +38,7 @@ const nextId = () => `doc_${Date.now()}_${++_seq}`;
 // Mirrors the chat-composer attach flow: drop zone + multi-file + auto-upload
 // + chip per file. Each successful upload triggers the parent server-action
 // revalidatePath, so the file appears in the documents list immediately.
-export function DocumentUploader({ action }: Props) {
+export function DocumentUploader({ action, multiple = true, hint }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<PendingItem[]>([]);
   const [dragDepth, setDragDepth] = useState(0);
@@ -37,7 +46,12 @@ export function DocumentUploader({ action }: Props) {
   const addFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
-      const newItems: PendingItem[] = files.map((file) => {
+      // Single-file mode: keep only the first file. The parent slot
+      // (e.g. passport) usually wants one and only one upload; if the
+      // user drops a batch, drop the extras silently rather than
+      // silently uploading extras.
+      const picked = multiple ? files : files.slice(0, 1);
+      const newItems: PendingItem[] = picked.map((file) => {
         const id = nextId();
         if (file.size > MAX_BYTES) {
           return {
@@ -77,7 +91,7 @@ export function DocumentUploader({ action }: Props) {
         })();
       }
     },
-    [action],
+    [action, multiple],
   );
 
   const removeItem = useCallback((id: string) => {
@@ -132,16 +146,21 @@ export function DocumentUploader({ action }: Props) {
           </svg>
         </div>
         <p className="text-sm font-semibold text-ink">
-          Drop files here or choose from your device
+          {multiple
+            ? "Drop files here or choose from your device"
+            : "Drop a file here or choose from your device"}
         </p>
         <p className="mt-1 text-xs text-slate">
-          PDF, image, or spreadsheet · up to 50 MB each · multiple files ok
+          {hint ??
+            (multiple
+              ? "PDF, image, or spreadsheet · up to 50 MB each · multiple files ok"
+              : "PDF or image · up to 50 MB · one file")}
         </p>
 
         <input
           ref={inputRef}
           type="file"
-          multiple
+          multiple={multiple}
           className="sr-only"
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
@@ -157,7 +176,11 @@ export function DocumentUploader({ action }: Props) {
             className="btn-sl btn-sl-primary"
             disabled={anyUploading}
           >
-            {anyUploading ? "Uploading…" : "Choose files"}
+            {anyUploading
+              ? "Uploading…"
+              : multiple
+                ? "Choose files"
+                : "Choose file"}
           </button>
         </div>
       </div>
@@ -261,7 +284,7 @@ export function DocumentUploader({ action }: Props) {
             className="text-sm font-bold uppercase tracking-widest text-navy-deep"
             style={{ fontFamily: "var(--font-mono)" }}
           >
-            Drop files to upload
+            {multiple ? "Drop files to upload" : "Drop file to upload"}
           </p>
         </div>
       ) : null}

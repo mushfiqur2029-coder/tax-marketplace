@@ -180,7 +180,10 @@ export default async function CaseDetailPage({
         <StatusPill status={data.row.status} />
         {data.row.is_urgent ? <UrgentPill /> : null}
         {data.row.deadline ? <DeadlinePill deadline={data.row.deadline} /> : null}
-        {isDraft ? (
+        {/* Resume button covers two cases: personal draft flow (intake →
+            docs → checkout) and limited-company post-payment onboarding
+            which lives at status='submitted' until the checklist is in. */}
+        {data.progress.nextStep !== "done" ? (
           <SLLink href={nextHref} variant="primary">
             Resume. {stepLabel(data.progress.nextStep)}
           </SLLink>
@@ -307,7 +310,13 @@ export default async function CaseDetailPage({
 }
 
 function stepLabel(
-  step: "engagement" | "intake" | "documents" | "checkout" | "done",
+  step:
+    | "engagement"
+    | "intake"
+    | "documents"
+    | "checkout"
+    | "onboarding"
+    | "done",
 ) {
   switch (step) {
     case "engagement":
@@ -318,6 +327,8 @@ function stepLabel(
       return "Upload documents";
     case "checkout":
       return "Pay and submit";
+    case "onboarding":
+      return "Upload required documents";
     default:
       return "Continue";
   }

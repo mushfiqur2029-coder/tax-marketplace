@@ -10,8 +10,17 @@ import {
   getMessageAttachmentSignedUrl,
 } from "@/app/messages";
 import { reassignCaseAction } from "@/app/admin/actions";
-import { getEngagementAssetSignedUrl } from "@/app/client/engagement-actions";
+import {
+  getEngagementAssetSignedUrl,
+  revealCompanyAuthCodeAction,
+} from "@/app/client/engagement-actions";
 import { SignedEngagementPanel } from "@/components/engagement/signed-engagement-panel";
+import { OnboardingAnswersPanel } from "@/components/engagement/onboarding-answers-panel";
+import {
+  sectionsForTier,
+  fieldsForTier,
+} from "@/lib/engagement/checklist";
+import type { TierId } from "@/lib/plans";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -42,7 +51,7 @@ export default async function AdminCasePage({
   const { data: row } = await admin
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at, onboarding_submitted_at, company_auth_code_encrypted",
     )
     .eq("id", id)
     .single();
@@ -61,7 +70,7 @@ export default async function AdminCasePage({
       admin.from("users").select("id, email").eq("role", "accountant").order("email"),
       admin
         .from("case_documents")
-        .select("id, file_name, file_url, uploaded_at")
+        .select("id, file_name, file_url, uploaded_at, requirement_key")
         .eq("case_id", id)
         .order("uploaded_at", { ascending: false }),
       admin
@@ -147,6 +156,34 @@ export default async function AdminCasePage({
     "use server";
     return getEngagementAssetSignedUrl(id, "signature");
   };
+  // Signed URL for an onboarding doc. Admin-level: cross-check that the
+  // path is on this case before signing, since the client gives us an
+  // arbitrary string.
+  const getOnboardingDocUrl = async (
+    path: string,
+  ): Promise<import("@/lib/action-result").ActionResult<string>> => {
+    "use server";
+    const admin2 = createAdminClient();
+    const { data: doc } = await admin2
+      .from("case_documents")
+      .select("case_id")
+      .eq("file_url", path)
+      .single();
+    if (!doc || doc.case_id !== id) {
+      return { ok: false, error: "Document not on this case." };
+    }
+    const { data, error } = await admin2.storage
+      .from("case-documents")
+      .createSignedUrl(path, 60);
+    if (error || !data) {
+      return { ok: false, error: error?.message ?? "Could not sign URL." };
+    }
+    return { ok: true, data: data.signedUrl };
+  };
+  const revealAuthCode = async () => {
+    "use server";
+    return revealCompanyAuthCodeAction(id);
+  };
 
   return (
     <DashboardShell
@@ -220,7 +257,32 @@ export default async function AdminCasePage({
             </section>
           ) : null}
 
-          {/* Intake */}
+          {row.onboarding_submitted_at &&
+          row.segment === "limited_company_vat" ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Onboarding checklist
+              </h3>
+              <div className="mt-4">
+                <OnboardingAnswersPanel
+                  sections={sectionsForTier(tier.id as TierId)}
+                  fields={fieldsForTier(tier.id as TierId)}
+                  answers={answers}
+                  docs={(docs ?? []).filter((d) => d.requirement_key)}
+                  authCodeAvailable={!!row.company_auth_code_encrypted}
+                  getDocUrl={getOnboardingDocUrl}
+                  revealAuthCode={revealAuthCode}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {/* Legacy intake — personal cases only. Limited-company data lives
+              in the Onboarding checklist card above. */}
+          {row.segment !== "limited_company_vat" ? (
           <section className="card-sl p-6 sm:p-8">
             <h3
               className="text-sm font-semibold uppercase tracking-wider text-slate"
@@ -248,6 +310,7 @@ export default async function AdminCasePage({
               })}
             </dl>
           </section>
+          ) : null}
 
           <section className="card-sl p-6 sm:p-8">
             <h3

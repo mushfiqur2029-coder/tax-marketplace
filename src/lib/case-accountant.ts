@@ -55,7 +55,7 @@ export async function loadAccountantCase(
   const { data: row, error } = await admin
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at, engagement_pdf_path",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at, engagement_pdf_path, onboarding_submitted_at",
     )
     .eq("id", caseId)
     .single();
@@ -66,10 +66,17 @@ export async function loadAccountantCase(
   if (!segment || !tier) notFound();
 
   const isMine = row.accountant_id === me.id;
+  // Limited-company cases are only takeable once the onboarding
+  // checklist is submitted — otherwise the accountant has nothing to
+  // work with. Personal cases don't have an onboarding step, so this
+  // extra gate is a no-op for them.
+  const needsOnboarding =
+    row.segment === "limited_company_vat" && !row.onboarding_submitted_at;
   const canTake =
     !row.accountant_id &&
     row.status === "submitted" &&
-    row.stripe_payment_status === "succeeded";
+    row.stripe_payment_status === "succeeded" &&
+    !needsOnboarding;
 
   if (!isMine && !canTake) {
     // Case exists but is assigned to another accountant (or was paid but

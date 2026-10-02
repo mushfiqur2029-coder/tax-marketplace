@@ -11,7 +11,7 @@ import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { SLButton } from "@/components/sl-button";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
-import { DocumentUploader } from "./document-uploader";
+import { DocumentUploader } from "@/components/case/document-uploader";
 import { DocumentList } from "./document-list";
 
 export default async function DocumentsPage({

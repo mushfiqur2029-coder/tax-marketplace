@@ -303,6 +303,60 @@ export async function getEngagementAssetSignedUrl(
   }
 }
 
+// Decrypt the Company Authentication Code for the admin / assigned
+// accountant. Authz is enforced by the get_company_auth_code RPC which
+// checks is_admin() or caseRow.accountant_id = auth.uid(). We also
+// enforce it here as a defense-in-depth read gate before even making
+// the RPC call. Key lives in COMPANY_AUTH_CODE_KEY env; missing env is
+// a fail-closed error with a clear server log line.
+export async function revealCompanyAuthCodeAction(
+  caseId: string,
+): Promise<ActionResult<string | null>> {
+  try {
+    const supabase = await createClient();
+    const admin = createAdminClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not signed in.");
+
+    const { data: caseRow } = await admin
+      .from("cases")
+      .select("accountant_id")
+      .eq("id", caseId)
+      .single();
+    if (!caseRow) throw new Error("Case not found.");
+
+    const { data: meRow } = await admin
+      .from("users")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    const isAdmin = meRow?.role === "admin";
+    const isAssigned = caseRow.accountant_id === user.id;
+    if (!isAdmin && !isAssigned) throw new Error("Not allowed.");
+
+    const key = process.env.COMPANY_AUTH_CODE_KEY;
+    if (!key) {
+      console.error(
+        `[onboarding] COMPANY_AUTH_CODE_KEY missing; refused to decrypt auth code case=${caseId}`,
+      );
+      throw new Error(
+        "Server isn't configured to decrypt authentication codes. Contact support.",
+      );
+    }
+
+    const { data, error } = await admin.rpc("get_company_auth_code", {
+      p_case_id: caseId,
+      p_key: key,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, data: (data as string | null) ?? null };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

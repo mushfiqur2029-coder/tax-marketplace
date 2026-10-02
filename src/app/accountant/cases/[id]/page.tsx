@@ -29,8 +29,18 @@ import { TakeCaseForm } from "./take-case-form";
 import { StatusTransition } from "./status-transition";
 import { DocumentsList } from "./documents-list";
 import { AddonPanel, type AddonRow, type CatalogOption } from "./addon-panel";
-import { getEngagementAssetSignedUrl } from "@/app/client/engagement-actions";
+import {
+  getEngagementAssetSignedUrl,
+  revealCompanyAuthCodeAction,
+} from "@/app/client/engagement-actions";
 import { SignedEngagementPanel } from "@/components/engagement/signed-engagement-panel";
+import { OnboardingAnswersPanel } from "@/components/engagement/onboarding-answers-panel";
+import {
+  sectionsForTier,
+  fieldsForTier,
+} from "@/lib/engagement/checklist";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { TierId } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +88,41 @@ export default async function AccountantCaseDetailPage({
   const data = load;
   const seg = data.segment;
   const answers = (data.row.intake_answers ?? {}) as Record<string, string>;
+
+  // Onboarding checklist (limited-company only, visible once the client
+  // has submitted and this accountant has taken the case). We load the
+  // tagged docs + check whether the encrypted auth code column is
+  // populated so the panel can show a "Reveal" button vs "(not provided)".
+  const isCompany = data.segment.id === "limited_company_vat";
+  const showOnboarding =
+    isCompany && data.isMine && !!data.row.onboarding_submitted_at;
+  type OnboardingDocRow = {
+    id: string;
+    file_name: string;
+    file_url: string;
+    uploaded_at: string;
+    requirement_key: string | null;
+  };
+  let onboardingDocs: OnboardingDocRow[] = [];
+  let onboardingAuthCodeAvailable = false;
+  if (showOnboarding) {
+    const adminClient = createAdminClient();
+    const [{ data: docRows }, { data: cryptoRow }] = await Promise.all([
+      adminClient
+        .from("case_documents")
+        .select("id, file_name, file_url, uploaded_at, requirement_key")
+        .eq("case_id", id)
+        .not("requirement_key", "is", null)
+        .order("uploaded_at", { ascending: true }),
+      adminClient
+        .from("cases")
+        .select("company_auth_code_encrypted")
+        .eq("id", id)
+        .single(),
+    ]);
+    onboardingDocs = (docRows ?? []) as OnboardingDocRow[];
+    onboardingAuthCodeAvailable = !!cryptoRow?.company_auth_code_encrypted;
+  }
 
   // Add-ons on this case + the active catalog for the request picker.
   // Loaded once whether or not the case is theirs; the panel is only
@@ -182,6 +227,14 @@ export default async function AccountantCaseDetailPage({
     "use server";
     return getEngagementAssetSignedUrl(id, "signature");
   };
+  const getOnboardingDocUrl = async (path: string) => {
+    "use server";
+    return getDocSignedUrlForAccountant(id, path);
+  };
+  const revealAuthCode = async () => {
+    "use server";
+    return revealCompanyAuthCodeAction(id);
+  };
 
   return (
     <DashboardShell
@@ -233,13 +286,39 @@ export default async function AccountantCaseDetailPage({
             </section>
           ) : null}
 
-          <section className="card-sl p-6 sm:p-8">
-            <h3
-              className="text-sm font-semibold uppercase tracking-wider text-slate"
-              style={{ fontFamily: "var(--font-mono)" }}
-            >
-              Intake answers
-            </h3>
+          {showOnboarding ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Onboarding checklist
+              </h3>
+              <div className="mt-4">
+                <OnboardingAnswersPanel
+                  sections={sectionsForTier(data.tier.id as TierId)}
+                  fields={fieldsForTier(data.tier.id as TierId)}
+                  answers={answers}
+                  docs={onboardingDocs}
+                  authCodeAvailable={onboardingAuthCodeAvailable}
+                  getDocUrl={getOnboardingDocUrl}
+                  revealAuthCode={revealAuthCode}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {/* Legacy intake answers card — only renders for personal-flow
+              cases. Limited-company answers live in the Onboarding
+              checklist card above instead, structured by section. */}
+          {!isCompany ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Intake answers
+              </h3>
             <dl className="mt-4 divide-y divide-line">
               {seg.intake.map((f) => {
                 const val = answers[f.name];
@@ -260,6 +339,7 @@ export default async function AccountantCaseDetailPage({
               })}
             </dl>
           </section>
+          ) : null}
 
           {data.isMine ? (
             <section className="card-sl p-6 sm:p-8">

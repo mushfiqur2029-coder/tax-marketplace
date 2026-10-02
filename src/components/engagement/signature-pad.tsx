@@ -89,7 +89,20 @@ export function SignaturePad({
     toDataUrl: () => {
       const c = canvasRef.current;
       if (!c || empty) return null;
-      return c.toDataURL("image/png");
+      // Composite the stroke onto an opaque white background before
+      // exporting. The canvas itself is transparent (so the "Sign here"
+      // placeholder shows through until a stroke lands) but a transparent
+      // PNG inside the engagement PDF can render darkly or inconsistently
+      // depending on viewer / print path. Known gotcha from a past build.
+      const out = document.createElement("canvas");
+      out.width = c.width;
+      out.height = c.height;
+      const octx = out.getContext("2d");
+      if (!octx) return c.toDataURL("image/png");
+      octx.fillStyle = "#ffffff";
+      octx.fillRect(0, 0, out.width, out.height);
+      octx.drawImage(c, 0, 0);
+      return out.toDataURL("image/png");
     },
     clear: () => {
       const c = canvasRef.current;
