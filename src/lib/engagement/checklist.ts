@@ -22,6 +22,14 @@ import type { TierId } from "@/lib/plans";
 
 export type ChecklistSection = "A" | "B" | "C" | "D";
 
+/**
+ * Visibility gate. When set, the field only renders (and only counts
+ * toward required-field validation) when `answers[fieldId] === equals`.
+ * Used for the Section B ID-type branching (Passport vs Driving licence)
+ * and anywhere else we want to toggle fields on by a sibling's answer.
+ */
+export type ShowWhen = { fieldId: string; equals: string };
+
 export type ChecklistField =
   | {
       id: string;
@@ -32,6 +40,7 @@ export type ChecklistField =
       requiredFor: TierId[];
       /** Optional server-side regex. If present, the raw value must match. */
       pattern?: { regex: string; message: string };
+      showWhen?: ShowWhen;
     }
   | {
       id: string;
@@ -43,6 +52,7 @@ export type ChecklistField =
       options: string[];
       /** When the user picks this option, surface a freetext id={id}_other. */
       showOtherOn?: string;
+      showWhen?: ShowWhen;
     }
   | {
       id: string;
@@ -52,6 +62,7 @@ export type ChecklistField =
       kind: "upload";
       requiredFor: TierId[];
       multi?: boolean;
+      showWhen?: ShowWhen;
     };
 
 export type ChecklistSectionDef = {
@@ -153,20 +164,51 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
   },
 
   // ---------------- Section B: Director's Details ----------------
+  //
+  // Identity document is a choice between Passport (one upload) and
+  // Driving licence (front + back uploads). The select below gates
+  // which upload slots appear via `showWhen`. The old flow required
+  // *both* a passport AND a driving licence — this change makes it one
+  // or the other.
+  //
+  // We keep the `director_passport` id so test cases that already
+  // uploaded under it map straight onto the new Passport slot without
+  // orphaning data. There's no equivalent for the old
+  // `director_driving_licence` single slot because the new path has
+  // two uploads; legacy single-slot driving-licence docs are rendered
+  // as a read-only "previously uploaded" row in the form and panel
+  // views (see onboarding-form.tsx + onboarding-answers-panel.tsx).
   {
-    id: "director_passport",
+    id: "director_id_type",
     section: "B",
-    label: "Passport",
-    kind: "upload",
+    label: "Which ID are you providing?",
+    kind: "select",
+    options: ["Passport", "Driving licence"],
     requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
   },
   {
-    id: "director_driving_licence",
+    id: "director_passport",
     section: "B",
-    label: "Driving licence",
-    hint: "1st proof of address.",
+    label: "Passport (main photo page)",
     kind: "upload",
     requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
+    showWhen: { fieldId: "director_id_type", equals: "Passport" },
+  },
+  {
+    id: "director_driving_licence_front",
+    section: "B",
+    label: "Driving licence (front)",
+    kind: "upload",
+    requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
+    showWhen: { fieldId: "director_id_type", equals: "Driving licence" },
+  },
+  {
+    id: "director_driving_licence_back",
+    section: "B",
+    label: "Driving licence (back)",
+    kind: "upload",
+    requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
+    showWhen: { fieldId: "director_id_type", equals: "Driving licence" },
   },
   {
     id: "director_proof_of_address_2",
@@ -270,10 +312,58 @@ export function fieldsForTier(tier: TierId): ChecklistField[] {
 
 // Which fields in the visible-for-this-tier set are required for this
 // particular tier. Used by both the client submit guard and the server
-// validator — single source of truth.
+// validator — single source of truth. Does NOT filter by showWhen: a
+// field with a showWhen that doesn't match is simply hidden and so
+// never counts as missing. See `requiredFieldsForTierGiven` for the
+// visibility-aware version.
 export function requiredFieldsForTier(tier: TierId): ChecklistField[] {
   return fieldsForTier(tier).filter((f) => f.requiredFor.includes(tier));
 }
+
+// Visibility gate on a single field for a given set of answers.
+// A field with no `showWhen` is always visible. A field whose
+// `showWhen` references an unanswered question is hidden until that
+// question is answered — which is the right default for conditional
+// branches like Section B's ID type.
+export function fieldIsVisible(
+  field: ChecklistField,
+  answers: Record<string, string> | null | undefined,
+): boolean {
+  if (!field.showWhen) return true;
+  const current = answers?.[field.showWhen.fieldId];
+  return current === field.showWhen.equals;
+}
+
+// Fields visible for this tier *and* for the given answers. Use this
+// in the client form when rendering + in required-count math so a
+// conditional branch toggle re-counts correctly.
+export function visibleFieldsForTier(
+  tier: TierId,
+  answers: Record<string, string> | null | undefined,
+): ChecklistField[] {
+  return fieldsForTier(tier).filter((f) => fieldIsVisible(f, answers));
+}
+
+// Required subset of visible fields. The onboarding submit guard calls
+// this with the current intake_answers so a Passport-only path doesn't
+// demand driving-licence uploads, and vice versa.
+export function requiredFieldsForTierGiven(
+  tier: TierId,
+  answers: Record<string, string> | null | undefined,
+): ChecklistField[] {
+  return visibleFieldsForTier(tier, answers).filter((f) =>
+    f.requiredFor.includes(tier),
+  );
+}
+
+// Legacy driving-licence upload key. Before the Passport/Driving-licence
+// branch was introduced, Section B had a single "Driving licence"
+// upload at this key. New flow splits it into front + back under
+// `director_driving_licence_front` / `_back`. We keep this constant
+// exported so the form and panel views can surface any legacy uploads
+// as a read-only "previously uploaded" row — the data is still in
+// storage, we just don't want it to vanish from the UI.
+export const LEGACY_DRIVING_LICENCE_ID = "director_driving_licence";
 
 export const CHECKLIST_FOOTER_NOTE =
   "Please provide all the information requested. Missing information will delay your onboarding. Please also tell us as soon as possible if you have any overdue Accounts, VAT, CIS or PAYE returns, so we can help you avoid HMRC late filing penalties.";

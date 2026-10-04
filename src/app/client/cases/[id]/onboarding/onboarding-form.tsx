@@ -9,6 +9,8 @@ import type { ActionResult } from "@/lib/action-result";
 import type { TierId } from "@/lib/plans";
 import {
   ENCRYPTED_FIELD_ID,
+  LEGACY_DRIVING_LICENCE_ID,
+  fieldIsVisible,
   type ChecklistField,
   type ChecklistSectionDef,
 } from "@/lib/engagement/checklist";
@@ -18,12 +20,14 @@ type UploadedDoc = { id: string; file_name: string; uploaded_at: string };
 type Props = {
   tierId: TierId;
   sections: ChecklistSectionDef[];
+  // All fields visible for this tier (sections included for this tier,
+  // regardless of showWhen). The form filters by `showWhen` live from
+  // the answer state so a branch toggle re-renders without a round
+  // trip, and recomputes required-count from the resulting visible set.
   fields: ChecklistField[];
   answers: Record<string, string>;
   /** Keyed by requirement_key. Empty record when nothing uploaded yet. */
   docsByKey: Record<string, UploadedDoc[]>;
-  requiredCount: number;
-  requiredDone: number;
   /** True when the Company Authentication Code has already been encrypted + stored. */
   authCodeAlreadySet: boolean;
   footer: string;
@@ -42,8 +46,6 @@ export function OnboardingForm({
   fields,
   answers: initialAnswers,
   docsByKey: initialDocsByKey,
-  requiredCount,
-  requiredDone: initialRequiredDone,
   authCodeAlreadySet: initialAuthCodeSet,
   footer,
   saveAnswers,
@@ -66,8 +68,16 @@ export function OnboardingForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, startSubmit] = useTransition();
 
-  // --- Progress computation (identical to the server-side count) ---
-  const requiredFields = fields.filter((f) => f.requiredFor.includes(tierId));
+  // Visibility is derived from the current answers so conditional
+  // branches (Section B: Passport vs Driving licence) toggle live.
+  // Required count re-computes on every answer change — picking
+  // Passport drops the driving-licence slots out of both the count
+  // and the submit guard.
+  const visibleFields = fields.filter((f) => fieldIsVisible(f, answers));
+  const requiredFields = visibleFields.filter((f) =>
+    f.requiredFor.includes(tierId),
+  );
+  const requiredCount = requiredFields.length;
   const doneCount = requiredFields.filter((f) => {
     if (f.kind === "upload") return (docsByKey[f.id]?.length ?? 0) > 0;
     if (f.id === ENCRYPTED_FIELD_ID) return authCodeSet;
@@ -75,6 +85,13 @@ export function OnboardingForm({
     return !!v && v.trim().length > 0;
   }).length;
   const pct = requiredCount === 0 ? 100 : Math.round((doneCount / requiredCount) * 100);
+
+  // Legacy driving-licence uploads: before the Passport vs Driving-
+  // licence branch landed, the Driving licence slot had a single
+  // upload at this requirement_key. Surface any existing uploads as
+  // a read-only "previously uploaded" row — removable, doesn't count
+  // toward progress.
+  const legacyDrivingLicenceDocs = docsByKey[LEGACY_DRIVING_LICENCE_ID] ?? [];
 
   // --- Field save (text / select / date) ---
   // On blur we POST a FormData containing just this one field. Keeps the
@@ -122,7 +139,7 @@ export function OnboardingForm({
   };
 
   const bySection = (sectionKey: string) =>
-    fields.filter((f) => f.section === sectionKey);
+    visibleFields.filter((f) => f.section === sectionKey);
 
   return (
     <div className="space-y-6">
@@ -267,6 +284,24 @@ export function OnboardingForm({
                 />
               );
             })}
+
+            {/* Legacy driving-licence upload (pre-ID-choice schema). Only
+                rendered on Section B and only when we actually have
+                legacy docs — otherwise invisible. */}
+            {section.key === "B" && legacyDrivingLicenceDocs.length > 0 ? (
+              <LegacyDrivingLicenceBlock
+                docs={legacyDrivingLicenceDocs}
+                onRemoved={(id) =>
+                  setDocsByKey((prev) => ({
+                    ...prev,
+                    [LEGACY_DRIVING_LICENCE_ID]: (
+                      prev[LEGACY_DRIVING_LICENCE_ID] ?? []
+                    ).filter((d) => d.id !== id),
+                  }))
+                }
+                removeDoc={removeDoc}
+              />
+            ) : null}
           </div>
         </section>
       ))}
@@ -545,6 +580,80 @@ function AuthCodeRow({
   );
 }
 
+// Read-only display of legacy pre-schema driving-licence uploads so
+// test cases that already have docs under the old single-slot key
+// still see them in the form. Not counted toward progress. Removable
+// so the client can tidy up before moving on.
+function LegacyDrivingLicenceBlock({
+  docs,
+  onRemoved,
+  removeDoc,
+}: {
+  docs: UploadedDoc[];
+  onRemoved: (id: string) => void;
+  removeDoc: (docId: string) => Promise<ActionResult>;
+}) {
+  const [removing, startRemove] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const handleRemove = (docId: string) => {
+    setError(null);
+    startRemove(async () => {
+      const res = await removeDoc(docId);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      onRemoved(docId);
+    });
+  };
+  return (
+    <div className="rounded-xl border border-dashed border-line bg-paper p-4">
+      <div
+        className="text-[11px] font-semibold uppercase tracking-wider text-slate"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
+        Previous driving licence upload
+      </div>
+      <p className="mt-1 text-xs text-slate">
+        You uploaded this before we split the Driving licence slot into
+        front and back. It won&apos;t count toward the new requirements
+        — please re-upload the front and back above if that&apos;s the
+        ID you&apos;re providing. Remove it here when you&apos;re done.
+      </p>
+      <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-white">
+        {docs.map((d) => (
+          <li
+            key={d.id}
+            className="flex items-center justify-between gap-3 px-4 py-2.5"
+          >
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-ink">
+                {d.file_name}
+              </div>
+              <div className="text-xs text-slate">
+                {formatDateTime(d.uploaded_at)}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleRemove(d.id)}
+              disabled={removing}
+              className="text-xs font-semibold text-red-700 underline underline-offset-4 hover:text-red-900 disabled:opacity-50"
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error ? (
+        <p className="mt-2 text-xs font-medium text-red-700" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function UploadRow({
   field,
   required,
@@ -567,10 +676,6 @@ function UploadRow({
 }) {
   const [removing, startRemove] = useTransition();
   const [error, setError] = useState<string | null>(null);
-
-  if (field.kind !== "upload") return null;
-
-  const allowMultiple = !!field.multi;
 
   // Adapter: DocumentUploader hands us a FormData per file. We delegate
   // to the parent's uploadDoc with this slot's requirement_key baked in,
@@ -599,6 +704,10 @@ function UploadRow({
     },
     [field.id, uploadDoc, onUploaded],
   );
+
+  if (field.kind !== "upload") return null;
+
+  const allowMultiple = !!field.multi;
 
   const handleRemove = (docId: string) => {
     setError(null);

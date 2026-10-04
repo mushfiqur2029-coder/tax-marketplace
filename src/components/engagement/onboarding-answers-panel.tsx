@@ -5,6 +5,8 @@ import { formatDateTime } from "@/lib/format";
 import type { ActionResult } from "@/lib/action-result";
 import {
   ENCRYPTED_FIELD_ID,
+  LEGACY_DRIVING_LICENCE_ID,
+  fieldIsVisible,
   type ChecklistField,
   type ChecklistSectionDef,
 } from "@/lib/engagement/checklist";
@@ -71,8 +73,17 @@ export function OnboardingAnswersPanel({
   return (
     <div className="space-y-5">
       {sections.map((section) => {
-        const fieldsHere = fields.filter((f) => f.section === section.key);
-        if (fieldsHere.length === 0) return null;
+        // Only render fields whose showWhen matches the current answers.
+        // Mirrors the client form so the accountant sees the same branch
+        // the client was filling in.
+        const fieldsHere = fields.filter(
+          (f) => f.section === section.key && fieldIsVisible(f, answers),
+        );
+        const legacyDl =
+          section.key === "B"
+            ? docsByKey[LEGACY_DRIVING_LICENCE_ID] ?? []
+            : [];
+        if (fieldsHere.length === 0 && legacyDl.length === 0) return null;
         return (
           <div
             key={section.key}
@@ -99,6 +110,15 @@ export function OnboardingAnswersPanel({
                   revealAuthCode={revealAuthCode}
                 />
               ))}
+              {legacyDl.length > 0 ? (
+                <LegacyDrivingLicenceRow
+                  docs={legacyDl}
+                  openDoc={openDoc}
+                  pendingDocId={pendingDocId}
+                  docPending={docPending}
+                  docError={docError}
+                />
+              ) : null}
             </dl>
           </div>
         );
@@ -315,6 +335,74 @@ function AuthCodeReveal({
           {error}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+// Read-only legacy driving-licence row for cases that have uploads
+// under the old single-slot key (`director_driving_licence`) from
+// before the Passport / Driving-licence ID branch landed. Rendered
+// in Section B only, after the current fields, labelled clearly as a
+// prior upload so a reviewer isn't confused about why there's a doc
+// that doesn't match the new slot IDs.
+function LegacyDrivingLicenceRow({
+  docs,
+  openDoc,
+  pendingDocId,
+  docPending,
+  docError,
+}: {
+  docs: OnboardingDoc[];
+  openDoc: (doc: OnboardingDoc) => void;
+  pendingDocId: string | null;
+  docPending: boolean;
+  docError: Record<string, string>;
+}) {
+  return (
+    <div className="grid gap-1 py-3 sm:grid-cols-[220px_1fr] sm:gap-4">
+      <dt
+        className="text-xs font-semibold uppercase tracking-wider text-slate"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
+        Driving licence (legacy)
+      </dt>
+      <dd className="text-sm text-ink">
+        <ul className="space-y-1">
+          {docs.map((d) => (
+            <li
+              key={d.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line bg-white px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-ink">
+                  {d.file_name}
+                </div>
+                <div className="text-[11px] text-slate">
+                  {formatDateTime(d.uploaded_at)}
+                </div>
+                {docError[d.id] ? (
+                  <p className="mt-1 text-[11px] text-red-700" role="alert">
+                    {docError[d.id]}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => openDoc(d)}
+                disabled={docPending && pendingDocId === d.id}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-navy-deep transition hover:bg-sky/10 disabled:opacity-50"
+              >
+                {docPending && pendingDocId === d.id ? "Opening…" : "Open"}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-[11px] text-slate">
+          Uploaded before the ID choice schema. The client&apos;s current
+          selection drives the required Passport / Driving-licence slots
+          above.
+        </p>
+      </dd>
     </div>
   );
 }

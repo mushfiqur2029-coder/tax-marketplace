@@ -10,7 +10,7 @@ import {
   CHECKLIST_FIELDS,
   ENCRYPTED_FIELD_ID,
   fieldsForTier,
-  requiredFieldsForTier,
+  requiredFieldsForTierGiven,
   type ChecklistField,
 } from "@/lib/engagement/checklist";
 
@@ -275,10 +275,14 @@ export async function submitChecklistAction(
       caseId,
     );
 
-    const required = requiredFieldsForTier(tier);
     const answers =
       (caseRow as unknown as { intake_answers: Record<string, string> | null })
         .intake_answers ?? {};
+    // Required set depends on the client's answers because of Section
+    // B's ID branch — Passport means one upload, Driving licence means
+    // two. requiredFieldsForTierGiven filters by both tier and
+    // showWhen visibility.
+    const required = requiredFieldsForTierGiven(tier, answers);
 
     // Load uploaded doc keys in one query. Fine even for 20+ files.
     const { data: docs } = await admin

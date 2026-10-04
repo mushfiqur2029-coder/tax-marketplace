@@ -10,8 +10,6 @@ import { getTier, type TierId } from "@/lib/plans";
 import {
   sectionsForTier,
   fieldsForTier,
-  requiredFieldsForTier,
-  ENCRYPTED_FIELD_ID,
   CHECKLIST_FOOTER_NOTE,
 } from "@/lib/engagement/checklist";
 import {
@@ -97,17 +95,11 @@ export default async function OnboardingPage({
   const tierId = tier.id as TierId;
   const sections = sectionsForTier(tierId);
   const fields = fieldsForTier(tierId);
-  const required = requiredFieldsForTier(tierId);
   const answers = (caseRow.intake_answers ?? {}) as Record<string, string>;
-
-  // Required-field progress count for the live progress bar. Encrypted
-  // field counts as done when the encrypted column is set.
-  const requiredDone = required.filter((f) => {
-    if (f.kind === "upload") return (docsByKey.get(f.id)?.length ?? 0) > 0;
-    if (f.id === ENCRYPTED_FIELD_ID) return authCodeAlreadySet;
-    const v = answers[f.id];
-    return !!v && String(v).trim().length > 0;
-  }).length;
+  // Required count + progress now live inside OnboardingForm so they
+  // recompute live when the Section B ID branch toggles between
+  // Passport and Driving licence. The server-side guard uses the same
+  // helper (requiredFieldsForTierGiven) in submitChecklistAction.
 
   const saveAnswers = async (fd: FormData) => {
     "use server";
@@ -159,8 +151,6 @@ export default async function OnboardingPage({
         fields={fields}
         answers={answers}
         docsByKey={Object.fromEntries(docsByKey)}
-        requiredCount={required.length}
-        requiredDone={requiredDone}
         authCodeAlreadySet={authCodeAlreadySet}
         footer={CHECKLIST_FOOTER_NOTE}
         saveAnswers={saveAnswers}
