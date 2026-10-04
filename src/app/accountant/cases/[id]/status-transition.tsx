@@ -3,10 +3,29 @@
 import { useState, useTransition } from "react";
 import { SLButton } from "@/components/sl-button";
 
-const NEXT: Record<string, { label: string; next: string } | null> = {
+// Personal flow uses the four-step state machine. Limited-company
+// collapses "prepared" into client_approval — the move from in_review is
+// handled by the PrepareApprovalCard, so this map leaves in_review with
+// no button and the component suppresses it.
+const NEXT_PERSONAL: Record<string, { label: string; next: string } | null> = {
   submitted: { label: "Start review", next: "in_review" },
   in_review: { label: "Mark as prepared", next: "prepared" },
   prepared: { label: "Send for client approval", next: "client_approval" },
+  client_approval: null,
+  filed: { label: "Mark as complete", next: "complete" },
+  complete: null,
+  draft: null,
+};
+
+const NEXT_LIMITED_COMPANY: Record<
+  string,
+  { label: string; next: string } | null
+> = {
+  submitted: { label: "Start review", next: "in_review" },
+  // in_review handled by PrepareApprovalCard — rendered elsewhere.
+  in_review: null,
+  // "prepared" doesn't exist on this flow but keep the map total.
+  prepared: null,
   client_approval: null,
   filed: { label: "Mark as complete", next: "complete" },
   complete: null,
@@ -18,13 +37,16 @@ type AdvanceResult = { ok: true } | { ok: false; error: string };
 export function StatusTransition({
   current,
   advance,
+  variant = "personal",
 }: {
   current: string;
   advance: (next: string) => Promise<AdvanceResult>;
+  variant?: "personal" | "limited_company";
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const step = NEXT[current];
+  const map = variant === "limited_company" ? NEXT_LIMITED_COMPANY : NEXT_PERSONAL;
+  const step = map[current];
 
   return (
     <div className="mt-4 space-y-3">

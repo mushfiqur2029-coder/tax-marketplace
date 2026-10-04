@@ -21,6 +21,13 @@ import {
   fieldsForTier,
 } from "@/lib/engagement/checklist";
 import type { TierId } from "@/lib/plans";
+import {
+  periodDocsApplyToTier,
+  periodDocFieldsForCase,
+  SECTION_A_PAYE_UPLOAD_ID,
+  ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+  ACCOUNTANT_CT600_KEY,
+} from "@/lib/engagement/period-docs";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -51,7 +58,7 @@ export default async function AdminCasePage({
   const { data: row } = await admin
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at, onboarding_submitted_at, company_auth_code_encrypted",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at, onboarding_submitted_at, company_auth_code_encrypted, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at, approval_payload",
     )
     .eq("id", id)
     .single();
@@ -131,6 +138,63 @@ export default async function AdminCasePage({
   ];
 
   const answers = (row.intake_answers ?? {}) as Record<string, string>;
+
+  // Admin-side derivation for the limited-company period + approval
+  // sections. All data is already in `docs` and `row` above; we just
+  // group by requirement_key to render the panel.
+  const isCompany = row.segment === "limited_company_vat";
+  const needsPeriodDocs =
+    isCompany && periodDocsApplyToTier(tier.id as TierId);
+  const docList = (docs ?? []) as Array<{
+    id: string;
+    file_name: string;
+    file_url: string;
+    uploaded_at: string;
+    requirement_key: string | null;
+  }>;
+  const payeInSectionA = docList.some(
+    (d) => d.requirement_key === SECTION_A_PAYE_UPLOAD_ID,
+  );
+  const periodFieldList = needsPeriodDocs
+    ? periodDocFieldsForCase({
+        payrollRegistered: row.payroll_registered,
+        payeCertificateUploadedInSectionA: payeInSectionA,
+      })
+    : [];
+  const periodDocsByKey: Record<string, typeof docList> = {};
+  for (const d of docList) {
+    if (!d.requirement_key?.startsWith("period_")) continue;
+    const arr = periodDocsByKey[d.requirement_key] ?? [];
+    arr.push(d);
+    periodDocsByKey[d.requirement_key] = arr;
+  }
+  const accountantAnnualAccounts = docList.filter(
+    (d) => d.requirement_key === ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+  );
+  const accountantCt600 = docList.filter(
+    (d) => d.requirement_key === ACCOUNTANT_CT600_KEY,
+  );
+  const approvalPayload = (row.approval_payload ?? null) as
+    | {
+        ct_liability_pence?: number;
+        hmrc_payment_reference?: string | null;
+        note?: string | null;
+        prepared_at?: string | null;
+        prepared_by?: string | null;
+      }
+    | null;
+  const formatYmd = (ymd: string | null | undefined) => {
+    if (!ymd) return "(not set)";
+    const [y, m, d] = ymd.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.toLocaleDateString("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  };
 
   const send = async (input: Parameters<typeof sendMessageAction>[0]) => {
     "use server";
@@ -276,6 +340,255 @@ export default async function AdminCasePage({
                   getDocUrl={getOnboardingDocUrl}
                   revealAuthCode={revealAuthCode}
                 />
+              </div>
+            </section>
+          ) : null}
+
+          {needsPeriodDocs && row.onboarding_submitted_at ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Accounting period
+              </h3>
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-line bg-paper p-3">
+                  <dt
+                    className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Period start
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-ink">
+                    {formatYmd(row.period_start_date)}
+                  </dd>
+                </div>
+                <div className="rounded-xl border border-line bg-paper p-3">
+                  <dt
+                    className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Period end
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-ink">
+                    {formatYmd(row.period_end_date)}
+                  </dd>
+                </div>
+                <div className="rounded-xl border border-line bg-paper p-3">
+                  <dt
+                    className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Payroll registered
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-ink">
+                    {row.payroll_registered ? "Yes" : "No"}
+                  </dd>
+                </div>
+                <div className="rounded-xl border border-line bg-paper p-3">
+                  <dt
+                    className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Period docs submitted
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-ink">
+                    {row.period_docs_submitted_at
+                      ? formatDateTime(row.period_docs_submitted_at)
+                      : "(not yet)"}
+                  </dd>
+                </div>
+              </dl>
+
+              <h4
+                className="mt-6 text-xs font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Client period uploads
+              </h4>
+              <ul className="mt-2 space-y-3">
+                {periodFieldList.map((field) => {
+                  const required = field.requiredFor.includes(
+                    tier.id as TierId,
+                  );
+                  const items = periodDocsByKey[field.id] ?? [];
+                  return (
+                    <li key={field.id}>
+                      <div className="flex items-baseline gap-2">
+                        <span
+                          className="text-[11px] font-semibold uppercase tracking-wider text-slate"
+                          style={{ fontFamily: "var(--font-mono)" }}
+                        >
+                          {field.label}
+                        </span>
+                        <span
+                          className="text-[10px] uppercase tracking-wider"
+                          style={{
+                            color: required ? "#B91C1C" : "#4b5c89",
+                            fontFamily: "var(--font-mono)",
+                          }}
+                        >
+                          {required ? "Required" : "Optional"}
+                        </span>
+                      </div>
+                      {items.length === 0 ? (
+                        <p className="mt-1 text-xs italic text-slate">
+                          (nothing uploaded)
+                        </p>
+                      ) : (
+                        <ul className="mt-2 divide-y divide-line rounded-xl border border-line bg-paper">
+                          {items.map((d) => (
+                            <li
+                              key={d.id}
+                              className="flex items-center justify-between gap-3 px-4 py-2.5"
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-ink">
+                                  {d.file_name}
+                                </div>
+                                <div className="text-xs text-slate">
+                                  {formatDateTime(d.uploaded_at)}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          {isCompany && approvalPayload ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Client approval payload
+              </h3>
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-line bg-paper p-3">
+                  <dt
+                    className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    CT liability
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-ink">
+                    {typeof approvalPayload.ct_liability_pence === "number"
+                      ? `£${(approvalPayload.ct_liability_pence / 100).toFixed(2)}`
+                      : "(not set)"}
+                  </dd>
+                </div>
+                <div className="rounded-xl border border-line bg-paper p-3">
+                  <dt
+                    className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    HMRC payment reference
+                  </dt>
+                  <dd className="mt-1 break-all text-sm font-semibold text-ink">
+                    {approvalPayload.hmrc_payment_reference ?? "(not set)"}
+                  </dd>
+                </div>
+                <div className="rounded-xl border border-line bg-paper p-3 sm:col-span-2">
+                  <dt
+                    className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Prepared
+                  </dt>
+                  <dd className="mt-1 text-sm text-ink">
+                    {approvalPayload.prepared_at
+                      ? formatDateTime(approvalPayload.prepared_at)
+                      : "(not set)"}
+                    {approvalPayload.prepared_by
+                      ? ` · by ${approvalPayload.prepared_by.slice(0, 8)}…`
+                      : null}
+                  </dd>
+                </div>
+                {approvalPayload.note ? (
+                  <div className="rounded-xl border border-line bg-paper p-3 sm:col-span-2">
+                    <dt
+                      className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                      style={{ fontFamily: "var(--font-mono)" }}
+                    >
+                      Note to client
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-ink">
+                      {approvalPayload.note}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <h4
+                    className="text-[11px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Annual Accounts
+                  </h4>
+                  {accountantAnnualAccounts.length === 0 ? (
+                    <p className="mt-1 text-xs italic text-slate">
+                      (not uploaded)
+                    </p>
+                  ) : (
+                    <ul className="mt-2 divide-y divide-line rounded-xl border border-line bg-paper">
+                      {accountantAnnualAccounts.map((d) => (
+                        <li
+                          key={d.id}
+                          className="flex items-center justify-between gap-3 px-4 py-2.5"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-ink">
+                              {d.file_name}
+                            </div>
+                            <div className="text-xs text-slate">
+                              {formatDateTime(d.uploaded_at)}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <h4
+                    className="text-[11px] font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    CT600
+                  </h4>
+                  {accountantCt600.length === 0 ? (
+                    <p className="mt-1 text-xs italic text-slate">
+                      (not uploaded)
+                    </p>
+                  ) : (
+                    <ul className="mt-2 divide-y divide-line rounded-xl border border-line bg-paper">
+                      {accountantCt600.map((d) => (
+                        <li
+                          key={d.id}
+                          className="flex items-center justify-between gap-3 px-4 py-2.5"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-ink">
+                              {d.file_name}
+                            </div>
+                            <div className="text-xs text-slate">
+                              {formatDateTime(d.uploaded_at)}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </section>
           ) : null}

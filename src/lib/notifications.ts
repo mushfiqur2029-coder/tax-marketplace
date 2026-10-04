@@ -12,7 +12,9 @@ export type NotificationType =
   | "addon_pending_admin"
   | "addon_ready_to_pay"
   | "addon_review_decision"
-  | "addon_paid";
+  | "addon_paid"
+  | "case_period_entered"
+  | "period_docs_submitted";
 
 export type NotificationRow = {
   id: string;
@@ -316,6 +318,48 @@ export async function insertAddonPaidNotification(params: {
     message: `Client paid £${(params.amountPence / 100).toFixed(2)} for ${short}.`,
   });
   logNotifyError({ type: "addon_paid", caseId: params.caseId }, error);
+}
+
+// Fires when the accountant enters the accounting period dates on a
+// limited-company case. The client needs to come back and upload the
+// second-stage documents for that period.
+export async function insertCasePeriodEnteredNotification(params: {
+  caseId: string;
+  clientId: string;
+  periodStart: string;
+  periodEnd: string;
+}) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.clientId,
+    type: "case_period_entered" as const,
+    case_id: params.caseId,
+    message: `Your accountant set the accounting period: ${params.periodStart} to ${params.periodEnd}. Please upload the documents listed on your case.`,
+  });
+  logNotifyError(
+    { type: "case_period_entered", caseId: params.caseId },
+    error,
+  );
+}
+
+// Fires when the client finishes uploading the second-stage docs for the
+// accounting period. Accountant can now start on year-end accounts.
+export async function insertPeriodDocsSubmittedNotification(params: {
+  caseId: string;
+  accountantId: string;
+  clientEmail: string;
+}) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.accountantId,
+    type: "period_docs_submitted" as const,
+    case_id: params.caseId,
+    message: `${params.clientEmail} uploaded their period documents. Ready for accounts prep.`,
+  });
+  logNotifyError(
+    { type: "period_docs_submitted", caseId: params.caseId },
+    error,
+  );
 }
 
 // Notify the accountant when admin approves or rejects their application.

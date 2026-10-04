@@ -5,8 +5,15 @@ import {
   approveAndFileAction,
   startAddonCheckoutAction,
   reconcileAddonPaymentAction,
+  getDocumentSignedUrl,
 } from "@/app/client/actions";
 import { ApproveAndFileButton } from "./approve-and-file-button";
+import { ApprovalReviewCard } from "./approval-review-card";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+  ACCOUNTANT_CT600_KEY,
+} from "@/lib/engagement/period-docs";
 import { AddonPayBanner } from "./addon-pay-banner";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
@@ -59,6 +66,14 @@ export default async function CaseDetailPage({
 
   const data = await loadClientCase(id);
   const isDraft = data.row.status === "draft";
+  // Waiting-on-accountant interstitial: onboarding is in but the
+  // accountant hasn't entered the accounting period yet, so the period-
+  // docs page isn't open to the client. We show a banner instead of a
+  // dead Resume button that would just bounce back to this page.
+  const awaitingPeriodDates =
+    data.progress.nextStep === "period_docs" && !data.progress.periodDatesSet;
+  const showResumeButton =
+    data.progress.nextStep !== "done" && !awaitingPeriodDates;
   const nextHref = `/client/cases/${id}/${data.progress.nextStep === "done" ? "" : data.progress.nextStep}`;
 
   // Load add-ons on this case. Clients see:
@@ -90,6 +105,43 @@ export default async function CaseDetailPage({
   }
   const pendingPayAddons = addons.filter((a) => a.status === "pending_payment");
   const historyAddons = addons.filter((a) => a.status !== "pending_payment");
+
+  // Load accountant uploads (Annual Accounts + CT600) for the rich
+  // approval card. Only loaded when the client is actually at approval
+  // stage so we don't fetch for cases that don't need them. We go via
+  // the admin client because the client's RLS already allows viewing
+  // their own case_documents regardless of uploader.
+  type AccountantDocRow = {
+    id: string;
+    file_name: string;
+    file_url: string;
+    uploaded_at: string;
+    requirement_key: string | null;
+  };
+  let approvalAnnualAccounts: AccountantDocRow[] = [];
+  let approvalCt600: AccountantDocRow[] = [];
+  if (
+    data.row.status === "client_approval" &&
+    data.row.approval_payload
+  ) {
+    const admin = createAdminClient();
+    const { data: approvalDocs } = await admin
+      .from("case_documents")
+      .select("id, file_name, file_url, uploaded_at, requirement_key")
+      .eq("case_id", id)
+      .in("requirement_key", [
+        ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+        ACCOUNTANT_CT600_KEY,
+      ])
+      .order("uploaded_at", { ascending: true });
+    const rows = (approvalDocs ?? []) as AccountantDocRow[];
+    approvalAnnualAccounts = rows.filter(
+      (d) => d.requirement_key === ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+    );
+    approvalCt600 = rows.filter(
+      (d) => d.requirement_key === ACCOUNTANT_CT600_KEY,
+    );
+  }
 
   // Load client's chat threads: direct (client_accountant) and support (client_admin).
   let threads: ChatThread[] = [];
@@ -146,6 +198,22 @@ export default async function CaseDetailPage({
     "use server";
     return startAddonCheckoutAction(addonId);
   };
+  const signCaseDocUrl = async (path: string) => {
+    "use server";
+    return getDocumentSignedUrl(id, path);
+  };
+
+  // Pull the approval payload fields out once for the richer card.
+  // Dormant / personal cases won't have an approval_payload — those
+  // fall back to the plain ApproveAndFileButton below.
+  const approvalPayload = data.row.approval_payload as
+    | {
+        ct_liability_pence?: number;
+        hmrc_payment_reference?: string | null;
+        note?: string | null;
+        prepared_at?: string | null;
+      }
+    | null;
 
   return (
     <DashboardShell
@@ -183,15 +251,46 @@ export default async function CaseDetailPage({
         {/* Resume button covers two cases: personal draft flow (intake →
             docs → checkout) and limited-company post-payment onboarding
             which lives at status='submitted' until the checklist is in. */}
-        {data.progress.nextStep !== "done" ? (
+        {showResumeButton ? (
           <SLLink href={nextHref} variant="primary">
             Resume. {stepLabel(data.progress.nextStep)}
           </SLLink>
         ) : null}
       </div>
 
+      {awaitingPeriodDates ? (
+        <div
+          role="status"
+          className="mb-6 rounded-xl border px-4 py-3 text-sm"
+          style={{
+            background: "rgba(79, 141, 255, 0.08)",
+            borderColor: "rgba(79, 141, 255, 0.3)",
+            color: "#1E3A8A",
+          }}
+        >
+          Your accountant is reviewing your onboarding and will set the
+          accounting period shortly. You&apos;ll get a notification here
+          the moment they do, so you can upload the second-stage
+          documents.
+        </div>
+      ) : null}
+
       {data.row.status === "client_approval" && data.me.status !== "suspended" ? (
-        <ApproveAndFileButton approve={approve} />
+        approvalPayload &&
+        typeof approvalPayload.ct_liability_pence === "number" ? (
+          <ApprovalReviewCard
+            ctLiabilityPence={approvalPayload.ct_liability_pence}
+            hmrcPaymentReference={approvalPayload.hmrc_payment_reference ?? null}
+            note={approvalPayload.note ?? null}
+            preparedAt={approvalPayload.prepared_at ?? null}
+            annualAccounts={approvalAnnualAccounts}
+            ct600={approvalCt600}
+            getDocUrl={signCaseDocUrl}
+            approve={approve}
+          />
+        ) : (
+          <ApproveAndFileButton approve={approve} />
+        )
       ) : null}
 
       {!isDraft && data.me.status !== "suspended"
@@ -316,6 +415,7 @@ function stepLabel(
     | "documents"
     | "checkout"
     | "onboarding"
+    | "period_docs"
     | "done",
 ) {
   switch (step) {
@@ -329,6 +429,8 @@ function stepLabel(
       return "Pay and submit";
     case "onboarding":
       return "Upload required documents";
+    case "period_docs":
+      return "Upload period documents";
     default:
       return "Continue";
   }

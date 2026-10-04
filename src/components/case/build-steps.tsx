@@ -1,4 +1,6 @@
 import type { CaseData } from "@/lib/case";
+import { periodDocsApplyToTier } from "@/lib/engagement/period-docs";
+import type { TierId } from "@/lib/plans";
 import type { Step } from "./step-tracker";
 
 export type ClientFlowStepKey =
@@ -6,7 +8,8 @@ export type ClientFlowStepKey =
   | "intake"
   | "documents"
   | "checkout"
-  | "onboarding";
+  | "onboarding"
+  | "period_docs";
 
 export function buildSteps(
   caseId: string,
@@ -17,10 +20,11 @@ export function buildSteps(
   const isCompany = data.segment.id === "limited_company_vat";
 
   // Limited-company clients see: sign → pay → onboarding checklist →
-  // submitted. The per-service onboarding (Sections A/B/C/D) lands
-  // post-payment and gates the "visible in accountant queue" step.
+  // (period docs for non-dormant) → submitted. Dormant short-circuits
+  // after onboarding — there's no trading period to document.
   if (isCompany) {
-    return [
+    const needsPeriodDocs = periodDocsApplyToTier(data.tier.id as TierId);
+    const steps: Step[] = [
       {
         key: "engagement",
         label: "Sign engagement letter",
@@ -42,14 +46,24 @@ export function buildSteps(
         done: p.onboardingSubmitted,
         current: current === "onboarding",
       },
-      {
-        key: "submitted",
-        label: "Submitted",
-        href: `/client/cases/${caseId}`,
-        done: p.onboardingSubmitted,
-        current: false,
-      },
     ];
+    if (needsPeriodDocs) {
+      steps.push({
+        key: "period_docs",
+        label: "Period documents",
+        href: `/client/cases/${caseId}/period-docs`,
+        done: p.periodDocsSubmitted,
+        current: current === "period_docs",
+      });
+    }
+    steps.push({
+      key: "submitted",
+      label: "Submitted",
+      href: `/client/cases/${caseId}`,
+      done: needsPeriodDocs ? p.periodDocsSubmitted : p.onboardingSubmitted,
+      current: false,
+    });
+    return steps;
   }
 
   return [

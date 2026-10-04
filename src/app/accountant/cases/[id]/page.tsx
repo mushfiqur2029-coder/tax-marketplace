@@ -7,6 +7,11 @@ import {
   getDocSignedUrlForAccountant,
   requestPresetAddonAction,
   requestCustomAddonAction,
+  setCasePeriodAction,
+  clearCasePeriodAction,
+  uploadAccountantDocumentAction,
+  removeAccountantDocumentAction,
+  prepareApprovalAction,
 } from "@/app/accountant/actions";
 import {
   sendMessageAction,
@@ -41,6 +46,16 @@ import {
 } from "@/lib/engagement/checklist";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { TierId } from "@/lib/plans";
+import {
+  periodDocsApplyToTier,
+  periodDocFieldsForCase,
+  SECTION_A_PAYE_UPLOAD_ID,
+  ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+  ACCOUNTANT_CT600_KEY,
+} from "@/lib/engagement/period-docs";
+import { PeriodCard } from "./period-card";
+import { PrepareApprovalCard } from "./prepare-approval-card";
+import { PeriodDocsPanel } from "./period-docs-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -122,6 +137,53 @@ export default async function AccountantCaseDetailPage({
     ]);
     onboardingDocs = (docRows ?? []) as OnboardingDocRow[];
     onboardingAuthCodeAvailable = !!cryptoRow?.company_auth_code_encrypted;
+  }
+
+  // Limited-company period + approval section data. Only the assigned
+  // accountant on a non-dormant limited-company case gets these.
+  type PeriodDocRow = {
+    id: string;
+    file_name: string;
+    file_url: string;
+    uploaded_at: string;
+    requirement_key: string | null;
+  };
+  const needsPeriodDocs =
+    isCompany && periodDocsApplyToTier(data.tier.id as TierId);
+  const showPeriodSection =
+    needsPeriodDocs && data.isMine && !!data.row.onboarding_submitted_at;
+  const periodDocsByKey: Record<string, PeriodDocRow[]> = {};
+  let periodFieldList: ReturnType<typeof periodDocFieldsForCase> = [];
+  let payeInSectionA = false;
+  let accountantAnnualAccounts: PeriodDocRow[] = [];
+  let accountantCt600: PeriodDocRow[] = [];
+  if (showPeriodSection) {
+    const adminClient = createAdminClient();
+    const { data: periodRows } = await adminClient
+      .from("case_documents")
+      .select("id, file_name, file_url, uploaded_at, requirement_key")
+      .eq("case_id", id)
+      .order("uploaded_at", { ascending: true });
+    const rows = (periodRows ?? []) as PeriodDocRow[];
+    payeInSectionA = rows.some(
+      (d) => d.requirement_key === SECTION_A_PAYE_UPLOAD_ID,
+    );
+    periodFieldList = periodDocFieldsForCase({
+      payrollRegistered: data.row.payroll_registered,
+      payeCertificateUploadedInSectionA: payeInSectionA,
+    });
+    for (const d of rows) {
+      if (!d.requirement_key?.startsWith("period_")) continue;
+      const arr = periodDocsByKey[d.requirement_key] ?? [];
+      arr.push(d);
+      periodDocsByKey[d.requirement_key] = arr;
+    }
+    accountantAnnualAccounts = rows.filter(
+      (d) => d.requirement_key === ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+    );
+    accountantCt600 = rows.filter(
+      (d) => d.requirement_key === ACCOUNTANT_CT600_KEY,
+    );
   }
 
   // Add-ons on this case + the active catalog for the request picker.
@@ -235,6 +297,37 @@ export default async function AccountantCaseDetailPage({
     "use server";
     return revealCompanyAuthCodeAction(id);
   };
+  const setPeriod = async (input: {
+    periodStart: string;
+    periodEnd: string;
+    payrollRegistered: boolean;
+  }) => {
+    "use server";
+    return setCasePeriodAction(id, input);
+  };
+  const clearPeriod = async () => {
+    "use server";
+    return clearCasePeriodAction(id);
+  };
+  const uploadAccountantDoc = async (
+    requirementKey: string,
+    fd: FormData,
+  ) => {
+    "use server";
+    return uploadAccountantDocumentAction(id, requirementKey, fd);
+  };
+  const removeAccountantDoc = async (docId: string) => {
+    "use server";
+    return removeAccountantDocumentAction(id, docId);
+  };
+  const prepareApproval = async (input: {
+    ctLiabilityPence: number;
+    hmrcPaymentReference: string;
+    note: string;
+  }) => {
+    "use server";
+    return prepareApprovalAction(id, input);
+  };
 
   return (
     <DashboardShell
@@ -303,6 +396,92 @@ export default async function AccountantCaseDetailPage({
                   authCodeAvailable={onboardingAuthCodeAvailable}
                   getDocUrl={getOnboardingDocUrl}
                   revealAuthCode={revealAuthCode}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {showPeriodSection ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Accounting period
+              </h3>
+              <p className="mt-1 text-xs text-slate">
+                Enter the trading period. Saving notifies the client and
+                opens their second-stage upload page.
+              </p>
+              <div className="mt-4">
+                <PeriodCard
+                  periodStart={data.row.period_start_date}
+                  periodEnd={data.row.period_end_date}
+                  payrollRegistered={data.row.payroll_registered}
+                  periodDocsSubmittedAt={data.row.period_docs_submitted_at}
+                  setPeriod={setPeriod}
+                  clearPeriod={clearPeriod}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {showPeriodSection &&
+          data.row.period_start_date &&
+          data.row.period_end_date ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Period documents
+              </h3>
+              <div className="mt-4">
+                <PeriodDocsPanel
+                  tierId={data.tier.id as TierId}
+                  fields={periodFieldList}
+                  docsByKey={periodDocsByKey}
+                  submittedAt={data.row.period_docs_submitted_at}
+                  getDocUrl={signDocUrl}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {showPeriodSection &&
+          data.row.status === "in_review" &&
+          data.me.status !== "suspended" ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Prepare client approval
+              </h3>
+              <p className="mt-1 text-xs text-slate">
+                Upload the Annual Accounts and CT600, enter the CT
+                liability, then send. The client sees the approval screen
+                with these files and this payment reference.
+              </p>
+              <div className="mt-4">
+                <PrepareApprovalCard
+                  initialAnnualAccounts={accountantAnnualAccounts.map(
+                    (d) => ({
+                      id: d.id,
+                      file_name: d.file_name,
+                      uploaded_at: d.uploaded_at,
+                    }),
+                  )}
+                  initialCt600={accountantCt600.map((d) => ({
+                    id: d.id,
+                    file_name: d.file_name,
+                    uploaded_at: d.uploaded_at,
+                  }))}
+                  annualAccountsKey={ACCOUNTANT_ANNUAL_ACCOUNTS_KEY}
+                  ct600Key={ACCOUNTANT_CT600_KEY}
+                  uploadDoc={uploadAccountantDoc}
+                  removeDoc={removeAccountantDoc}
+                  prepare={prepareApproval}
                 />
               </div>
             </section>
@@ -388,7 +567,10 @@ export default async function AccountantCaseDetailPage({
             </section>
           ) : null}
 
-          {data.isMine ? (
+          {data.isMine &&
+          !(
+            showPeriodSection && data.row.status === "in_review"
+          ) ? (
             <section className="card-sl p-6 sm:p-8">
               <h3
                 className="text-sm font-semibold uppercase tracking-wider text-slate"
@@ -402,7 +584,11 @@ export default async function AccountantCaseDetailPage({
                   admin reinstates you.
                 </p>
               ) : (
-                <StatusTransition current={data.row.status} advance={advance} />
+                <StatusTransition
+                  current={data.row.status}
+                  advance={advance}
+                  variant={showPeriodSection ? "limited_company" : "personal"}
+                />
               )}
             </section>
           ) : null}

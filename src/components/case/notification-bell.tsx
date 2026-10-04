@@ -36,6 +36,13 @@ function linkFor(n: NotificationRow, role: Role): string {
       return n.case_id ? `/accountant/cases/${n.case_id}` : "/accountant";
     case "addon_paid":
       return n.case_id ? `/accountant/cases/${n.case_id}` : "/accountant/wallet";
+    case "case_period_entered":
+      // Lands the client on the period-docs upload page (nudge banner
+      // on the case page would also work, but we route them straight
+      // to the action they need to take).
+      return n.case_id ? `/client/cases/${n.case_id}/period-docs` : "/client";
+    case "period_docs_submitted":
+      return n.case_id ? `/accountant/cases/${n.case_id}` : "/accountant";
     case "new_queue_case":
       return `/accountant/cases/${n.case_id}`;
     case "accountant_approval_decision":
@@ -384,5 +391,9 @@ function typeLabel(t: NotificationType): string {
       return "Add-on";
     case "addon_paid":
       return "Add-on";
+    case "case_period_entered":
+      return "Period";
+    case "period_docs_submitted":
+      return "Period docs";
   }
 }

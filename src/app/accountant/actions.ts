@@ -7,8 +7,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   insertAddonPendingAdminNotifications,
   insertAddonReadyToPayNotification,
+  insertCasePeriodEnteredNotification,
 } from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
+import { periodDocsApplyToTier } from "@/lib/engagement/period-docs";
+import {
+  ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+  ACCOUNTANT_CT600_KEY,
+} from "@/lib/engagement/period-docs";
+import type { TierId } from "@/lib/plans";
 
 export type { ActionResult };
 
@@ -273,6 +280,340 @@ export async function requestCustomAddonAction(input: {
     revalidatePath(`/accountant/cases/${input.caseId}`);
     revalidatePath(`/admin/addon-requests`);
     revalidatePath(`/admin`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Set the accounting period on a limited-company case. non_vat_reg and
+// vat_reg use this to unlock the client's second-stage document upload.
+// Dormant doesn't have a period step — the spec is explicit about "no
+// further client-facing step" for Dormant after Sections A/B/C.
+//
+// The client is notified when both dates are present, so uploading only
+// a start first and the end later doesn't produce a confusing partial
+// request. The toggle `payrollRegistered` flips the PAYE summary from
+// optional to required on the second-stage list.
+// -------------------------------------------------------------------------
+export async function setCasePeriodAction(
+  caseId: string,
+  input: {
+    periodStart: string; // YYYY-MM-DD
+    periodEnd: string; // YYYY-MM-DD
+    payrollRegistered: boolean;
+  },
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    assertNotSuspended(me.status, "update case details");
+    if (row.accountant_id !== me.id) {
+      throw new Error("You haven't taken this case.");
+    }
+
+    const admin = createAdminClient();
+    const { data: segmentRow } = await admin
+      .from("cases")
+      .select("segment, tier, period_docs_submitted_at")
+      .eq("id", caseId)
+      .single();
+    if (segmentRow?.segment !== "limited_company_vat") {
+      throw new Error("Period dates only apply to limited-company cases.");
+    }
+    if (!periodDocsApplyToTier(segmentRow.tier as TierId)) {
+      throw new Error("This service doesn't have an accounting period step.");
+    }
+    if (segmentRow.period_docs_submitted_at) {
+      throw new Error("The client has already uploaded for this period.");
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.periodStart)) {
+      throw new Error("Please pick a valid start date.");
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.periodEnd)) {
+      throw new Error("Please pick a valid end date.");
+    }
+    if (input.periodStart >= input.periodEnd) {
+      throw new Error("End date must be after start date.");
+    }
+
+    const { error: updateErr } = await supabase
+      .from("cases")
+      .update({
+        period_start_date: input.periodStart,
+        period_end_date: input.periodEnd,
+        payroll_registered: input.payrollRegistered,
+      })
+      .eq("id", caseId);
+    if (updateErr) throw new Error(updateErr.message);
+
+    await insertCasePeriodEnteredNotification({
+      caseId,
+      clientId: row.client_id,
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+    });
+
+    revalidatePath(`/accountant/cases/${caseId}`);
+    revalidatePath(`/client/cases/${caseId}`);
+    revalidatePath(`/client/cases/${caseId}/period-docs`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// Clears both dates + payroll flag. Used when the accountant mis-entered
+// and wants to retype. Blocked once the client has submitted, so a stray
+// clear can't invalidate uploaded files.
+export async function clearCasePeriodAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    assertNotSuspended(me.status, "update case details");
+    if (row.accountant_id !== me.id) {
+      throw new Error("You haven't taken this case.");
+    }
+
+    const admin = createAdminClient();
+    const { data: fresh } = await admin
+      .from("cases")
+      .select("period_docs_submitted_at")
+      .eq("id", caseId)
+      .single();
+    if (fresh?.period_docs_submitted_at) {
+      throw new Error(
+        "Period docs are already in — contact support to re-open the period.",
+      );
+    }
+
+    const { error: updateErr } = await supabase
+      .from("cases")
+      .update({
+        period_start_date: null,
+        period_end_date: null,
+        payroll_registered: false,
+      })
+      .eq("id", caseId);
+    if (updateErr) throw new Error(updateErr.message);
+
+    revalidatePath(`/accountant/cases/${caseId}`);
+    revalidatePath(`/client/cases/${caseId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// Upload an Annual Accounts PDF or CT600 PDF (or any accountant-authored
+// supporting doc) tagged with its requirement_key. Keeps the storage
+// shape consistent with the client's own tagged uploads; the UI tells
+// which came from whom via uploaded_by.
+export async function uploadAccountantDocumentAction(
+  caseId: string,
+  requirementKey: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    assertNotSuspended(me.status, "upload documents");
+    if (row.accountant_id !== me.id) {
+      throw new Error("You haven't taken this case.");
+    }
+
+    // Keep accountant-visible slots tight. If a future requirement key
+    // lands here we add it to the allow-list rather than accepting any
+    // arbitrary string.
+    const ALLOWED = new Set<string>([
+      ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+      ACCOUNTANT_CT600_KEY,
+    ]);
+    if (!ALLOWED.has(requirementKey)) {
+      throw new Error("Unknown upload slot.");
+    }
+
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("Pick a file first.");
+    }
+    const MAX = 50 * 1024 * 1024;
+    if (file.size > MAX) throw new Error("File is over 50 MB.");
+
+    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+    const path = `${caseId}/${Date.now()}_${safeName}`;
+    const buf = new Uint8Array(await file.arrayBuffer());
+
+    const { error: upErr } = await supabase.storage
+      .from("case-documents")
+      .upload(path, buf, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      });
+    if (upErr) throw new Error(upErr.message);
+
+    const { error: dbErr } = await supabase.from("case_documents").insert({
+      case_id: caseId,
+      uploaded_by: me.id,
+      file_url: path,
+      file_name: file.name,
+      requirement_key: requirementKey,
+    });
+    if (dbErr) {
+      await supabase.storage.from("case-documents").remove([path]);
+      throw new Error(dbErr.message);
+    }
+
+    revalidatePath(`/accountant/cases/${caseId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function removeAccountantDocumentAction(
+  caseId: string,
+  documentId: string,
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    assertNotSuspended(me.status, "remove documents");
+    if (row.accountant_id !== me.id) {
+      throw new Error("You haven't taken this case.");
+    }
+
+    const { data: doc } = await supabase
+      .from("case_documents")
+      .select("id, file_url, case_id, requirement_key, uploaded_by")
+      .eq("id", documentId)
+      .single();
+    if (!doc || doc.case_id !== caseId) throw new Error("Document not found.");
+    if (doc.uploaded_by !== me.id) {
+      throw new Error("You can only remove your own uploads.");
+    }
+    const ALLOWED = new Set<string>([
+      ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+      ACCOUNTANT_CT600_KEY,
+    ]);
+    if (!doc.requirement_key || !ALLOWED.has(doc.requirement_key)) {
+      throw new Error("This action is for accountant-uploaded slots only.");
+    }
+
+    const { error: delErr } = await supabase
+      .from("case_documents")
+      .delete()
+      .eq("id", documentId);
+    if (delErr) throw new Error(delErr.message);
+
+    await supabase.storage.from("case-documents").remove([doc.file_url]);
+
+    revalidatePath(`/accountant/cases/${caseId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// Finalise the client-approval screen. Writes approval_payload, moves
+// status in_review → client_approval (skipping 'prepared' for the
+// limited-company path per the approved sequencing). Guards: Annual
+// Accounts AND CT600 uploaded, both numeric fields parse, status is one
+// of the two meaningful starting points (in_review or prepared).
+//
+// prepared is accepted as a starting status too, because the accountant
+// may have already stepped through it manually for a personal case
+// before this action existed — belt and braces.
+export async function prepareApprovalAction(
+  caseId: string,
+  input: {
+    ctLiabilityPence: number;
+    hmrcPaymentReference: string;
+    note: string;
+  },
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, row } = await loadCaseForAccountant(caseId);
+    assertNotSuspended(me.status, "send cases for client approval");
+    if (row.accountant_id !== me.id) {
+      throw new Error("You haven't taken this case.");
+    }
+    if (row.status !== "in_review" && row.status !== "prepared") {
+      throw new Error("This case isn't at a stage you can send for approval.");
+    }
+
+    const admin = createAdminClient();
+    const { data: fresh } = await admin
+      .from("cases")
+      .select("segment, tier, period_docs_submitted_at")
+      .eq("id", caseId)
+      .single();
+    if (fresh?.segment !== "limited_company_vat") {
+      throw new Error("This action is for limited-company cases only.");
+    }
+    const tierId = fresh.tier as TierId;
+    // Non-dormant tiers need the period docs in first — the accountant
+    // can't credibly prepare Annual Accounts without the full period's
+    // bank data.
+    if (periodDocsApplyToTier(tierId) && !fresh.period_docs_submitted_at) {
+      throw new Error(
+        "Client hasn't uploaded their period documents yet — can't send for approval.",
+      );
+    }
+
+    // Both accountant uploads must be present. Query once, filter in-
+    // memory so the error enumerates what's missing.
+    const { data: ownDocs } = await admin
+      .from("case_documents")
+      .select("requirement_key")
+      .eq("case_id", caseId)
+      .in("requirement_key", [
+        ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+        ACCOUNTANT_CT600_KEY,
+      ]);
+    const haveAccounts = (ownDocs ?? []).some(
+      (d) => d.requirement_key === ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
+    );
+    const haveCT600 = (ownDocs ?? []).some(
+      (d) => d.requirement_key === ACCOUNTANT_CT600_KEY,
+    );
+    const missing: string[] = [];
+    if (!haveAccounts) missing.push("Annual Accounts");
+    if (!haveCT600) missing.push("CT600");
+    if (missing.length > 0) {
+      throw new Error(`Upload ${missing.join(" and ")} before sending for approval.`);
+    }
+
+    const ct = Math.round(input.ctLiabilityPence);
+    if (!Number.isFinite(ct) || ct < 0) {
+      throw new Error("CT liability must be zero or more.");
+    }
+
+    const payload = {
+      ct_liability_pence: ct,
+      hmrc_payment_reference: input.hmrcPaymentReference.trim() || null,
+      note: input.note.trim() || null,
+      prepared_at: new Date().toISOString(),
+      prepared_by: me.id,
+    };
+
+    const { error: updateErr } = await supabase
+      .from("cases")
+      .update({
+        approval_payload: payload,
+        status: "client_approval",
+      })
+      .eq("id", caseId);
+    if (updateErr) throw new Error(updateErr.message);
+
+    // Status change already triggers notify_case_change → client gets a
+    // "Case moved to Awaiting your approval" notification. No new one
+    // needed here.
+
+    revalidatePath(`/accountant/cases/${caseId}`);
+    revalidatePath(`/accountant`);
+    revalidatePath(`/client/cases/${caseId}`);
+    revalidatePath(`/client`);
     return { ok: true };
   } catch (e) {
     return fail(e);
