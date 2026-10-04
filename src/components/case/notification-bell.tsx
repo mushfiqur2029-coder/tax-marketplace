@@ -43,6 +43,15 @@ function linkFor(n: NotificationRow, role: Role): string {
       return n.case_id ? `/client/cases/${n.case_id}/period-docs` : "/client";
     case "period_docs_submitted":
       return n.case_id ? `/accountant/cases/${n.case_id}` : "/accountant";
+    case "vat_cycle_opened":
+    case "vat_approval_ready":
+      // Both route the client to the case page where the VAT returns
+      // panel shows the current open cycle. The deeper cycle URL is
+      // picked up from the panel's own action link.
+      return n.case_id ? `/client/cases/${n.case_id}` : "/client";
+    case "vat_docs_submitted":
+    case "vat_filed":
+      return n.case_id ? `/accountant/cases/${n.case_id}` : "/accountant";
     case "new_queue_case":
       return `/accountant/cases/${n.case_id}`;
     case "accountant_approval_decision":
@@ -395,5 +404,13 @@ function typeLabel(t: NotificationType): string {
       return "Period";
     case "period_docs_submitted":
       return "Period docs";
+    case "vat_cycle_opened":
+      return "VAT period";
+    case "vat_docs_submitted":
+      return "VAT docs";
+    case "vat_approval_ready":
+      return "VAT approval";
+    case "vat_filed":
+      return "VAT filed";
   }
 }

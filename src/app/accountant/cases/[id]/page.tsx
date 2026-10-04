@@ -56,6 +56,22 @@ import {
 import { PeriodCard } from "./period-card";
 import { PrepareApprovalCard } from "./prepare-approval-card";
 import { PeriodDocsPanel } from "./period-docs-panel";
+import {
+  ACCOUNTANT_VAT_RETURN_DOC_KEY,
+  VAT_CYCLE_UPLOAD_FIELDS,
+  getVatFrequency,
+} from "@/lib/vat/cycle";
+import {
+  openFirstVatCycleAction,
+  editVatCycleDatesAction,
+  uploadVatReturnDocAction,
+  removeVatReturnDocAction,
+  prepareVatApprovalAction,
+} from "@/app/accountant/actions";
+import { VatFirstCycleForm } from "./vat-first-cycle-form";
+import { VatEditDatesForm } from "./vat-edit-dates-form";
+import { PrepareVatApprovalCard } from "./prepare-vat-approval-card";
+import { formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -184,6 +200,65 @@ export default async function AccountantCaseDetailPage({
     accountantCt600 = rows.filter(
       (d) => d.requirement_key === ACCOUNTANT_CT600_KEY,
     );
+  }
+
+  // VAT return cycles. Only the assigned accountant on a vat_reg
+  // limited-company case past onboarding gets this section. Cycles are
+  // loaded most-recent first; the current open cycle (if any) is
+  // whichever is not 'filed'.
+  type VatCycleRow = {
+    id: string;
+    cycle_number: number;
+    period_label: string;
+    cycle_start_date: string;
+    cycle_end_date: string;
+    cycle_hmrc_due_date: string;
+    status:
+      | "awaiting_client_docs"
+      | "in_review"
+      | "client_approval"
+      | "filed";
+    client_docs_submitted_at: string | null;
+    filed_at: string | null;
+  };
+  const vatFrequency = getVatFrequency(
+    (data.row.intake_answers ?? null) as Record<string, string> | null,
+  );
+  const showVatSection =
+    isCompany &&
+    data.tier.id === "vat_reg" &&
+    data.isMine &&
+    !!data.row.onboarding_submitted_at &&
+    !!vatFrequency;
+  let vatCycles: VatCycleRow[] = [];
+  let currentVatCycle: VatCycleRow | null = null;
+  let currentVatReturnDocs: {
+    id: string;
+    file_name: string;
+    uploaded_at: string;
+  }[] = [];
+  if (showVatSection) {
+    const adminClient = createAdminClient();
+    const { data: cycleRows } = await adminClient
+      .from("vat_return_cycles")
+      .select(
+        "id, cycle_number, period_label, cycle_start_date, cycle_end_date, cycle_hmrc_due_date, status, client_docs_submitted_at, filed_at",
+      )
+      .eq("case_id", id)
+      .order("cycle_number", { ascending: false });
+    vatCycles = (cycleRows ?? []) as VatCycleRow[];
+    currentVatCycle =
+      vatCycles.find((c) => c.status !== "filed") ?? null;
+
+    if (currentVatCycle) {
+      const { data: returnDocs } = await adminClient
+        .from("case_documents")
+        .select("id, file_name, uploaded_at")
+        .eq("vat_cycle_id", currentVatCycle.id)
+        .eq("requirement_key", ACCOUNTANT_VAT_RETURN_DOC_KEY)
+        .order("uploaded_at", { ascending: true });
+      currentVatReturnDocs = (returnDocs ?? []) as typeof currentVatReturnDocs;
+    }
   }
 
   // Add-ons on this case + the active catalog for the request picker.
@@ -327,6 +402,32 @@ export default async function AccountantCaseDetailPage({
   }) => {
     "use server";
     return prepareApprovalAction(id, input);
+  };
+  const openFirstVatCycle = async (input: { periodEndDate: string }) => {
+    "use server";
+    return openFirstVatCycleAction(id, input);
+  };
+  const editVatCycleDates = async (
+    cycleId: string,
+    input: { periodStart: string; periodEnd: string },
+  ) => {
+    "use server";
+    return editVatCycleDatesAction(cycleId, input);
+  };
+  const uploadVatReturnDoc = async (cycleId: string, fd: FormData) => {
+    "use server";
+    return uploadVatReturnDocAction(cycleId, fd);
+  };
+  const removeVatReturnDoc = async (cycleId: string, docId: string) => {
+    "use server";
+    return removeVatReturnDocAction(cycleId, docId);
+  };
+  const prepareVatApproval = async (
+    cycleId: string,
+    input: Parameters<typeof prepareVatApprovalAction>[1],
+  ) => {
+    "use server";
+    return prepareVatApprovalAction(cycleId, input);
   };
 
   return (
@@ -484,6 +585,150 @@ export default async function AccountantCaseDetailPage({
                   prepare={prepareApproval}
                 />
               </div>
+            </section>
+          ) : null}
+
+          {showVatSection ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                VAT returns
+              </h3>
+              <p className="mt-1 text-xs text-slate">
+                Section D frequency: <b>{vatFrequency}</b>. The system
+                opens each new cycle automatically once the previous one
+                is filed.
+              </p>
+
+              {vatCycles.length === 0 ? (
+                <div className="mt-4">
+                  <VatFirstCycleForm
+                    frequency={vatFrequency!}
+                    openFirstCycle={openFirstVatCycle}
+                  />
+                </div>
+              ) : (
+                <>
+                  <ul className="mt-4 divide-y divide-line rounded-xl border border-line bg-paper">
+                    {vatCycles.map((c) => (
+                      <li
+                        key={c.id}
+                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-semibold text-ink">
+                            {c.period_label}
+                          </div>
+                          <div className="text-xs text-slate">
+                            {c.cycle_start_date} → {c.cycle_end_date} ·
+                            Due {c.cycle_hmrc_due_date}
+                            {c.filed_at ? (
+                              <> · Filed {formatDateTime(c.filed_at)}</>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="shrink-0">
+                          <span
+                            className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+                            style={{
+                              background:
+                                c.status === "filed"
+                                  ? "rgba(19,217,160,0.14)"
+                                  : c.status === "client_approval"
+                                    ? "rgba(79,141,255,0.14)"
+                                    : c.status === "in_review"
+                                      ? "rgba(25,156,217,0.14)"
+                                      : "rgba(217,159,25,0.14)",
+                              color:
+                                c.status === "filed"
+                                  ? "#0E9E77"
+                                  : c.status === "client_approval"
+                                    ? "#1E3A8A"
+                                    : c.status === "in_review"
+                                      ? "var(--sky)"
+                                      : "#B57E12",
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          >
+                            {c.status.replace(/_/g, " ")}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {currentVatCycle ? (
+                    <div className="mt-4 rounded-xl border border-line bg-paper p-4">
+                      <div className="flex items-center justify-between">
+                        <h4
+                          className="text-[11px] font-semibold uppercase tracking-wider text-slate"
+                          style={{ fontFamily: "var(--font-mono)" }}
+                        >
+                          Current cycle · {currentVatCycle.period_label}
+                        </h4>
+                        <VatEditDatesForm
+                          cycleId={currentVatCycle.id}
+                          initialStart={currentVatCycle.cycle_start_date}
+                          initialEnd={currentVatCycle.cycle_end_date}
+                          disabled={
+                            data.me.status === "suspended" ||
+                            currentVatCycle.status === "client_approval"
+                          }
+                          editDates={editVatCycleDates}
+                        />
+                      </div>
+
+                      {currentVatCycle.status === "in_review" &&
+                      data.me.status !== "suspended" ? (
+                        <div className="mt-4">
+                          <PrepareVatApprovalCard
+                            cycleId={currentVatCycle.id}
+                            initialReturnDocs={currentVatReturnDocs}
+                            uploadReturnDoc={uploadVatReturnDoc}
+                            removeReturnDoc={removeVatReturnDoc}
+                            prepare={prepareVatApproval}
+                          />
+                        </div>
+                      ) : currentVatCycle.status ===
+                        "awaiting_client_docs" ? (
+                        <p className="mt-3 text-xs text-slate">
+                          Waiting on the client to upload bank statement
+                          and sales records for this period.
+                        </p>
+                      ) : currentVatCycle.status === "client_approval" ? (
+                        <p className="mt-3 text-xs text-slate">
+                          Sent to the client. They&apos;ll approve + file
+                          from their case page; the next cycle opens
+                          automatically.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              {/* Reference: show the per-cycle required slots so the
+                  accountant knows what the client is expected to
+                  upload. */}
+              <details className="mt-4 text-xs text-slate">
+                <summary className="cursor-pointer font-semibold">
+                  Required docs per cycle
+                </summary>
+                <ul className="mt-2 list-disc space-y-0.5 pl-5">
+                  {VAT_CYCLE_UPLOAD_FIELDS.map((f) => (
+                    <li key={f.id}>
+                      {f.label}{" "}
+                      {["vat_bank_statement_pdf", "vat_sales_invoices"].includes(
+                        f.id,
+                      )
+                        ? "(required)"
+                        : "(optional)"}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             </section>
           ) : null}
 

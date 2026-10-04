@@ -28,6 +28,14 @@ import {
   ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
   ACCOUNTANT_CT600_KEY,
 } from "@/lib/engagement/period-docs";
+import {
+  ACCOUNTANT_VAT_RETURN_DOC_KEY,
+  VAT_CYCLE_UPLOAD_FIELDS,
+  box5Mode,
+  getVatFrequency,
+  getVatRegistrationNumber,
+  type VatApprovalPayload,
+} from "@/lib/vat/cycle";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -195,6 +203,64 @@ export default async function AdminCasePage({
       timeZone: "UTC",
     });
   };
+
+  // Admin VAT visibility: all cycles on vat_reg cases + Section D
+  // frequency + VAT number for context.
+  const showVatSection =
+    isCompany && tier.id === "vat_reg";
+  const vatFrequency = showVatSection
+    ? getVatFrequency(answers)
+    : null;
+  const vatRegistrationNumber = showVatSection
+    ? getVatRegistrationNumber(answers)
+    : null;
+  type AdminVatCycleRow = {
+    id: string;
+    cycle_number: number;
+    period_label: string;
+    cycle_start_date: string;
+    cycle_end_date: string;
+    cycle_hmrc_due_date: string;
+    status:
+      | "awaiting_client_docs"
+      | "in_review"
+      | "client_approval"
+      | "filed";
+    client_docs_submitted_at: string | null;
+    approval_payload: VatApprovalPayload | null;
+    filed_at: string | null;
+    created_at: string;
+  };
+  let adminVatCycles: AdminVatCycleRow[] = [];
+  const adminVatDocsByCycle: Record<string, typeof docList> = {};
+  if (showVatSection) {
+    const { data: cycleRows } = await admin
+      .from("vat_return_cycles")
+      .select(
+        "id, cycle_number, period_label, cycle_start_date, cycle_end_date, cycle_hmrc_due_date, status, client_docs_submitted_at, approval_payload, filed_at, created_at",
+      )
+      .eq("case_id", id)
+      .order("cycle_number", { ascending: false });
+    adminVatCycles = (cycleRows ?? []) as AdminVatCycleRow[];
+    const { data: vatDocs } = await admin
+      .from("case_documents")
+      .select("id, file_name, file_url, uploaded_at, requirement_key, vat_cycle_id")
+      .eq("case_id", id)
+      .not("vat_cycle_id", "is", null)
+      .order("uploaded_at", { ascending: true });
+    for (const d of vatDocs ?? []) {
+      const key = d.vat_cycle_id as string;
+      const arr = adminVatDocsByCycle[key] ?? [];
+      arr.push({
+        id: d.id,
+        file_name: d.file_name,
+        file_url: d.file_url,
+        uploaded_at: d.uploaded_at,
+        requirement_key: d.requirement_key,
+      });
+      adminVatDocsByCycle[key] = arr;
+    }
+  }
 
   const send = async (input: Parameters<typeof sendMessageAction>[0]) => {
     "use server";
@@ -590,6 +656,165 @@ export default async function AdminCasePage({
                   )}
                 </div>
               </div>
+            </section>
+          ) : null}
+
+          {showVatSection ? (
+            <section className="card-sl p-6 sm:p-8">
+              <h3
+                className="text-sm font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                VAT returns ({adminVatCycles.length})
+              </h3>
+              <p className="mt-1 text-xs text-slate">
+                Section D frequency:{" "}
+                <b>{vatFrequency ?? "(not set)"}</b> · VAT number:{" "}
+                <b>{vatRegistrationNumber ?? "(not set)"}</b>
+              </p>
+
+              {adminVatCycles.length === 0 ? (
+                <p className="mt-3 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-slate">
+                  No VAT cycles opened yet.
+                </p>
+              ) : (
+                <ul className="mt-4 space-y-4">
+                  {adminVatCycles.map((c) => {
+                    const docs = adminVatDocsByCycle[c.id] ?? [];
+                    const clientDocs = docs.filter((d) =>
+                      VAT_CYCLE_UPLOAD_FIELDS.some(
+                        (f) => f.id === d.requirement_key,
+                      ),
+                    );
+                    const returnDocs = docs.filter(
+                      (d) =>
+                        d.requirement_key === ACCOUNTANT_VAT_RETURN_DOC_KEY,
+                    );
+                    const payload = c.approval_payload;
+                    const mode =
+                      payload && typeof payload.box_5_pence === "number"
+                        ? box5Mode(payload.box_5_pence)
+                        : null;
+                    return (
+                      <li
+                        key={c.id}
+                        className="rounded-xl border border-line bg-paper p-4"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-ink">
+                              Cycle {c.cycle_number} · {c.period_label}
+                            </div>
+                            <div className="text-xs text-slate">
+                              {c.cycle_start_date} → {c.cycle_end_date} ·
+                              Due {c.cycle_hmrc_due_date}
+                            </div>
+                          </div>
+                          <span
+                            className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+                            style={{
+                              background:
+                                c.status === "filed"
+                                  ? "rgba(19,217,160,0.14)"
+                                  : "rgba(15,30,77,0.08)",
+                              color:
+                                c.status === "filed"
+                                  ? "#0E9E77"
+                                  : "var(--navy-deep)",
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          >
+                            {c.status.replace(/_/g, " ")}
+                          </span>
+                        </div>
+
+                        <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                          <div>
+                            <dt className="text-slate">Docs submitted</dt>
+                            <dd className="text-ink">
+                              {c.client_docs_submitted_at
+                                ? formatDateTime(c.client_docs_submitted_at)
+                                : "(not yet)"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate">Filed</dt>
+                            <dd className="text-ink">
+                              {c.filed_at
+                                ? formatDateTime(c.filed_at)
+                                : "(not yet)"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate">Opened</dt>
+                            <dd className="text-ink">
+                              {formatDateTime(c.created_at)}
+                            </dd>
+                          </div>
+                        </dl>
+
+                        {payload ? (
+                          <div className="mt-3 rounded-lg border border-line bg-white p-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate" style={{ fontFamily: "var(--font-mono)" }}>
+                              VAT100 payload
+                            </div>
+                            <div className="mt-1 grid gap-x-4 gap-y-0.5 text-[11px] text-ink sm:grid-cols-3">
+                              <div>Box 1: £{(payload.box_1_pence / 100).toFixed(2)}</div>
+                              <div>Box 2: £{(payload.box_2_pence / 100).toFixed(2)}</div>
+                              <div>Box 3: £{(payload.box_3_pence / 100).toFixed(2)}</div>
+                              <div>Box 4: £{(payload.box_4_pence / 100).toFixed(2)}</div>
+                              <div>
+                                Box 5: £{(payload.box_5_pence / 100).toFixed(2)}
+                                {mode === "neutral_or_refund" ? " (nil/refund)" : null}
+                              </div>
+                              <div>Box 6: £{(payload.box_6_pence / 100).toFixed(2)}</div>
+                              <div>Box 7: £{(payload.box_7_pence / 100).toFixed(2)}</div>
+                              <div>Box 8: £{(payload.box_8_pence / 100).toFixed(2)}</div>
+                              <div>Box 9: £{(payload.box_9_pence / 100).toFixed(2)}</div>
+                            </div>
+                            {payload.note ? (
+                              <p className="mt-1 whitespace-pre-wrap text-xs text-slate">
+                                Note: {payload.note}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {clientDocs.length > 0 ? (
+                          <div className="mt-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate" style={{ fontFamily: "var(--font-mono)" }}>
+                              Client uploads ({clientDocs.length})
+                            </div>
+                            <ul className="mt-1 space-y-0.5 text-xs text-ink">
+                              {clientDocs.map((d) => (
+                                <li key={d.id} className="truncate">
+                                  {d.file_name}
+                                  <span className="text-slate"> · {d.requirement_key}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {returnDocs.length > 0 ? (
+                          <div className="mt-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate" style={{ fontFamily: "var(--font-mono)" }}>
+                              Accountant return doc
+                            </div>
+                            <ul className="mt-1 space-y-0.5 text-xs text-ink">
+                              {returnDocs.map((d) => (
+                                <li key={d.id} className="truncate">
+                                  {d.file_name}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </section>
           ) : null}
 

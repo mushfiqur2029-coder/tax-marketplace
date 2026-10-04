@@ -106,6 +106,41 @@ export default async function CaseDetailPage({
   const pendingPayAddons = addons.filter((a) => a.status === "pending_payment");
   const historyAddons = addons.filter((a) => a.status !== "pending_payment");
 
+  // Load VAT return cycles for vat_reg cases. All cycles ever opened
+  // on the case, most-recent first, so the client can see current +
+  // history. Only vat_reg actually has cycles — other tiers always
+  // return an empty list.
+  type VatCycleRow = {
+    id: string;
+    cycle_number: number;
+    period_label: string;
+    cycle_start_date: string;
+    cycle_end_date: string;
+    cycle_hmrc_due_date: string;
+    status:
+      | "awaiting_client_docs"
+      | "in_review"
+      | "client_approval"
+      | "filed";
+    filed_at: string | null;
+  };
+  let vatCycles: VatCycleRow[] = [];
+  if (
+    !isDraft &&
+    data.row.segment === "limited_company_vat" &&
+    data.tier.id === "vat_reg"
+  ) {
+    const admin = createAdminClient();
+    const { data: cycleRows } = await admin
+      .from("vat_return_cycles")
+      .select(
+        "id, cycle_number, period_label, cycle_start_date, cycle_end_date, cycle_hmrc_due_date, status, filed_at",
+      )
+      .eq("case_id", id)
+      .order("cycle_number", { ascending: false });
+    vatCycles = (cycleRows ?? []) as VatCycleRow[];
+  }
+
   // Load accountant uploads (Annual Accounts + CT600) for the rich
   // approval card. Only loaded when the client is actually at approval
   // stage so we don't fetch for cases that don't need them. We go via
@@ -348,6 +383,65 @@ export default async function CaseDetailPage({
                 )}
               </div>
 
+              {vatCycles.length > 0 ? (
+                <div className="card-sl p-6 sm:p-8">
+                  <h3
+                    className="text-sm font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    VAT returns ({vatCycles.length})
+                  </h3>
+                  <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
+                    {vatCycles.map((c) => {
+                      const actionable =
+                        c.status === "awaiting_client_docs" ||
+                        c.status === "client_approval";
+                      return (
+                        <li
+                          key={c.id}
+                          className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-ink">
+                              {c.period_label}
+                            </div>
+                            <div className="text-xs text-slate">
+                              Due to HMRC {c.cycle_hmrc_due_date}
+                              {c.filed_at ? (
+                                <>
+                                  {" "}
+                                  · Filed {formatDateTime(c.filed_at)}
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            <VatCycleStatusPill status={c.status} />
+                            {actionable ? (
+                              <Link
+                                href={`/client/cases/${id}/vat/${c.id}`}
+                                className="text-xs font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
+                              >
+                                {c.status === "awaiting_client_docs"
+                                  ? "Upload"
+                                  : "Review"}
+                              </Link>
+                            ) : (
+                              <Link
+                                href={`/client/cases/${id}/vat/${c.id}`}
+                                className="text-xs font-semibold text-slate underline underline-offset-4 hover:text-navy-deep"
+                              >
+                                View
+                              </Link>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
               {historyAddons.length > 0 ? (
                 <div className="card-sl p-6 sm:p-8">
                   <h3
@@ -434,6 +528,48 @@ function stepLabel(
     default:
       return "Continue";
   }
+}
+
+function VatCycleStatusPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    awaiting_client_docs: {
+      label: "Awaiting docs",
+      bg: "rgba(217,159,25,0.14)",
+      color: "#B57E12",
+    },
+    in_review: {
+      label: "In review",
+      bg: "rgba(25,156,217,0.14)",
+      color: "var(--sky)",
+    },
+    client_approval: {
+      label: "Awaiting approval",
+      bg: "rgba(79,141,255,0.14)",
+      color: "#1E3A8A",
+    },
+    filed: {
+      label: "Filed",
+      bg: "rgba(19,217,160,0.14)",
+      color: "#0E9E77",
+    },
+  };
+  const cfg = map[status] ?? {
+    label: status,
+    bg: "rgba(15,30,77,0.08)",
+    color: "var(--navy-deep)",
+  };
+  return (
+    <span
+      className="shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+      style={{
+        background: cfg.bg,
+        color: cfg.color,
+        fontFamily: "var(--font-mono)",
+      }}
+    >
+      {cfg.label}
+    </span>
+  );
 }
 
 function ClientAddonStatusPill({ status }: { status: string }) {

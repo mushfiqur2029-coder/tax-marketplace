@@ -14,7 +14,11 @@ export type NotificationType =
   | "addon_review_decision"
   | "addon_paid"
   | "case_period_entered"
-  | "period_docs_submitted";
+  | "period_docs_submitted"
+  | "vat_cycle_opened"
+  | "vat_docs_submitted"
+  | "vat_approval_ready"
+  | "vat_filed";
 
 export type NotificationRow = {
   id: string;
@@ -360,6 +364,80 @@ export async function insertPeriodDocsSubmittedNotification(params: {
     { type: "period_docs_submitted", caseId: params.caseId },
     error,
   );
+}
+
+// ---------- VAT return cycle (Batch 5) ----------
+
+export async function insertVatCycleOpenedNotification(params: {
+  caseId: string;
+  clientId: string;
+  periodLabel: string;
+  hmrcDueDate: string;
+}) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.clientId,
+    type: "vat_cycle_opened" as const,
+    case_id: params.caseId,
+    message: `New VAT period opened: ${params.periodLabel}. Due to HMRC by ${params.hmrcDueDate}. Please upload the required documents.`,
+  });
+  logNotifyError(
+    { type: "vat_cycle_opened", caseId: params.caseId },
+    error,
+  );
+}
+
+export async function insertVatDocsSubmittedNotification(params: {
+  caseId: string;
+  accountantId: string;
+  clientEmail: string;
+  periodLabel: string;
+}) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.accountantId,
+    type: "vat_docs_submitted" as const,
+    case_id: params.caseId,
+    message: `${params.clientEmail} submitted VAT documents for ${params.periodLabel}. Ready to prepare the return.`,
+  });
+  logNotifyError(
+    { type: "vat_docs_submitted", caseId: params.caseId },
+    error,
+  );
+}
+
+export async function insertVatApprovalReadyNotification(params: {
+  caseId: string;
+  clientId: string;
+  periodLabel: string;
+}) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.clientId,
+    type: "vat_approval_ready" as const,
+    case_id: params.caseId,
+    message: `Your VAT return for ${params.periodLabel} is ready to review and approve.`,
+  });
+  logNotifyError(
+    { type: "vat_approval_ready", caseId: params.caseId },
+    error,
+  );
+}
+
+export async function insertVatFiledNotification(params: {
+  caseId: string;
+  accountantId: string;
+  clientEmail: string;
+  periodLabel: string;
+}) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.accountantId,
+    type: "vat_filed" as const,
+    case_id: params.caseId,
+    message: `${params.clientEmail} approved and filed VAT for ${params.periodLabel}. Next cycle is open.`,
+  });
+  logNotifyError({ type: "vat_filed", caseId: params.caseId }, error);
 }
 
 // Notify the accountant when admin approves or rejects their application.

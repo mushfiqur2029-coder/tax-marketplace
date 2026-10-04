@@ -8,6 +8,8 @@ import {
   insertAddonPendingAdminNotifications,
   insertAddonReadyToPayNotification,
   insertCasePeriodEnteredNotification,
+  insertVatCycleOpenedNotification,
+  insertVatApprovalReadyNotification,
 } from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
 import { periodDocsApplyToTier } from "@/lib/engagement/period-docs";
@@ -16,6 +18,14 @@ import {
   ACCOUNTANT_CT600_KEY,
 } from "@/lib/engagement/period-docs";
 import type { TierId } from "@/lib/plans";
+import {
+  ACCOUNTANT_VAT_RETURN_DOC_KEY,
+  computePeriodLabel,
+  computePeriodStart,
+  getVatFrequency,
+  poundsToPence,
+  type VatApprovalPayload,
+} from "@/lib/vat/cycle";
 
 export type { ActionResult };
 
@@ -641,3 +651,421 @@ export async function getDocSignedUrlForAccountant(
     return fail(e);
   }
 }
+
+// =========================================================================
+// Batch 5: VAT return cycles
+// =========================================================================
+
+const VAT_BUCKET = "case-documents";
+
+// Shared pre-flight: the case must be vat_reg limited-company, this
+// accountant must be assigned to it, and the case must be past the
+// onboarding submit (we lean on vat_return_frequency from Section D's
+// intake_answers). Returns the case row + resolved frequency so the
+// caller can skip a repeat SELECT.
+async function assertVatReadyForAccountant(caseId: string) {
+  const { me, supabase } = await loadCaseForAccountant(caseId);
+  assertNotSuspended(me.status, "manage VAT returns");
+  const admin = createAdminClient();
+  const { data: caseRow } = await admin
+    .from("cases")
+    .select(
+      "id, client_id, accountant_id, segment, tier, intake_answers, onboarding_submitted_at",
+    )
+    .eq("id", caseId)
+    .single();
+  if (!caseRow) throw new Error("Case not found.");
+  if (caseRow.accountant_id !== me.id) {
+    throw new Error("You haven't taken this case.");
+  }
+  if (caseRow.segment !== "limited_company_vat" || caseRow.tier !== "vat_reg") {
+    throw new Error("VAT cycles only apply to VAT Registered cases.");
+  }
+  if (!caseRow.onboarding_submitted_at) {
+    throw new Error(
+      "Client hasn't completed onboarding yet — can't open VAT cycles.",
+    );
+  }
+  const frequency = getVatFrequency(
+    caseRow.intake_answers as Record<string, string> | null,
+  );
+  if (!frequency) {
+    throw new Error(
+      "VAT return frequency is missing from the client's Section D answers.",
+    );
+  }
+  return { me, supabase, admin, caseRow, frequency };
+}
+
+// Open the FIRST VAT cycle on a case. One-time setup: accountant enters
+// the first period end date, we compute start / HMRC due date / label
+// from the Section D frequency and write cycle #1. Subsequent cycles
+// auto-create on approve-and-file.
+export async function openFirstVatCycleAction(
+  caseId: string,
+  input: { periodEndDate: string }, // YYYY-MM-DD
+): Promise<ActionResult<{ cycleId: string }>> {
+  try {
+    const { me, admin, caseRow, frequency } =
+      await assertVatReadyForAccountant(caseId);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.periodEndDate)) {
+      throw new Error("Period end date must be YYYY-MM-DD.");
+    }
+
+    // Must not already have a cycle on this case — this is the "first"
+    // action. The accountant uses editVatCycleDatesAction to adjust
+    // dates on an existing cycle.
+    const { data: existing } = await admin
+      .from("vat_return_cycles")
+      .select("id")
+      .eq("case_id", caseId)
+      .limit(1);
+    if ((existing?.length ?? 0) > 0) {
+      throw new Error(
+        "VAT cycles have already been opened on this case. Use edit dates to adjust.",
+      );
+    }
+
+    const startDate = computePeriodStart(input.periodEndDate, frequency);
+    const label = computePeriodLabel(
+      startDate,
+      input.periodEndDate,
+      frequency,
+    );
+
+    const { data: inserted, error: insErr } = await admin
+      .from("vat_return_cycles")
+      .insert({
+        case_id: caseId,
+        cycle_number: 1,
+        period_label: label,
+        cycle_start_date: startDate,
+        cycle_end_date: input.periodEndDate,
+        status: "awaiting_client_docs",
+        created_by: me.id,
+      })
+      .select("id, cycle_hmrc_due_date")
+      .single();
+    if (insErr || !inserted) {
+      throw new Error(insErr?.message ?? "Could not open VAT cycle.");
+    }
+
+    await insertVatCycleOpenedNotification({
+      caseId,
+      clientId: caseRow.client_id,
+      periodLabel: label,
+      hmrcDueDate: inserted.cycle_hmrc_due_date,
+    });
+
+    revalidatePath(`/accountant/cases/${caseId}`);
+    revalidatePath(`/client/cases/${caseId}`);
+    return { ok: true, data: { cycleId: inserted.id } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// Manual override: adjust the dates on an existing cycle. Allowed up
+// to (but not including) status='filed' — once a cycle is filed we
+// don't touch the historical record. HMRC due date is derived in the
+// generated column so a date change propagates automatically.
+export async function editVatCycleDatesAction(
+  cycleId: string,
+  input: { periodStart: string; periodEnd: string },
+): Promise<ActionResult> {
+  try {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(input.periodStart) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(input.periodEnd)
+    ) {
+      throw new Error("Dates must be YYYY-MM-DD.");
+    }
+    if (input.periodStart > input.periodEnd) {
+      throw new Error("Period start must be on or before period end.");
+    }
+
+    const admin = createAdminClient();
+    const { data: cycle, error: cycErr } = await admin
+      .from("vat_return_cycles")
+      .select("id, case_id, status")
+      .eq("id", cycleId)
+      .single();
+    if (cycErr || !cycle) throw new Error("VAT cycle not found.");
+    if (cycle.status === "filed") {
+      throw new Error("Cycle is filed — dates are locked.");
+    }
+
+    const { me, caseRow, frequency } = await assertVatReadyForAccountant(
+      cycle.case_id,
+    );
+    void me;
+    void caseRow;
+
+    const newLabel = computePeriodLabel(
+      input.periodStart,
+      input.periodEnd,
+      frequency,
+    );
+
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("vat_return_cycles")
+      .update({
+        cycle_start_date: input.periodStart,
+        cycle_end_date: input.periodEnd,
+        period_label: newLabel,
+      })
+      .eq("id", cycleId)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) {
+      throw new Error("Not allowed to edit this cycle's dates.");
+    }
+
+    revalidatePath(`/accountant/cases/${cycle.case_id}`);
+    revalidatePath(`/client/cases/${cycle.case_id}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// Accountant uploads the final return PDF for the given cycle. Only
+// one slot (ACCOUNTANT_VAT_RETURN_DOC_KEY) — the accountant can replace
+// it by uploading again (we don't dedupe at insert time; the UI
+// enforces "remove before upload").
+export async function uploadVatReturnDocAction(
+  cycleId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  try {
+    const admin = createAdminClient();
+    const { data: cycle, error: cycErr } = await admin
+      .from("vat_return_cycles")
+      .select("id, case_id, status")
+      .eq("id", cycleId)
+      .single();
+    if (cycErr || !cycle) throw new Error("VAT cycle not found.");
+    if (cycle.status === "filed") {
+      throw new Error("Cycle is filed — uploads are locked.");
+    }
+
+    const { me, supabase, caseRow } = await assertVatReadyForAccountant(
+      cycle.case_id,
+    );
+    void caseRow;
+
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("Pick a file first.");
+    }
+    const MAX = 50 * 1024 * 1024;
+    if (file.size > MAX) throw new Error("File is over 50 MB.");
+
+    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+    const path = `${cycle.case_id}/vat/${cycleId}/${Date.now()}_${safeName}`;
+    const buf = new Uint8Array(await file.arrayBuffer());
+
+    const { error: upErr } = await supabase.storage
+      .from(VAT_BUCKET)
+      .upload(path, buf, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      });
+    if (upErr) throw new Error(upErr.message);
+
+    const { error: dbErr } = await supabase.from("case_documents").insert({
+      case_id: cycle.case_id,
+      vat_cycle_id: cycleId,
+      uploaded_by: me.id,
+      file_url: path,
+      file_name: file.name,
+      requirement_key: ACCOUNTANT_VAT_RETURN_DOC_KEY,
+    });
+    if (dbErr) {
+      await supabase.storage.from(VAT_BUCKET).remove([path]);
+      throw new Error(dbErr.message);
+    }
+
+    revalidatePath(`/accountant/cases/${cycle.case_id}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function removeVatReturnDocAction(
+  cycleId: string,
+  documentId: string,
+): Promise<ActionResult> {
+  try {
+    const admin = createAdminClient();
+    const { data: cycle, error: cycErr } = await admin
+      .from("vat_return_cycles")
+      .select("id, case_id, status")
+      .eq("id", cycleId)
+      .single();
+    if (cycErr || !cycle) throw new Error("VAT cycle not found.");
+    if (cycle.status === "filed") {
+      throw new Error("Cycle is filed — uploads are locked.");
+    }
+
+    const { me, supabase } = await assertVatReadyForAccountant(cycle.case_id);
+
+    const { data: doc, error: fetchErr } = await admin
+      .from("case_documents")
+      .select("id, file_url, uploaded_by, vat_cycle_id, requirement_key")
+      .eq("id", documentId)
+      .single();
+    if (fetchErr || !doc) throw new Error("Document not found.");
+    if (doc.vat_cycle_id !== cycleId) {
+      throw new Error("That document isn't on this VAT cycle.");
+    }
+    if (doc.requirement_key !== ACCOUNTANT_VAT_RETURN_DOC_KEY) {
+      throw new Error("That document isn't the VAT return PDF.");
+    }
+    if (doc.uploaded_by !== me.id) {
+      throw new Error("You didn't upload this document.");
+    }
+
+    const { error: delErr } = await supabase
+      .from("case_documents")
+      .delete()
+      .eq("id", documentId);
+    if (delErr) throw new Error(delErr.message);
+    await supabase.storage.from(VAT_BUCKET).remove([doc.file_url]);
+
+    revalidatePath(`/accountant/cases/${cycle.case_id}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// Accountant assembles the approval payload (box 1–9 + optional note)
+// and transitions the cycle to client_approval. Preconditions: cycle
+// at in_review, VAT return PDF uploaded, client docs submitted.
+// Box arithmetic is validated to catch obvious transcription errors
+// (box 3 = 1+2, box 5 = 3-4) — the accountant can still override by
+// sending explicit values.
+export async function prepareVatApprovalAction(
+  cycleId: string,
+  input: {
+    box1Pounds: number;
+    box2Pounds: number;
+    box3Pounds: number;
+    box4Pounds: number;
+    box5Pounds: number;
+    box6Pounds: number;
+    box7Pounds: number;
+    box8Pounds: number;
+    box9Pounds: number;
+    note: string;
+  },
+): Promise<ActionResult> {
+  try {
+    const admin = createAdminClient();
+    const { data: cycle, error: cycErr } = await admin
+      .from("vat_return_cycles")
+      .select(
+        "id, case_id, status, client_docs_submitted_at, period_label",
+      )
+      .eq("id", cycleId)
+      .single();
+    if (cycErr || !cycle) throw new Error("VAT cycle not found.");
+    if (cycle.status !== "in_review") {
+      throw new Error(
+        "This cycle isn't at a stage you can send for client approval.",
+      );
+    }
+    if (!cycle.client_docs_submitted_at) {
+      throw new Error("Client hasn't submitted the VAT documents yet.");
+    }
+
+    const { me, supabase, caseRow } = await assertVatReadyForAccountant(
+      cycle.case_id,
+    );
+
+    // VAT return PDF must be uploaded.
+    const { data: returnDocs } = await admin
+      .from("case_documents")
+      .select("id")
+      .eq("vat_cycle_id", cycleId)
+      .eq("requirement_key", ACCOUNTANT_VAT_RETURN_DOC_KEY)
+      .limit(1);
+    if ((returnDocs?.length ?? 0) === 0) {
+      throw new Error(
+        "Upload the VAT return PDF before sending for client approval.",
+      );
+    }
+
+    const toPence = (v: number) => poundsToPence(v);
+
+    const b1 = toPence(input.box1Pounds);
+    const b2 = toPence(input.box2Pounds);
+    const b3 = toPence(input.box3Pounds);
+    const b4 = toPence(input.box4Pounds);
+    const b5 = toPence(input.box5Pounds);
+    const b6 = toPence(input.box6Pounds);
+    const b7 = toPence(input.box7Pounds);
+    const b8 = toPence(input.box8Pounds);
+    const b9 = toPence(input.box9Pounds);
+
+    // Non-negative constraints. Box 4 and Box 5 can be any sign per
+    // HMRC's VAT100 (reclaim and net), so they're not checked here.
+    for (const [name, v] of [
+      ["Box 1", b1],
+      ["Box 2", b2],
+      ["Box 3", b3],
+      ["Box 6", b6],
+      ["Box 7", b7],
+      ["Box 8", b8],
+      ["Box 9", b9],
+    ] as const) {
+      if (v < 0) throw new Error(`${name} must be zero or more.`);
+    }
+
+    const payload: VatApprovalPayload = {
+      box_1_pence: b1,
+      box_2_pence: b2,
+      box_3_pence: b3,
+      box_4_pence: b4,
+      box_5_pence: b5,
+      box_6_pence: b6,
+      box_7_pence: b7,
+      box_8_pence: b8,
+      box_9_pence: b9,
+      note: input.note.trim() || null,
+      prepared_at: new Date().toISOString(),
+      prepared_by: me.id,
+    };
+
+    const { data, error } = await supabase
+      .from("vat_return_cycles")
+      .update({
+        approval_payload: payload,
+        status: "client_approval",
+      })
+      .eq("id", cycleId)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) {
+      throw new Error("Not allowed to send this cycle for approval.");
+    }
+
+    await insertVatApprovalReadyNotification({
+      caseId: cycle.case_id,
+      clientId: caseRow.client_id,
+      periodLabel: cycle.period_label,
+    });
+
+    revalidatePath(`/accountant/cases/${cycle.case_id}`);
+    revalidatePath(`/client/cases/${cycle.case_id}`);
+    revalidatePath(`/client/cases/${cycle.case_id}/vat/${cycleId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
