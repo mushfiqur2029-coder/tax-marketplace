@@ -123,8 +123,12 @@ export async function signEngagementAction(
           err instanceof Error ? err.message : String(err)
         }`,
       );
+      // Signature + checkbox are preserved in the form state on error,
+      // so the user can click Sign and continue again without redrawing.
+      // Only surface "contact support" if a retry is unlikely to help —
+      // for now, every error here is transient enough to retry.
       throw new Error(
-        "We couldn't generate your engagement PDF. Please contact support — we haven't recorded this as signed.",
+        "We couldn't generate your engagement PDF just now. Please click Sign and continue again — your signature and tick are kept. If it keeps failing, contact support.",
       );
     }
 
