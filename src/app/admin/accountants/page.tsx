@@ -2,12 +2,9 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { setAccountantApprovalAction } from "@/app/admin/actions";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Avatar } from "@/components/avatar";
 import { ApprovalActions } from "./approval-actions";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +18,12 @@ type Row = {
 };
 
 export default async function AccountantsPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: profiles }, navCounts] = await Promise.all([
-    admin
-      .from("accountant_profiles")
-      .select("user_id, name, contact_number, company_name, avatar_path, approval_status"),
-    getAdminNavCounts(),
-  ]);
+  const { data: profiles } = await admin
+    .from("accountant_profiles")
+    .select("user_id, name, contact_number, company_name, avatar_path, approval_status");
 
   const rows = (profiles ?? []) as Row[];
 
@@ -70,16 +64,12 @@ export default async function AccountantsPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Accountants"
-      description="Approve new accountants and drill into any of them for full details."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="accountants" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Accountants"
+        description="Approve new accountants and drill into any of them for full details."
+      />
       <Section
         title={`Pending (${groups.pending.length})`}
         emptyLine="No accountants awaiting approval."
@@ -124,8 +114,7 @@ export default async function AccountantsPage() {
           ))}
         </Section>
       ) : null}
-
-    </DashboardShell>
+    </>
   );
 }
 

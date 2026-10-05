@@ -1,11 +1,8 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Avatar } from "@/components/avatar";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +20,10 @@ type UserRow = {
 };
 
 export default async function AdminClientsPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: users }, { data: profiles }, { data: cases }, navCounts] =
+  const [{ data: users }, { data: profiles }, { data: cases }] =
     await Promise.all([
       admin
         .from("users")
@@ -39,7 +36,6 @@ export default async function AdminClientsPage() {
       admin
         .from("cases")
         .select("client_id"),
-      getAdminNavCounts(),
     ]);
 
   const profileById = new Map<string, ProfileRow>(
@@ -60,16 +56,12 @@ export default async function AdminClientsPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Clients"
-      description="Every client on the platform. Click through for full profile, case history, and payments."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="clients" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Clients"
+        description="Every client on the platform. Click through for full profile, case history, and payments."
+      />
       <Section
         title={`Active (${groups.active.length})`}
         emptyLine="No active clients."
@@ -99,7 +91,7 @@ export default async function AdminClientsPage() {
           ))}
         </Section>
       ) : null}
-    </DashboardShell>
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import {
   markWithdrawalPaidAction,
   getReceiptSignedUrl,
@@ -8,9 +8,6 @@ import {
 import { PayoutForm } from "./payout-form";
 import { ReceiptLink } from "@/app/accountant/wallet/receipt-link";
 import { formatDateTime } from "@/lib/format";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -19,18 +16,15 @@ function formatMoney(pence: number) {
 }
 
 export default async function AdminWithdrawalsPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: reqs }, navCounts] = await Promise.all([
-    admin
-      .from("withdrawal_requests")
-      .select(
-        "id, accountant_id, amount_pence, account_name, sort_code, account_number, status, receipt_path, requested_at, paid_at",
-      )
-      .order("requested_at", { ascending: false }),
-    getAdminNavCounts(),
-  ]);
+  const { data: reqs } = await admin
+    .from("withdrawal_requests")
+    .select(
+      "id, accountant_id, amount_pence, account_name, sort_code, account_number, status, receipt_path, requested_at, paid_at",
+    )
+    .order("requested_at", { ascending: false });
 
   const accIds = Array.from(
     new Set((reqs ?? []).map((r) => r.accountant_id)),
@@ -53,16 +47,12 @@ export default async function AdminWithdrawalsPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Withdrawal requests"
-      description="Pay from your own banking, then upload the receipt to close the request."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="withdrawals" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Withdrawal requests"
+        description="Pay from your own banking, then upload the receipt to close the request."
+      />
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
@@ -130,7 +120,6 @@ export default async function AdminWithdrawalsPage() {
           </ul>
         )}
       </section>
-
-    </DashboardShell>
+    </>
   );
 }

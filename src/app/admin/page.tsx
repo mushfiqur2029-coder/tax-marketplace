@@ -4,14 +4,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
-import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
+import { EmptyState } from "@/components/dashboard-shell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
 import { Avatar } from "@/components/avatar";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
 import {
   AdminCasesFilter,
   type AdminCaseView,
@@ -44,7 +42,7 @@ export default async function AdminDashboard({
       ? viewRaw
       : "all";
 
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
   const [
@@ -52,7 +50,6 @@ export default async function AdminDashboard({
     { count: clientCount },
     { count: accountantCount },
     { data: accountantProfiles },
-    navCounts,
   ] = await Promise.all([
     admin
       .from("cases")
@@ -65,7 +62,6 @@ export default async function AdminDashboard({
     admin
       .from("accountant_profiles")
       .select("user_id, name, avatar_path, approval_status"),
-    getAdminNavCounts(),
   ]);
 
   const allCases = cases ?? [];
@@ -125,16 +121,12 @@ export default async function AdminDashboard({
   }
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Platform overview"
-      description="Numbers first. Everything else is one click away."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="dashboard" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Platform overview"
+        description="Numbers first. Everything else is one click away."
+      />
       {/* Stat cards */}
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Clients" value={clientCount ?? 0} />
@@ -304,7 +296,7 @@ export default async function AdminDashboard({
           </ul>
         )}
       </section>
-    </DashboardShell>
+    </>
   );
 }
 

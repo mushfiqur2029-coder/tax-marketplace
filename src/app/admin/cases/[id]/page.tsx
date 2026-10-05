@@ -41,7 +41,7 @@ import {
   getVatRegistrationNumber,
   type VatApprovalPayload,
 } from "@/lib/vat/cycle";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
@@ -53,9 +53,6 @@ import {
 } from "@/components/case/multi-thread-chat";
 import { ReassignForm } from "./reassign-form";
 import { formatDateTime } from "@/lib/format";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +78,7 @@ export default async function AdminCasePage({
   const tier = getTier(row.tier);
   if (!seg || !tier) notFound();
 
-  const [{ data: client }, { data: acc }, { data: allAccs }, { data: docs }, { data: msgs }, { data: actions }, { data: addons }, navCounts] =
+  const [{ data: client }, { data: acc }, { data: allAccs }, { data: docs }, { data: msgs }, { data: actions }, { data: addons }] =
     await Promise.all([
       admin.from("users").select("id, email").eq("id", row.client_id).single(),
       row.accountant_id
@@ -108,7 +105,6 @@ export default async function AdminCasePage({
         .select("id, kind, description, amount_pence, status, review_note, created_at, reviewed_at, paid_at")
         .eq("case_id", id)
         .order("created_at", { ascending: false }),
-      getAdminNavCounts(),
     ]);
 
   const all = (msgs ?? []) as ChatMessage[];
@@ -322,20 +318,16 @@ export default async function AdminCasePage({
   };
 
   return (
-    <DashboardShell
-      eyebrow={caseEyebrow({
-        segmentTitle: seg.title,
-        tierTitle: tier.title,
-        companyName: companyNameFromAnswers(row.intake_answers, row.segment),
-      })}
-      title="Case oversight"
-      description={`Client ${client?.email ?? "."} · Accountant ${acc?.email ?? "unassigned"}`}
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow={caseEyebrow({
+          segmentTitle: seg.title,
+          tierTitle: tier.title,
+          companyName: companyNameFromAnswers(row.intake_answers, row.segment),
+        })}
+        title="Case oversight"
+        description={`Client ${client?.email ?? "."} · Accountant ${acc?.email ?? "unassigned"}`}
+      />
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={row.status} />
         {row.is_urgent ? <UrgentPill /> : null}
@@ -939,8 +931,7 @@ export default async function AdminCasePage({
           </div>
         </aside>
       </div>
-
-    </DashboardShell>
+    </>
   );
 }
 

@@ -4,29 +4,23 @@ import {
   approveProfileChangeAction,
   rejectProfileChangeAction,
 } from "@/app/profile-actions";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { formatDateTime } from "@/lib/format";
 import { ReviewActions } from "./review-actions";
 import { Avatar } from "@/components/avatar";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminProfileChangesPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: changes }, navCounts] = await Promise.all([
-    admin
-      .from("pending_profile_changes")
-      .select(
-        "id, user_id, role, proposed, status, requested_at, reviewed_at, review_note",
-      )
-      .order("requested_at", { ascending: false }),
-    getAdminNavCounts(),
-  ]);
+  const { data: changes } = await admin
+    .from("pending_profile_changes")
+    .select(
+      "id, user_id, role, proposed, status, requested_at, reviewed_at, review_note",
+    )
+    .order("requested_at", { ascending: false });
 
   const userIds = Array.from(new Set((changes ?? []).map((c) => c.user_id)));
   const { data: users } = userIds.length
@@ -47,16 +41,12 @@ export default async function AdminProfileChangesPage() {
   const reviewed = (changes ?? []).filter((c) => c.status !== "pending");
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Profile change requests"
-      description="Client and accountant edits require review before they apply to live profiles."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="profile-changes" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Profile change requests"
+        description="Client and accountant edits require review before they apply to live profiles."
+      />
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
@@ -169,7 +159,6 @@ export default async function AdminProfileChangesPage() {
           </ul>
         )}
       </section>
-
-    </DashboardShell>
+    </>
   );
 }

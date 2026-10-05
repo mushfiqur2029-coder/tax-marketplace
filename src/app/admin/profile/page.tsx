@@ -4,12 +4,9 @@ import {
   updateAdminProfileAction,
   changePasswordAction,
 } from "@/app/profile-actions";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { AdminProfileForm } from "./admin-profile-form";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
@@ -17,14 +14,11 @@ export default async function AdminAccountPage() {
   const me = await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: profile }, navCounts] = await Promise.all([
-    admin
-      .from("admin_profiles")
-      .select("name, contact_number, avatar_path")
-      .eq("user_id", me.id)
-      .maybeSingle(),
-    getAdminNavCounts(),
-  ]);
+  const { data: profile } = await admin
+    .from("admin_profiles")
+    .select("name, contact_number, avatar_path")
+    .eq("user_id", me.id)
+    .maybeSingle();
 
   const submit = async (
     edit: Parameters<typeof updateAdminProfileAction>[0],
@@ -40,16 +34,12 @@ export default async function AdminAccountPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Account settings"
-      title="Your account"
-      description="Update your details or change your password."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="profile" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Account settings"
+        title="Your account"
+        description="Update your details or change your password."
+      />
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
@@ -77,6 +67,6 @@ export default async function AdminAccountPage() {
         </h2>
         <ChangePasswordForm change={change} />
       </section>
-    </DashboardShell>
+    </>
   );
 }

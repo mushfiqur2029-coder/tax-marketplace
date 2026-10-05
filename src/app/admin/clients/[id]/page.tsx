@@ -6,15 +6,12 @@ import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { setClientStatusAction } from "@/app/admin/actions";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Avatar } from "@/components/avatar";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
 import { formatDateTime } from "@/lib/format";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
 import { SuspendActions } from "./suspend-actions";
 
 export const dynamic = "force-dynamic";
@@ -27,17 +24,16 @@ export default async function AdminClientDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: user }, { data: profile }, navCounts] = await Promise.all([
+  const [{ data: user }, { data: profile }] = await Promise.all([
     admin.from("users").select("id, email, status, created_at").eq("id", id).single(),
     admin
       .from("client_profiles")
       .select("user_id, name, contact_number, address, avatar_path")
       .eq("user_id", id)
       .maybeSingle(),
-    getAdminNavCounts(),
   ]);
   if (!user || user.status === undefined) notFound();
 
@@ -84,16 +80,12 @@ export default async function AdminClientDetail({
   };
 
   return (
-    <DashboardShell
-      eyebrow="Client"
-      title={profile?.name ?? user.email}
-      description={user.email}
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="clients" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Client"
+        title={profile?.name ?? user.email}
+        description={user.email}
+      />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
         {/* Profile */}
         <aside className="card-sl p-6">
@@ -262,7 +254,7 @@ export default async function AdminClientDetail({
           </section>
         </div>
       </div>
-    </DashboardShell>
+    </>
   );
 }
 

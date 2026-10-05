@@ -1,27 +1,21 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createAdminAction } from "@/app/admin/actions";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { formatDateTime } from "@/lib/format";
 import { AddAdminForm } from "./add-admin-form";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminAdminsPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: admins }, navCounts] = await Promise.all([
-    admin
-      .from("users")
-      .select("id, email, created_at, status")
-      .eq("role", "admin")
-      .order("created_at", { ascending: true }),
-    getAdminNavCounts(),
-  ]);
+  const { data: admins } = await admin
+    .from("users")
+    .select("id, email, created_at, status")
+    .eq("role", "admin")
+    .order("created_at", { ascending: true });
 
   const create = async (input: {
     name: string;
@@ -33,16 +27,12 @@ export default async function AdminAdminsPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Sterling Ledger admins"
-      description="Public registration only creates clients and accountants. Admin accounts are created here, by an existing admin."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="admins" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Sterling Ledger admins"
+        description="Public registration only creates clients and accountants. Admin accounts are created here, by an existing admin."
+      />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <section>
           <h2
@@ -93,7 +83,6 @@ export default async function AdminAdminsPage() {
           </p>
         </aside>
       </div>
-
-    </DashboardShell>
+    </>
   );
 }

@@ -1,9 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { formatDateTime } from "@/lib/format";
 import { getTier } from "@/lib/plans";
 import { setServiceEnquiryStatusAction } from "@/app/client/enquiry-actions";
@@ -28,18 +25,15 @@ type Row = {
 };
 
 export default async function AdminEnquiriesPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: rows }, navCounts] = await Promise.all([
-    admin
-      .from("service_enquiries")
-      .select(
-        "id, client_id, service_key, company_name, company_number, company_status, contact_name, contact_email, contact_phone, status, admin_notes, created_at, updated_at",
-      )
-      .order("created_at", { ascending: false }),
-    getAdminNavCounts(),
-  ]);
+  const { data: rows } = await admin
+    .from("service_enquiries")
+    .select(
+      "id, client_id, service_key, company_name, company_number, company_status, contact_name, contact_email, contact_phone, status, admin_notes, created_at, updated_at",
+    )
+    .order("created_at", { ascending: false });
 
   const all = (rows ?? []) as Row[];
 
@@ -67,16 +61,12 @@ export default async function AdminEnquiriesPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Service enquiries"
-      description="Pre-sales leads from the Limited Company bespoke tier. Follow up quickly — real potential clients waiting on a human reply."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="enquiries" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Service enquiries"
+        description="Pre-sales leads from the Limited Company bespoke tier. Follow up quickly — real potential clients waiting on a human reply."
+      />
       <Section
         title={`New (${groups.new.length})`}
         emptyLine="No new enquiries. The badge next to Enquiries in the nav turns on when one lands."
@@ -116,7 +106,7 @@ export default async function AdminEnquiriesPage() {
           ))}
         </Section>
       ) : null}
-    </DashboardShell>
+    </>
   );
 }
 

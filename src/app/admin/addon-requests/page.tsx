@@ -5,10 +5,7 @@ import {
   approveAddonAction,
   rejectAddonAction,
 } from "@/app/admin/actions";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { formatDateTime } from "@/lib/format";
 import { ReviewActions } from "@/app/admin/profile-changes/review-actions";
 
@@ -17,22 +14,19 @@ export const dynamic = "force-dynamic";
 const money = (pence: number) => `£${(pence / 100).toFixed(2)}`;
 
 export default async function AdminAddonRequestsPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
   // Only custom add-ons ever enter admin review. Presets go straight to
   // pending_payment at insert. Include reviewed rows in a second section
   // so admins can see history + the reviewer's note.
-  const [{ data: rows }, navCounts] = await Promise.all([
-    admin
-      .from("case_addons")
-      .select(
-        "id, case_id, accountant_id, kind, description, amount_pence, status, review_note, created_at, reviewed_at, reviewed_by",
-      )
-      .eq("kind", "custom")
-      .order("created_at", { ascending: false }),
-    getAdminNavCounts(),
-  ]);
+  const { data: rows } = await admin
+    .from("case_addons")
+    .select(
+      "id, case_id, accountant_id, kind, description, amount_pence, status, review_note, created_at, reviewed_at, reviewed_by",
+    )
+    .eq("kind", "custom")
+    .order("created_at", { ascending: false });
 
   const all = rows ?? [];
   const pending = all.filter((r) => r.status === "pending_admin");
@@ -57,16 +51,12 @@ export default async function AdminAddonRequestsPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Add-on requests"
-      description="Custom add-ons that need approval before the client sees them. Preset add-ons skip review and go straight to the client."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="addon-requests" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Add-on requests"
+        description="Custom add-ons that need approval before the client sees them. Preset add-ons skip review and go straight to the client."
+      />
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
@@ -152,7 +142,7 @@ export default async function AdminAddonRequestsPage() {
           </ul>
         )}
       </section>
-    </DashboardShell>
+    </>
   );
 }
 

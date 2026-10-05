@@ -4,28 +4,22 @@ import {
   createAddonCatalogAction,
   updateAddonCatalogAction,
 } from "@/app/admin/actions";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { AdminNav } from "@/app/admin/admin-nav";
-import { getAdminNavCounts } from "@/app/admin/admin-counts";
-import { Bell } from "@/components/bell";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { CatalogRow } from "./catalog-row";
 import { AddCatalogItemForm } from "./add-catalog-item-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminAddonCatalogPage() {
-  const me = await requireRole("admin");
+  await requireRole("admin");
   const admin = createAdminClient();
 
   // Active first, then inactive; alphabetical within each group.
-  const [{ data: rows }, navCounts] = await Promise.all([
-    admin
-      .from("addon_catalog")
-      .select("key, name, description, amount_pence, active, updated_at")
-      .order("active", { ascending: false })
-      .order("name", { ascending: true }),
-    getAdminNavCounts(),
-  ]);
+  const { data: rows } = await admin
+    .from("addon_catalog")
+    .select("key, name, description, amount_pence, active, updated_at")
+    .order("active", { ascending: false })
+    .order("name", { ascending: true });
 
   const create = async (input: {
     key: string;
@@ -54,16 +48,12 @@ export default async function AdminAddonCatalogPage() {
   const inactive = (rows ?? []).filter((r) => !r.active);
 
   return (
-    <DashboardShell
-      eyebrow="Admin console"
-      title="Add-on catalog"
-      description="Preset add-ons accountants can offer clients mid-case. Edits do not change historical add-ons — existing case rows snapshot the price they were sold at."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AdminNav active="addon-catalog" counts={navCounts} />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Add-on catalog"
+        description="Preset add-ons accountants can offer clients mid-case. Edits do not change historical add-ons — existing case rows snapshot the price they were sold at."
+      />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <div className="space-y-8">
           <section>
@@ -120,6 +110,6 @@ export default async function AdminAddonCatalogPage() {
           </div>
         </aside>
       </div>
-    </DashboardShell>
+    </>
   );
 }
