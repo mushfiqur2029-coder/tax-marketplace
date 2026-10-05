@@ -105,6 +105,35 @@ export async function uploadPeriodDocumentAction(
     const MAX = 50 * 1024 * 1024;
     if (file.size > MAX) throw new Error("File is over 50 MB.");
 
+    // Server-side type enforcement for the bank-statement slots —
+    // mirror of the client-side `accept` so a crafted multipart POST
+    // can't dump a PDF into the CSV slot or vice versa. Extension-only
+    // check: MIME varies by OS (Excel exports often come through as
+    // application/vnd.ms-excel OR application/octet-stream), filename
+    // extension is the stable signal.
+    const nameLower = file.name.toLowerCase();
+    const typeLower = (file.type || "").toLowerCase();
+    if (requirementKey === "period_bank_statements_pdf") {
+      const looksLikePdf =
+        nameLower.endsWith(".pdf") || typeLower === "application/pdf";
+      if (!looksLikePdf) {
+        throw new Error(
+          "The PDF bank statement slot only accepts PDF files. The CSV slot below is for spreadsheet exports.",
+        );
+      }
+    }
+    if (requirementKey === "period_bank_statements_csv") {
+      const looksLikeSpreadsheet =
+        nameLower.endsWith(".csv") ||
+        nameLower.endsWith(".xlsx") ||
+        nameLower.endsWith(".xls");
+      if (!looksLikeSpreadsheet) {
+        throw new Error(
+          "The CSV bank statement slot only accepts CSV or spreadsheet files (XLSX / XLS). Use the PDF slot above for PDF statements.",
+        );
+      }
+    }
+
     const safeName = file.name.replace(/[^\w.\-]+/g, "_");
     const path = `${caseId}/${Date.now()}_${safeName}`;
     const buf = new Uint8Array(await file.arrayBuffer());

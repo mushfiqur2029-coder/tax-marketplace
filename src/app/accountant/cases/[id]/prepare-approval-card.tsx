@@ -264,6 +264,7 @@ function AccountantUploadSlot({
           <DocumentUploader
             action={slotAction}
             multiple={false}
+            accept=".pdf,application/pdf"
             hint={hint}
           />
         </div>

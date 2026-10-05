@@ -14,6 +14,15 @@ type Props = {
   multiple?: boolean;
   /** Hint shown under the drop-zone title. Overrides the default copy. */
   hint?: string;
+  /**
+   * Comma-separated `accept` string (file extensions prefixed with `.`
+   * and/or MIME types) passed to the `<input accept>` attribute AND
+   * applied as a filter on drag-dropped files so the browser's file
+   * picker *and* the drop zone enforce the same restriction. Omit to
+   * allow any file. Example: ".pdf,application/pdf" for the bank
+   * statement PDF slot.
+   */
+  accept?: string;
 };
 
 // Kept in sync with MAX in src/app/client/actions.ts (uploadDocumentAction).
@@ -38,7 +47,38 @@ const nextId = () => `doc_${Date.now()}_${++_seq}`;
 // Mirrors the chat-composer attach flow: drop zone + multi-file + auto-upload
 // + chip per file. Each successful upload triggers the parent server-action
 // revalidatePath, so the file appears in the documents list immediately.
-export function DocumentUploader({ action, multiple = true, hint }: Props) {
+// Does `file` match the `accept` restriction? Mirrors browser logic
+// loosely: extension entry (".pdf") matches by name; MIME entry
+// ("application/pdf") matches by type; a bare "image/*" wildcard
+// matches by MIME prefix. Empty/undefined accept → match-all.
+function fileMatchesAccept(file: File, accept: string | undefined): boolean {
+  if (!accept) return true;
+  const parts = accept
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (parts.length === 0) return true;
+  const name = file.name.toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  for (const p of parts) {
+    if (p.startsWith(".")) {
+      if (name.endsWith(p)) return true;
+    } else if (p.endsWith("/*")) {
+      const prefix = p.slice(0, -1); // keep the trailing slash
+      if (type.startsWith(prefix)) return true;
+    } else if (p === type) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function DocumentUploader({
+  action,
+  multiple = true,
+  hint,
+  accept,
+}: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<PendingItem[]>([]);
   const [dragDepth, setDragDepth] = useState(0);
@@ -53,6 +93,17 @@ export function DocumentUploader({ action, multiple = true, hint }: Props) {
       const picked = multiple ? files : files.slice(0, 1);
       const newItems: PendingItem[] = picked.map((file) => {
         const id = nextId();
+        if (!fileMatchesAccept(file, accept)) {
+          // Drop-zone counterpart to the input's `accept` filter — the
+          // browser's native picker honours accept but drag-drop
+          // doesn't, so we enforce it here too.
+          return {
+            id,
+            file,
+            status: "error",
+            error: `This slot only accepts ${accept}.`,
+          };
+        }
         if (file.size > MAX_BYTES) {
           return {
             id,
@@ -91,7 +142,7 @@ export function DocumentUploader({ action, multiple = true, hint }: Props) {
         })();
       }
     },
-    [action, multiple],
+    [action, multiple, accept],
   );
 
   const removeItem = useCallback((id: string) => {
@@ -161,6 +212,7 @@ export function DocumentUploader({ action, multiple = true, hint }: Props) {
           ref={inputRef}
           type="file"
           multiple={multiple}
+          accept={accept}
           className="sr-only"
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);

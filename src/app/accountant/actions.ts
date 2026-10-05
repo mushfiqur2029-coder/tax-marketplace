@@ -452,6 +452,20 @@ export async function uploadAccountantDocumentAction(
     const MAX = 50 * 1024 * 1024;
     if (file.size > MAX) throw new Error("File is over 50 MB.");
 
+    // The accountant Annual Accounts and CT600 slots are PDF-only
+    // (hint copy says so, now so does enforcement). Extension-only
+    // because Chrome occasionally reports PDFs as application/octet-
+    // stream after a long-running save flow.
+    const nameLower = file.name.toLowerCase();
+    const typeLower = (file.type || "").toLowerCase();
+    const looksLikePdf =
+      nameLower.endsWith(".pdf") || typeLower === "application/pdf";
+    if (!looksLikePdf) {
+      throw new Error(
+        "This slot only accepts PDF files.",
+      );
+    }
+
     const safeName = file.name.replace(/[^\w.\-]+/g, "_");
     const path = `${caseId}/${Date.now()}_${safeName}`;
     const buf = new Uint8Array(await file.arrayBuffer());
@@ -904,6 +918,15 @@ export async function uploadVatReturnDocAction(
     }
     const MAX = 50 * 1024 * 1024;
     if (file.size > MAX) throw new Error("File is over 50 MB.");
+
+    // The VAT return doc slot is PDF-only (HMRC filing printout).
+    const nameLower = file.name.toLowerCase();
+    const typeLower = (file.type || "").toLowerCase();
+    const looksLikePdf =
+      nameLower.endsWith(".pdf") || typeLower === "application/pdf";
+    if (!looksLikePdf) {
+      throw new Error("The VAT return doc slot only accepts PDF files.");
+    }
 
     const safeName = file.name.replace(/[^\w.\-]+/g, "_");
     const path = `${cycle.case_id}/vat/${cycleId}/${Date.now()}_${safeName}`;

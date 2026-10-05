@@ -250,11 +250,8 @@ function PeriodUploadRow({
           <DocumentUploader
             action={slotAction}
             multiple={allowMultiple}
-            hint={
-              allowMultiple
-                ? "PDF, image, or spreadsheet · up to 50 MB each · multiple files ok"
-                : "PDF or image · up to 50 MB"
-            }
+            accept={acceptForPeriodDocSlot(field.id)}
+            hint={hintForPeriodDocSlot(field.id, allowMultiple)}
           />
         </div>
       )}
@@ -292,4 +289,37 @@ function PeriodUploadRow({
       ) : null}
     </div>
   );
+}
+
+// Per-slot accept + hint for the period-docs section. The two bank-
+// statement slots are restricted strictly to their format — a PDF
+// uploaded into the CSV slot (or vice versa) would stall accounts
+// prep later, so we filter at upload time rather than discover it in
+// review. Server-side enforcement in uploadPeriodDocumentAction
+// mirrors these.
+function acceptForPeriodDocSlot(fieldId: string): string | undefined {
+  if (fieldId === "period_bank_statements_pdf") {
+    return ".pdf,application/pdf";
+  }
+  if (fieldId === "period_bank_statements_csv") {
+    return ".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+  return undefined;
+}
+
+function hintForPeriodDocSlot(
+  fieldId: string,
+  allowMultiple: boolean,
+): string {
+  const limit = "up to 50 MB each";
+  const suffix = allowMultiple ? ` · multiple files ok` : "";
+  if (fieldId === "period_bank_statements_pdf") {
+    return `PDF only · ${limit}${suffix}`;
+  }
+  if (fieldId === "period_bank_statements_csv") {
+    return `CSV or spreadsheet (XLSX / XLS) · ${limit}${suffix}`;
+  }
+  return allowMultiple
+    ? `PDF, image, or spreadsheet · ${limit}${suffix}`
+    : `PDF or image · up to 50 MB`;
 }

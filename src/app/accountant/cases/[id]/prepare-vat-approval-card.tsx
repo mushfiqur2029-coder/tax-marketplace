@@ -282,6 +282,7 @@ function VatReturnDocSlot({
           <DocumentUploader
             action={slotAction}
             multiple={false}
+            accept=".pdf,application/pdf"
             hint="PDF of the completed VAT return (VAT100 / HMRC filing printout)."
           />
         </div>

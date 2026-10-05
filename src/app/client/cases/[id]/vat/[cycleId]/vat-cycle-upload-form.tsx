@@ -208,6 +208,9 @@ function VatUploadRow({
     : allowMultiple
       ? "PDF, image, or spreadsheet · up to 50 MB each · multiple files ok"
       : "PDF or image · up to 50 MB";
+  // PDF-only bank statement is enforced browser-side (accept) plus
+  // server-side (vat-actions.ts). Other VAT slots are freeform.
+  const accept = isBankStatementPdf ? ".pdf,application/pdf" : undefined;
 
   const handleRemove = (docId: string) => {
     setError(null);
@@ -252,6 +255,7 @@ function VatUploadRow({
           <DocumentUploader
             action={slotAction}
             multiple={allowMultiple}
+            accept={accept}
             hint={hint}
           />
         </div>
