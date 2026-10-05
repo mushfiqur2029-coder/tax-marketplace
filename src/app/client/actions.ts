@@ -150,27 +150,28 @@ export async function startCheckoutAction(
     if (!seg || !tier) throw new Error("Case is missing segment or tier.");
 
     const isCompany = seg.id === "limited_company_vat";
+    const isPersonal = seg.id === "personal";
 
-    if (isCompany) {
-      // Limited-company checkout gates on the engagement letter being
-      // signed (contractually required before we can take payment or
-      // start work). Intake / deadline don't apply to this flow.
+    if (isCompany || isPersonal) {
+      // Both current flows gate on the engagement letter being signed
+      // (contractually required before we can take payment or start
+      // work). Intake / deadline don't apply to either path.
       if (!caseRow.engagement_signed_at) {
         throw new Error(
           "Please sign the engagement letter before you can pay.",
         );
       }
     } else {
+      // Retired personal cases (first_time_filer / self_employed /
+      // landlord / investor / cis / high_earner). None exist after the
+      // data wipe; the branch is kept so a residual row can still
+      // check out via the old intake + deadline gates.
       if (
         !caseRow.intake_answers ||
         Object.keys(caseRow.intake_answers as Record<string, unknown>).length === 0
       ) {
         throw new Error("Fill in the intake questions first.");
       }
-
-      // Re-check the deadline right before payment. The user may have taken
-      // a few days to reach checkout; if standard-mode no longer meets the
-      // 5-working-day rule from today, block and ask them to update.
       if (caseRow.deadline) {
         const check = await validateDeadline(caseRow.deadline, !!caseRow.is_urgent);
         if (!check.ok) {
@@ -193,10 +194,16 @@ export async function startCheckoutAction(
           currency: "gbp",
           unit_amount: tier.priceGbp * 100,
           product_data: {
-            // "Dormant company. Limited company & VAT" would be redundant,
-            // so skip the segment on the limited-company path — the tier
-            // title already names the service.
-            name: isCompany ? tier.title : `${tier.title}. ${seg.title}`,
+            // The tier title already names the service for both Personal
+            // (e.g. "Sole trader / self-employed") and Limited Company
+            // (e.g. "Dormant company"); adding ". Personal" or
+            // ". Limited company & VAT" would be redundant. Retired-
+            // personal cases keep the "<tier>. <segment>" form so the
+            // old Stripe receipts stay recognizable.
+            name:
+              isCompany || isPersonal
+                ? tier.title
+                : `${tier.title}. ${seg.title}`,
             description: tier.tagline,
           },
         },

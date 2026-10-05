@@ -44,9 +44,16 @@ function stripDataUrlPrefix(dataUrl: string): string | null {
 //
 // Guards:
 //   • case must be the caller's own
-//   • segment = limited_company_vat (other segments don't use this flow)
+//   • segment = limited_company_vat OR personal
 //   • status = draft (post-payment sign is nonsensical)
 //   • not already signed
+//
+// Variants:
+//   • limited_company — requires company_name + company_number in
+//     intake_answers (captured by the Companies House picker above);
+//     letter renders the full Parties block with director labels.
+//   • personal — no company identity needed; letter renders a
+//     client-only Parties block.
 //
 // Writes:
 //   • uploads the signature PNG and the compiled PDF to case-documents/
@@ -206,7 +213,10 @@ export async function signEngagementAction(
       .single();
     if (caseErr || !caseRow) throw new Error("Case not found.");
     if (caseRow.client_id !== me.id) throw new Error("Not your case.");
-    if (caseRow.segment !== "limited_company_vat") {
+    if (
+      caseRow.segment !== "limited_company_vat" &&
+      caseRow.segment !== "personal"
+    ) {
       throw new Error("This case doesn't use an engagement letter.");
     }
     if (caseRow.status !== "draft") {
@@ -217,30 +227,39 @@ export async function signEngagementAction(
     }
 
     const tier = getTier(caseRow.tier);
-    if (!tier || tier.group !== "company") {
+    if (!tier) throw new Error("Case has no service selected.");
+    const isCompany = caseRow.segment === "limited_company_vat";
+    if (isCompany && tier.group !== "company") {
       throw new Error("Case has no company service selected.");
     }
+    if (!isCompany && tier.group !== "personal") {
+      throw new Error("Case has no personal service selected.");
+    }
 
-    // Company identity must be captured before signing — the engagement
-    // letter PDF prints company_name and company_number at the top of
-    // the Parties block, and the Section A pre-fills on onboarding are
-    // sourced from these two keys. Without them the letter is unsigned-
-    // able and Section A would be editable (surprise).
+    // Company identity must be captured before signing on the LC path —
+    // the engagement letter PDF prints company_name and company_number
+    // at the top of the Parties block, and the Section A pre-fills on
+    // onboarding are sourced from these two keys. Personal cases carry
+    // no company identity and skip this gate entirely.
     const ans =
       (caseRow as unknown as {
         intake_answers: Record<string, string> | null;
       }).intake_answers ?? {};
-    const companyName = (ans.company_name ?? "").trim();
-    const companyNumber = (ans.company_number ?? "").trim().toUpperCase();
-    if (!companyName || !companyNumber) {
-      throw new Error(
-        "Pick your company from Companies House (or enter it manually) before signing.",
-      );
-    }
-    if (!COMPANY_NUMBER_RE.test(companyNumber)) {
-      throw new Error(
-        "Stored company number is in the wrong format. Click Change and re-enter it.",
-      );
+    let companyName = "";
+    let companyNumber = "";
+    if (isCompany) {
+      companyName = (ans.company_name ?? "").trim();
+      companyNumber = (ans.company_number ?? "").trim().toUpperCase();
+      if (!companyName || !companyNumber) {
+        throw new Error(
+          "Pick your company from Companies House (or enter it manually) before signing.",
+        );
+      }
+      if (!COMPANY_NUMBER_RE.test(companyNumber)) {
+        throw new Error(
+          "Stored company number is in the wrong format. Click Change and re-enter it.",
+        );
+      }
     }
 
     // Pull the client's profile for snapshot. Phone can legitimately be
@@ -265,6 +284,7 @@ export async function signEngagementAction(
     let pdfBytes: Uint8Array;
     const letterHtml = renderEngagementLetterHtml({
       effectiveDate: signDate,
+      variant: isCompany ? "limited_company" : "personal",
       companyName,
       companyNumber,
       clientName,

@@ -7,6 +7,9 @@ import { getTier } from "@/lib/plans";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
+import { loadClientCase } from "@/lib/case";
+import { StepTracker } from "@/components/case/step-tracker";
+import { buildSteps } from "@/components/case/build-steps";
 import { renderEngagementLetterHtml } from "@/lib/engagement/letter-template";
 import {
   clearCompanyIdentityAction,
@@ -55,50 +58,14 @@ export default async function EngagementPage({
 
   const tier = getTier(caseRow.tier);
   if (!tier) notFound();
+  const isCompany = caseRow.segment === "limited_company_vat";
+  if (isCompany && tier.group !== "company") notFound();
+  if (!isCompany && tier.group !== "personal") notFound();
 
-  // Personal engagement letter + sign flow lands in P2. For now, show a
-  // "coming shortly" stub so the picker + case creation path is a clean,
-  // committable scaffold without a user-facing 404.
-  if (caseRow.segment === "personal") {
-    return (
-      <DashboardShell
-        eyebrow={`${tier.title} · £${tier.priceGbp}`}
-        title="Your case is created"
-        description="Thanks — we have your service pick."
-        name={me.name}
-        email={me.email}
-        role={me.role}
-        bell={<Bell userId={me.id} role={me.role} />}
-      >
-        <ClientSuspensionBanner />
-        <section className="card-sl p-6 sm:p-8 max-w-xl">
-          <h3 className="text-lg font-semibold text-ink">
-            Engagement letter is being set up
-          </h3>
-          <p className="mt-3 text-sm text-slate">
-            The engagement letter for Personal services is being
-            finalised. We&apos;ll notify you as soon as it&rsquo;s ready
-            to sign so you can continue to payment and upload your
-            documents.
-          </p>
-          <p className="mt-3 text-sm text-slate">
-            Nothing has been charged. Your case is held in draft until
-            the letter is ready.
-          </p>
-          <div className="mt-6">
-            <Link
-              href={`/client/cases/${id}`}
-              className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
-            >
-              Back to the case
-            </Link>
-          </div>
-        </section>
-      </DashboardShell>
-    );
-  }
-
-  if (tier.group !== "company") notFound();
+  // Load the step tracker data alongside the engagement payload. This
+  // runs the standard progress calc so both Personal and LC see the
+  // same four-step chain (engagement -> pay -> onboarding -> submitted).
+  const caseData = await loadClientCase(id);
 
   // Pull the profile for the on-screen preview so the letter the client
   // signs shows their real name/phone, not placeholders.
@@ -114,6 +81,9 @@ export default async function EngagementPage({
   const answers =
     (caseRow as unknown as { intake_answers: Record<string, string> | null })
       .intake_answers ?? {};
+  // Company identity only matters on the LC path. Personal cases carry
+  // no company_name / company_number — the letter renders a client-only
+  // Parties block via variant: "personal".
   const companyName = (answers.company_name ?? "").trim();
   const companyNumber = (answers.company_number ?? "").trim();
   const companyStatus = (answers.company_status ?? "").trim();
@@ -128,6 +98,7 @@ export default async function EngagementPage({
 
   const previewHtml = renderEngagementLetterHtml({
     effectiveDate: todayLong,
+    variant: isCompany ? "limited_company" : "personal",
     companyName,
     companyNumber,
     clientName,
@@ -156,6 +127,16 @@ export default async function EngagementPage({
     return clearCompanyIdentityAction(id);
   };
 
+  // Signing gate: LC blocks on company identity being set; Personal has
+  // no gate — the sign form is ready as soon as the page loads.
+  const signDisabled = isCompany && !companyReady;
+
+  // Header copy. The LC path mentions confirming the company; Personal
+  // doesn't have that step so the description is shorter.
+  const headerDescription = isCompany
+    ? "Confirm your company, read the full letter below, draw your signature at the bottom, and tick to accept. The signed PDF is emailed to you and we start work after payment."
+    : "Read the letter below, draw your signature at the bottom, and tick to accept. The signed PDF is emailed to you and we start work after payment.";
+
   return (
     <DashboardShell
       eyebrow={caseEyebrow({
@@ -164,13 +145,17 @@ export default async function EngagementPage({
         companyName: companyNameFromAnswers(answers, caseRow.segment),
       })}
       title="Review and sign your engagement letter"
-      description="Confirm your company, read the full letter below, draw your signature at the bottom, and tick to accept. The signed PDF is emailed to you and we start work after payment."
+      description={headerDescription}
       name={me.name}
       email={me.email}
       role={me.role}
       bell={<Bell userId={me.id} role={me.role} />}
     >
       <ClientSuspensionBanner />
+
+      <div className="mb-8">
+        <StepTracker steps={buildSteps(id, caseData, "engagement")} />
+      </div>
 
       {clientPhone ? null : (
         <div
@@ -195,35 +180,37 @@ export default async function EngagementPage({
         </div>
       )}
 
-      <section className="card-sl mb-6 p-6 sm:p-8">
-        <h3
-          className="text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          Your company
-        </h3>
-        <p className="mt-2 text-sm text-slate">
-          Pick your company so we can print its real name and number on
-          the engagement letter. Companies House is the source of truth;
-          manual entry is available if your company is brand-new and not
-          yet showing.
-        </p>
-        <div className="mt-4">
-          <CompanyIdentityCard
-            initial={
-              companyReady
-                ? {
-                    company_number: companyNumber,
-                    company_name: companyName,
-                    company_status: companyStatus || "unknown",
-                  }
-                : null
-            }
-            setIdentity={setIdentity}
-            clearIdentity={clearIdentity}
-          />
-        </div>
-      </section>
+      {isCompany ? (
+        <section className="card-sl mb-6 p-6 sm:p-8">
+          <h3
+            className="text-sm font-semibold uppercase tracking-wider text-slate"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            Your company
+          </h3>
+          <p className="mt-2 text-sm text-slate">
+            Pick your company so we can print its real name and number on
+            the engagement letter. Companies House is the source of truth;
+            manual entry is available if your company is brand-new and not
+            yet showing.
+          </p>
+          <div className="mt-4">
+            <CompanyIdentityCard
+              initial={
+                companyReady
+                  ? {
+                      company_number: companyNumber,
+                      company_name: companyName,
+                      company_status: companyStatus || "unknown",
+                    }
+                  : null
+              }
+              setIdentity={setIdentity}
+              clearIdentity={clearIdentity}
+            />
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         {/* Letter preview — isolated from the dashboard styles via iframe
@@ -254,7 +241,7 @@ export default async function EngagementPage({
             Ledger&rsquo;s records. After signing you&apos;ll go straight
             to the £{tier.priceGbp} checkout.
           </p>
-          {!companyReady ? (
+          {signDisabled ? (
             <div
               className="mt-4 rounded-lg border px-3 py-2 text-xs"
               role="status"
@@ -271,7 +258,7 @@ export default async function EngagementPage({
             <EngagementSignForm
               sign={sign}
               fee={`£${tier.priceGbp}`}
-              disabled={!companyReady}
+              disabled={signDisabled}
             />
           </div>
         </aside>
