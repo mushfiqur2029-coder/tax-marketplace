@@ -31,7 +31,10 @@ export function CompanyServicesPricing() {
               <h3>{t.title}</h3>
               {t.tagline ? <p className="tier-sub">{t.tagline}</p> : null}
               <div className="price">
-                £{t.priceGbp}
+                {/* priceDisplay wins when set — the Bespoke LC tier
+                    uses it to render "Bespoke" instead of "£0", since
+                    priceGbp is 0 (billed outside the flat-fee flow). */}
+                {t.priceDisplay ?? <>£{t.priceGbp}</>}
                 {t.pricePer ? <small> {t.pricePer}</small> : null}
                 {t.priceSuffix ? <small> {t.priceSuffix}</small> : null}
               </div>

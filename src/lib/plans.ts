@@ -5,7 +5,10 @@ export type TierId =
   | "basic"
   | "standard"
   | "premium"
-  // Limited company (three flat-fee services, £400 each, temporary pricing)
+  // Limited-company self-serve flat-fee services. Current pricing:
+  //   dormant      £150
+  //   non_vat_reg  £700
+  //   vat_reg      £1000 (turnover under £200k)
   | "dormant"
   | "non_vat_reg"
   | "vat_reg"
@@ -109,18 +112,23 @@ export const PLAN_TIERS: PlanTier[] = [
       "If your situation is more complex, or you want year-round accountant support.",
   },
 
-  // ---------- Limited company (3 flat-fee services, £400 each) ----------
+  // ---------- Limited company (3 self-serve flat-fee services) ----------
   //
   // The three "services" from the Limited Company flow map 1:1 to a tier
   // here. Picking the service IS picking the tier; there's no additional
-  // plan-tier step for the company path. Prices are temporary — the user
-  // will adjust them later once real-world data informs each one.
+  // plan-tier step for the company path. The 4th tier
+  // (vat_plus_accounts_200k) is the bespoke "over £200k turnover"
+  // enquiry flow — defined below but not sold as a flat fee.
+  //
+  // Wallet credit (migration 0044) splits each fee 50/50 with the
+  // assigned accountant on case complete — keep the trigger's amounts
+  // in lockstep with these priceGbp values if either changes.
   {
     id: "dormant",
     group: "company",
     title: "Dormant company",
     tagline: "For companies with no trading activity in the period.",
-    priceGbp: 400,
+    priceGbp: 150,
     priceGbpSubtitle: "one-off",
     features: [
       "Dormant annual accounts prepared and filed",
@@ -136,12 +144,12 @@ export const PLAN_TIERS: PlanTier[] = [
     group: "company",
     title: "Non-VAT registered company",
     tagline: "Full year-end accounts and corporation tax, done.",
-    priceGbp: 400,
+    priceGbp: 700,
     priceGbpSubtitle: "one-off",
-    // All three limited-company services are the same £400 price, so no
-    // "Most chosen" badge on any of them — would just be arbitrary. The
-    // badge stays on the Personal path where tiers have genuinely
-    // different prices and a real recommendation.
+    // No "Most chosen" badge on the limited-company tiles — the three
+    // services target different companies rather than offering better
+    // value at the same shape. The badge stays on the Personal path
+    // where tiers have a real "value" recommendation.
     features: [
       "Annual accounts prepared and filed at Companies House",
       "Corporation tax return (CT600) filed with HMRC",
@@ -157,7 +165,7 @@ export const PLAN_TIERS: PlanTier[] = [
     title: "VAT-registered company",
     tagline:
       "Year-end accounts, corporation tax, and ongoing VAT returns. For annual turnover under £200k.",
-    priceGbp: 400,
+    priceGbp: 1000,
     priceGbpSubtitle: "one-off",
     features: [
       "Everything in Non-VAT registered",

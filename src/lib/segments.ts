@@ -226,8 +226,10 @@ export const SEGMENTS: Segment[] = [
     suggestedDocs: ["P60", "Bonus / share vesting statements", "Pension provider statement"],
   },
   {
-    // Limited-company cases pick one of three £400 flat-fee services (tiers)
-    // instead of a tier + intake form. The real document checklist (Sections
+    // Limited-company cases pick one of three self-serve flat-fee services
+    // (dormant £150, non_vat_reg £700, vat_reg £1000; a 4th bespoke tier
+    // for over-£200k turnover diverts to the enquiry form) instead of a
+    // tier + intake form. The real document checklist (Sections
     // A/B/C, plus Section D for VAT Registered) lives in a dedicated flow
     // that fires after the engagement letter is signed and the fee is paid,
     // so there's no intake step here on the wizard. Intentionally empty.
