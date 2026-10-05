@@ -14,7 +14,7 @@ import { getTier, type TierId } from "@/lib/plans";
 import {
   sectionsForTier,
   fieldsForTier,
-  CHECKLIST_FOOTER_NOTE,
+  footerForTier,
 } from "@/lib/engagement/checklist";
 import {
   saveChecklistAnswersAction,
@@ -46,10 +46,18 @@ export default async function OnboardingPage({
     .eq("id", id)
     .single();
   if (!caseRow || caseRow.client_id !== me.id) notFound();
-  if (caseRow.segment !== "limited_company_vat") notFound();
+  if (
+    caseRow.segment !== "limited_company_vat" &&
+    caseRow.segment !== "personal"
+  ) {
+    notFound();
+  }
 
   const tier = getTier(caseRow.tier);
-  if (!tier || tier.group !== "company") notFound();
+  if (!tier) notFound();
+  const isCompany = caseRow.segment === "limited_company_vat";
+  if (isCompany && tier.group !== "company") notFound();
+  if (!isCompany && tier.group !== "personal") notFound();
 
   // Flow guards: payment must have landed, and if onboarding is already
   // submitted send the client back to the dashboard where the "awaiting
@@ -66,13 +74,18 @@ export default async function OnboardingPage({
   // The Company Authentication Code lives encrypted. We never read it
   // back for the client (they supplied it) — the form field shows an
   // "already saved" indicator when it's set, and lets them overwrite.
+  // Personal cases have no encrypted field; the check short-circuits
+  // with authCodeAlreadySet = false (ignored by the form for Personal).
   const admin = createAdminClient();
-  const { data: cryptoCheck } = await admin
-    .from("cases")
-    .select("company_auth_code_encrypted")
-    .eq("id", id)
-    .single();
-  const authCodeAlreadySet = !!cryptoCheck?.company_auth_code_encrypted;
+  let authCodeAlreadySet = false;
+  if (isCompany) {
+    const { data: cryptoCheck } = await admin
+      .from("cases")
+      .select("company_auth_code_encrypted")
+      .eq("id", id)
+      .single();
+    authCodeAlreadySet = !!cryptoCheck?.company_auth_code_encrypted;
+  }
 
   // Uploads for this case, grouped by requirement_key.
   const { data: allDocs } = await admin
@@ -160,7 +173,7 @@ export default async function OnboardingPage({
         answers={answers}
         docsByKey={Object.fromEntries(docsByKey)}
         authCodeAlreadySet={authCodeAlreadySet}
-        footer={CHECKLIST_FOOTER_NOTE}
+        footer={footerForTier(tierId)}
         saveAnswers={saveAnswers}
         uploadDoc={uploadDoc}
         removeDoc={removeDoc}

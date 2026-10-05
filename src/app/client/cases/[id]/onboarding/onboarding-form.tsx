@@ -181,7 +181,9 @@ export function OnboardingForm({
               className="text-lg font-semibold text-ink"
               style={{ fontFamily: "var(--font-heading)" }}
             >
-              Section {section.key} — {section.title}
+              {section.key === "P"
+                ? section.title
+                : `Section ${section.key} — ${section.title}`}
             </h2>
           </div>
           <div className="space-y-5">

@@ -1,11 +1,11 @@
 import type { TierId } from "@/lib/plans";
 
-// Limited-company onboarding checklist schema.
+// Onboarding checklist schema for both flows.
 //
-// Source of truth for both the client-facing form and the server-side
-// "all required fields present" validation. Transcribed from
-// design-reference/limited-company-document-checklists.md with the
-// DEFAULT answers already applied inline.
+// Limited Company uses Sections A/B/C (+ D for VAT); Personal uses the
+// single Section P with a flat 16-field list sourced from the P1
+// restructure spec. Source of truth for both the client-facing form
+// and the server-side "all required fields present" validation.
 //
 // Field flavours:
 //   text     — free text input
@@ -20,7 +20,24 @@ import type { TierId } from "@/lib/plans";
 //   in the list, the field is still shown but marked optional. An empty
 //   array = optional for everyone.
 
-export type ChecklistSection = "A" | "B" | "C" | "D";
+export type ChecklistSection = "A" | "B" | "C" | "D" | "P";
+
+// Tier id groupings. Keeping these local to checklist.ts because
+// PLAN_TIERS imports would be circular — the lists live on paper here
+// instead of being generated from plans.ts. If plans.ts ever adds a
+// tier that should take onboarding, both lists need updating.
+const LC_TIER_IDS: TierId[] = ["dormant", "non_vat_reg", "vat_reg"];
+const PERSONAL_TIER_IDS: TierId[] = [
+  "uber_driver",
+  "cis_subcontractor",
+  "sole_trader",
+  "landlord_small",
+  "non_resident_landlord",
+  "gig_worker",
+  "freelancer_consultant",
+  "landlord_multi",
+  "complex_international",
+];
 
 /**
  * Visibility gate. When set, the field only renders (and only counts
@@ -76,19 +93,29 @@ export const CHECKLIST_SECTIONS: ChecklistSectionDef[] = [
   {
     key: "A",
     title: "Company Details",
+    showForTiers: LC_TIER_IDS,
   },
   {
     key: "B",
     title: "Director's Details",
+    showForTiers: LC_TIER_IDS,
   },
   {
     key: "C",
     title: "Registration Service",
+    showForTiers: LC_TIER_IDS,
   },
   {
     key: "D",
     title: "VAT Details",
     showForTiers: ["vat_reg"],
+  },
+  {
+    // Personal — single flat section used by all nine Personal tiers.
+    // Form renders this without the "Section P —" prefix.
+    key: "P",
+    title: "Your Self Assessment documents",
+    showForTiers: PERSONAL_TIER_IDS,
   },
 ];
 
@@ -313,6 +340,153 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
     showOtherOn: "Other",
     requiredFor: ["vat_reg"],
   },
+
+  // ---------------- Section P: Personal Self Assessment ----------------
+  //
+  // Flat list shared by all nine Personal tiers. UTR and NI proof are
+  // the only required items; everything else is optional. P60/P45 is
+  // visible only when the client answers "Were you employed?" with
+  // "Yes" — same showWhen mechanic used by Section B's ID branch.
+  {
+    id: "sa_utr",
+    section: "P",
+    label: "Personal UTR (from HMRC)",
+    hint: "10-digit Unique Taxpayer Reference, on your Self Assessment correspondence. Required to file your return.",
+    kind: "text",
+    requiredFor: PERSONAL_TIER_IDS,
+    pattern: {
+      regex: "^\\d{10}$",
+      message: "UTR must be exactly 10 digits, no spaces.",
+    },
+  },
+  {
+    id: "sa_ni_proof",
+    section: "P",
+    label: "National Insurance proof",
+    hint: "Upload your NI card, letter, or payslip clearly showing your NI number.",
+    kind: "upload",
+    requiredFor: PERSONAL_TIER_IDS,
+  },
+  {
+    id: "sa_last_year_return",
+    section: "P",
+    label: "Last year's tax return",
+    hint: "Optional — if you filed last year, uploading a copy helps us pick up where it left off.",
+    kind: "upload",
+    requiredFor: [],
+  },
+  {
+    id: "sa_was_employed",
+    section: "P",
+    label: "Were you employed this tax year?",
+    hint: "Optional — tells us whether to expect a P60 / P45. You can leave blank if neither applies.",
+    kind: "select",
+    options: ["Yes", "No"],
+    requiredFor: [],
+  },
+  {
+    id: "sa_p60_p45",
+    section: "P",
+    label: "P60 and / or P45",
+    hint: "P60 is the year-end summary from an employer; P45 is issued when you leave a job. Upload whichever applies — multiple allowed.",
+    kind: "upload",
+    requiredFor: [],
+    multi: true,
+    showWhen: { fieldId: "sa_was_employed", equals: "Yes" },
+  },
+  {
+    id: "sa_p11d",
+    section: "P",
+    label: "P11D (benefits in kind)",
+    hint: "Optional — only if your employer issues one for company car, medical, etc.",
+    kind: "upload",
+    requiredFor: [],
+  },
+  {
+    id: "sa_interest_certificates",
+    section: "P",
+    label: "Bank interest certificates",
+    hint: "Optional — certificates or statements showing taxable interest earned. Multiple allowed.",
+    kind: "upload",
+    requiredFor: [],
+    multi: true,
+  },
+  {
+    id: "sa_dividend_vouchers",
+    section: "P",
+    label: "Dividend vouchers",
+    hint: "Optional — vouchers or statements for any dividends received. Multiple allowed.",
+    kind: "upload",
+    requiredFor: [],
+    multi: true,
+  },
+  {
+    id: "sa_capital_gains",
+    section: "P",
+    label: "Capital gains documents",
+    hint: "Optional — broker statements, completion statements, or crypto exchange CSVs for any disposals. Multiple allowed.",
+    kind: "upload",
+    requiredFor: [],
+    multi: true,
+  },
+  {
+    id: "sa_rental_docs",
+    section: "P",
+    label: "Rental income, expenses & mortgage statements",
+    hint: "Optional — upload rental statements, expenses receipts, and mortgage interest certificates for any let property. Multiple allowed.",
+    kind: "upload",
+    requiredFor: [],
+    multi: true,
+  },
+  {
+    id: "sa_private_pension",
+    section: "P",
+    label: "Private pension contributions",
+    hint: "Optional — amount contributed personally this year and the provider (e.g. Vanguard SIPP, £6,000).",
+    kind: "text",
+    requiredFor: [],
+  },
+  {
+    id: "sa_gift_aid",
+    section: "P",
+    label: "Charitable donations (Gift Aid)",
+    hint: "Optional — annual total of donations where you ticked Gift Aid. We'll claim the higher-rate top-up for you.",
+    kind: "text",
+    requiredFor: [],
+  },
+  {
+    id: "sa_child_benefit",
+    section: "P",
+    label: "Child benefit received",
+    hint: "Optional — e.g. \"Yes, £X per month\" or \"No\". Needed for the High Income Child Benefit Charge if either partner earns over £60k.",
+    kind: "text",
+    requiredFor: [],
+  },
+  {
+    id: "sa_overseas",
+    section: "P",
+    label: "Overseas income and tax paid",
+    hint: "Optional — upload any foreign income statements and foreign tax paid certificates. Multiple allowed.",
+    kind: "upload",
+    requiredFor: [],
+    multi: true,
+  },
+  {
+    id: "sa_student_loan",
+    section: "P",
+    label: "Student loan position",
+    hint: "Optional — e.g. \"Plan 2, approx £18k outstanding\" or \"paid off\".",
+    kind: "text",
+    requiredFor: [],
+  },
+  {
+    id: "sa_anything_else",
+    section: "P",
+    label: "Anything else we should know?",
+    hint: "Optional — one-off events, major life changes, or anything you're unsure about.",
+    kind: "text",
+    requiredFor: [],
+  },
 ];
 
 // The one field whose answer is never stored in the plain intake_answers
@@ -389,3 +563,14 @@ export const LEGACY_DRIVING_LICENCE_ID = "director_driving_licence";
 
 export const CHECKLIST_FOOTER_NOTE =
   "Please provide all the information requested. Missing information will delay your onboarding. Please also tell us as soon as possible if you have any overdue Accounts, VAT, CIS or PAYE returns, so we can help you avoid HMRC late filing penalties.";
+
+export const CHECKLIST_FOOTER_NOTE_PERSONAL =
+  "The above list is not exhaustive. If you're unsure whether something is relevant, contact us to clarify.";
+
+// Pick the correct footer for the tier group. Personal gets a shorter
+// "not exhaustive, ask us" note; LC keeps the compliance-heavy footer.
+export function footerForTier(tier: TierId): string {
+  return (PERSONAL_TIER_IDS as readonly TierId[]).includes(tier)
+    ? CHECKLIST_FOOTER_NOTE_PERSONAL
+    : CHECKLIST_FOOTER_NOTE;
+}

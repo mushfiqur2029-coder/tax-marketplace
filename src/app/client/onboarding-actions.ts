@@ -16,13 +16,14 @@ import {
 
 const BUCKET = "case-documents";
 
-// All limited-company onboarding writes happen on paid draft cases
-// (status='submitted' + stripe_payment_status='succeeded' per the webhook
-// after Stripe success) OR directly after Stripe success_url bounce when
-// the webhook is still catching up. The gate here is "client owns, case
-// is paid-but-not-onboarded, case is limited-company". We don't block on
-// status because the webhook sets status='submitted' independently of
-// the onboarding submit — the two gates are orthogonal.
+// Onboarding writes happen on paid draft cases (status='submitted' +
+// stripe_payment_status='succeeded' per the webhook after Stripe
+// success) OR directly after the Stripe success_url bounce when the
+// webhook is still catching up. The gate here is "client owns, case is
+// paid-but-not-onboarded, case is on a flow that has an onboarding
+// checklist" — i.e. Limited Company or Personal (new 9-up catalogue).
+// We don't block on status because the webhook sets status='submitted'
+// independently of the onboarding submit — the two gates are orthogonal.
 async function assertCaseInOnboarding(caseId: string) {
   const me = await requireRole("client");
   const supabase = await createClient();
@@ -42,8 +43,11 @@ async function assertCaseInOnboarding(caseId: string) {
     .single();
   if (error || !caseRow) throw new Error("Case not found.");
   if (caseRow.client_id !== me.id) throw new Error("Not your case.");
-  if (caseRow.segment !== "limited_company_vat") {
-    throw new Error("Onboarding checklist only applies to limited-company cases.");
+  if (
+    caseRow.segment !== "limited_company_vat" &&
+    caseRow.segment !== "personal"
+  ) {
+    throw new Error("Onboarding checklist doesn't apply to this case.");
   }
   if (caseRow.stripe_payment_status !== "succeeded") {
     throw new Error("Please complete payment before uploading documents.");
@@ -52,8 +56,16 @@ async function assertCaseInOnboarding(caseId: string) {
     throw new Error("You've already submitted your onboarding.");
   }
   const tier = getTier(caseRow.tier) as unknown as { id: TierId; group: string };
-  if (!tier || tier.group !== "company") {
+  if (!tier) throw new Error("Case has no service selected.");
+  if (tier.group !== "company" && tier.group !== "personal") {
+    throw new Error("Case has no onboarding-eligible service selected.");
+  }
+  const isCompany = caseRow.segment === "limited_company_vat";
+  if (isCompany && tier.group !== "company") {
     throw new Error("Case has no company service selected.");
+  }
+  if (!isCompany && tier.group !== "personal") {
+    throw new Error("Case has no personal service selected.");
   }
   return {
     me,
