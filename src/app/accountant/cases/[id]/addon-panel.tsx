@@ -220,7 +220,12 @@ function PresetForm({
           {ok}
         </p>
       ) : null}
-      <SLButton type="submit" variant="primary" disabled={pending || !key}>
+      <SLButton
+        type="submit"
+        variant="primary"
+        className="w-full sm:w-auto"
+        disabled={pending || !key}
+      >
         {pending ? "Sending…" : "Send to client for payment"}
       </SLButton>
     </form>
@@ -312,6 +317,7 @@ function CustomForm({
       <SLButton
         type="submit"
         variant="primary"
+        className="w-full sm:w-auto"
         disabled={pending || !description.trim() || !amountGbp}
       >
         {pending ? "Sending…" : "Send to admin for approval"}

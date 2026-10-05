@@ -102,10 +102,11 @@ export function VatEditDatesForm({
           {error}
         </p>
       ) : null}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:gap-2">
         <SLButton
           type="button"
           variant="primary"
+          className="w-full sm:w-auto"
           onClick={handleSave}
           disabled={pending || !dirty}
         >
@@ -114,6 +115,7 @@ export function VatEditDatesForm({
         <SLButton
           type="button"
           variant="ghost"
+          className="w-full sm:w-auto"
           onClick={() => {
             setOpen(false);
             setStart(initialStart);

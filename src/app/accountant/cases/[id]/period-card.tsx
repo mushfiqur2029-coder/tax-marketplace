@@ -146,10 +146,14 @@ export function PeriodCard({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap gap-3">
+      {/* Save stacks full-width above Clear on mobile; side-by-side at
+          sm+. Primary action deserves the full width so it reads as the
+          obvious next step. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
         <SLButton
           type="button"
           variant="primary"
+          className="w-full sm:w-auto"
           onClick={handleSave}
           disabled={saving || locked || !start || !end || (alreadySet && !dirty)}
         >
@@ -159,6 +163,7 @@ export function PeriodCard({
           <SLButton
             type="button"
             variant="ghost"
+            className="w-full sm:w-auto"
             onClick={handleClear}
             disabled={clearing}
           >

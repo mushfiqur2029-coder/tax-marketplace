@@ -67,7 +67,12 @@ export function StatusTransition({
             });
           }}
         >
-          <SLButton type="submit" variant="primary" disabled={pending}>
+          <SLButton
+            type="submit"
+            variant="primary"
+            className="w-full sm:w-auto"
+            disabled={pending}
+          >
             {pending ? "Updating…" : step.label}
           </SLButton>
         </form>

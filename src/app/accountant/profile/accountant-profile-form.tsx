@@ -153,7 +153,12 @@ export function AccountantProfileForm({
         </p>
       ) : null}
 
-      <SLButton type="submit" variant="primary" disabled={pendingSubmit}>
+      <SLButton
+        type="submit"
+        variant="primary"
+        className="w-full sm:w-auto"
+        disabled={pendingSubmit}
+      >
         {pendingSubmit ? "Submitting…" : "Submit changes"}
       </SLButton>
     </form>

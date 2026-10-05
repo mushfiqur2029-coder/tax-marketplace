@@ -20,7 +20,12 @@ export function TakeCaseForm({ take }: { take: () => Promise<TakeResult> }) {
           });
         }}
       >
-        <SLButton type="submit" variant="primary" disabled={pending}>
+        <SLButton
+          type="submit"
+          variant="primary"
+          className="w-full sm:w-auto"
+          disabled={pending}
+        >
           {pending ? "Taking…" : "Take this case"}
         </SLButton>
       </form>
