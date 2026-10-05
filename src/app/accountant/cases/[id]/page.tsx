@@ -49,6 +49,7 @@ import type { TierId } from "@/lib/plans";
 import {
   periodDocsApplyToTier,
   periodDocFieldsForCase,
+  readNeedsPayeRegistration,
   SECTION_A_PAYE_UPLOAD_ID,
   ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
   ACCOUNTANT_CT600_KEY,
@@ -192,6 +193,9 @@ export default async function AccountantCaseDetailPage({
     periodFieldList = periodDocFieldsForCase({
       payrollRegistered: data.row.payroll_registered,
       payeCertificateUploadedInSectionA: payeInSectionA,
+      needsPayeRegistration: readNeedsPayeRegistration(
+        data.row.intake_answers as Record<string, string> | null,
+      ),
     });
     for (const d of rows) {
       if (!d.requirement_key?.startsWith("period_")) continue;

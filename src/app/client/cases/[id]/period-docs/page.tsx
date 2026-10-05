@@ -11,6 +11,7 @@ import {
   periodDocsApplyToTier,
   periodDocFieldsForCase,
   requiredPeriodDocFieldsForCase,
+  readNeedsPayeRegistration,
   SECTION_A_PAYE_UPLOAD_ID,
   PERIOD_DOCS_FOOTER_NOTE,
 } from "@/lib/engagement/period-docs";
@@ -49,7 +50,7 @@ export default async function PeriodDocsPage({
   const { data: caseRow } = await supabase
     .from("cases")
     .select(
-      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at",
+      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at, intake_answers",
     )
     .eq("id", id)
     .single();
@@ -89,14 +90,23 @@ export default async function PeriodDocsPage({
     (d) => d.requirement_key === SECTION_A_PAYE_UPLOAD_ID,
   );
 
+  // Section C answer drives the PAYE summary hard-override — if the
+  // client said No to needing PAYE registration, the PAYE slot
+  // disappears regardless of the payroll flag or any orphaned
+  // Section A PAYE cert upload.
+  const needsPayeRegistration = readNeedsPayeRegistration(
+    caseRow.intake_answers as Record<string, string> | null,
+  );
   const fields = periodDocFieldsForCase({
     payrollRegistered: caseRow.payroll_registered,
     payeCertificateUploadedInSectionA: payeInSectionA,
+    needsPayeRegistration,
   });
   const required = requiredPeriodDocFieldsForCase({
     tier: tier.id as TierId,
     payrollRegistered: caseRow.payroll_registered,
     payeCertificateUploadedInSectionA: payeInSectionA,
+    needsPayeRegistration,
   });
 
   const docsByKey = new Map<

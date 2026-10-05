@@ -87,23 +87,44 @@ export function periodDocsApplyToTier(tier: TierId): boolean {
   return tier === "non_vat_reg" || tier === "vat_reg";
 }
 
-// Returns the field list for a specific case, with PAYE summary
-// promoted to required when payroll applies to the company. The caller
-// passes the two booleans so the schema file stays pure data and the
-// decision ("is PAYE actually in scope?") lives next to the case row
-// that owns the answer.
+// Returns the field list for a specific case. Rules around PAYE
+// summary:
+//
+//   • Client answered "No" to Section C's "Do you need PAYE
+//     registration and monthly payslips?" → company has no PAYE
+//     scheme, PAYE summary field disappears entirely. Hard override;
+//     the payroll flag and Section A PAYE cert upload are ignored,
+//     since in this state they'd either be stale or accidentally set.
+//
+//   • Otherwise, PAYE summary is required when the company IS
+//     payroll-registered OR has uploaded a PAYE certificate in
+//     Section A — the two signals the accountant can derive from the
+//     case before period-docs are due. If neither is true, the field
+//     is shown but optional.
+//
+// Callers pass the raw Section C answer so the schema file stays pure
+// data; the branching lives next to the row that owns it.
 export function periodDocFieldsForCase(opts: {
   payrollRegistered: boolean;
   payeCertificateUploadedInSectionA: boolean;
+  /** Raw Section C answer ("Yes" | "No" | null if not yet answered). */
+  needsPayeRegistration: "Yes" | "No" | null;
 }): ChecklistField[] {
+  const payeHardExcluded = opts.needsPayeRegistration === "No";
   const payeInScope =
-    opts.payrollRegistered || opts.payeCertificateUploadedInSectionA;
-  return PERIOD_DOC_FIELDS.map((f) => {
-    if (f.id !== PERIOD_PAYE_FIELD_ID) return f;
-    if (!payeInScope) return f;
+    !payeHardExcluded &&
+    (opts.payrollRegistered || opts.payeCertificateUploadedInSectionA);
+
+  return PERIOD_DOC_FIELDS.flatMap((f) => {
+    if (f.id !== PERIOD_PAYE_FIELD_ID) return [f];
+    // Hide the field entirely when the client has no PAYE scheme —
+    // leaving it visible as "Optional" is confusing when the client
+    // has already declared they don't need PAYE at all.
+    if (payeHardExcluded) return [];
+    if (!payeInScope) return [f];
     // Shallow-clone with an overridden requiredFor so the submit guard
     // sees it as required for both applicable tiers.
-    return { ...f, requiredFor: ["non_vat_reg", "vat_reg"] as TierId[] };
+    return [{ ...f, requiredFor: ["non_vat_reg", "vat_reg"] as TierId[] }];
   });
 }
 
@@ -111,10 +132,19 @@ export function requiredPeriodDocFieldsForCase(opts: {
   tier: TierId;
   payrollRegistered: boolean;
   payeCertificateUploadedInSectionA: boolean;
+  needsPayeRegistration: "Yes" | "No" | null;
 }): ChecklistField[] {
   return periodDocFieldsForCase(opts).filter((f) =>
     f.requiredFor.includes(opts.tier),
   );
+}
+
+/** Narrow the raw Section C answer to the "Yes" | "No" | null shape. */
+export function readNeedsPayeRegistration(
+  intakeAnswers: Record<string, string> | null | undefined,
+): "Yes" | "No" | null {
+  const raw = intakeAnswers?.["needs_paye_registration"];
+  return raw === "Yes" || raw === "No" ? raw : null;
 }
 
 export const PERIOD_DOCS_FOOTER_NOTE =

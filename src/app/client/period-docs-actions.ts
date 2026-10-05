@@ -11,6 +11,7 @@ import {
   periodDocsApplyToTier,
   periodDocFieldsForCase,
   requiredPeriodDocFieldsForCase,
+  readNeedsPayeRegistration,
   SECTION_A_PAYE_UPLOAD_ID,
 } from "@/lib/engagement/period-docs";
 import type { ChecklistField } from "@/lib/engagement/checklist";
@@ -25,7 +26,7 @@ async function assertCaseInPeriodUpload(caseId: string) {
   const { data: caseRow, error } = await supabase
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, stripe_payment_status, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at",
+      "id, client_id, accountant_id, segment, tier, stripe_payment_status, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at, intake_answers",
     )
     .eq("id", caseId)
     .single();
@@ -84,11 +85,20 @@ export async function uploadPeriodDocumentAction(
   formData: FormData,
 ): Promise<ActionResult> {
   try {
-    const { me, supabase, tier } = await assertCaseInPeriodUpload(caseId);
+    const { me, supabase, tier, caseRow } = await assertCaseInPeriodUpload(caseId);
 
+    // Visibility respects the Section C PAYE answer — if the client
+    // said "No" to PAYE registration, the PAYE summary slot
+    // disappears entirely, so an upload posted against that key is
+    // rejected with "slot doesn't exist".
+    const needsPayeRegistration = readNeedsPayeRegistration(
+      (caseRow as unknown as { intake_answers: Record<string, string> | null })
+        .intake_answers,
+    );
     const visible = periodDocFieldsForCase({
-      payrollRegistered: false, // only used to filter PAYE required flag, not visibility
+      payrollRegistered: false, // required-flag filter, not visibility
       payeCertificateUploadedInSectionA: false,
+      needsPayeRegistration,
     });
     const slot = visible.find(
       (f: ChecklistField) => f.id === requirementKey && f.kind === "upload",
@@ -212,11 +222,16 @@ export async function submitPeriodDocsAction(
     );
 
     const payeInSectionA = await sectionAPayeUploaded(caseId, admin);
+    const needsPayeRegistration = readNeedsPayeRegistration(
+      (caseRow as unknown as { intake_answers: Record<string, string> | null })
+        .intake_answers,
+    );
     const required = requiredPeriodDocFieldsForCase({
       tier,
       payrollRegistered:
         (caseRow as unknown as { payroll_registered: boolean }).payroll_registered,
       payeCertificateUploadedInSectionA: payeInSectionA,
+      needsPayeRegistration,
     });
 
     const { data: docs } = await admin
