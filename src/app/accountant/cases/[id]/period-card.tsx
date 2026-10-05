@@ -94,7 +94,7 @@ export function PeriodCard({
             value={start}
             onChange={(e) => setStart(e.target.value)}
             disabled={locked}
-            className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink disabled:opacity-60"
+            className="input-sl mt-1 disabled:opacity-60"
           />
         </label>
         <label className="block">
@@ -109,7 +109,7 @@ export function PeriodCard({
             value={end}
             onChange={(e) => setEnd(e.target.value)}
             disabled={locked}
-            className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink disabled:opacity-60"
+            className="input-sl mt-1 disabled:opacity-60"
           />
         </label>
       </div>

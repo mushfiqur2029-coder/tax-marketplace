@@ -702,7 +702,7 @@ export default async function AdminCasePage({
                         key={c.id}
                         className="rounded-xl border border-line bg-paper p-4"
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-ink">
                               Cycle {c.cycle_number} · {c.period_label}

@@ -140,7 +140,7 @@ export function PrepareVatApprovalCard({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={3}
-          className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink"
+          className="input-sl mt-1"
           placeholder="Anything the client should read before approving."
         />
       </label>

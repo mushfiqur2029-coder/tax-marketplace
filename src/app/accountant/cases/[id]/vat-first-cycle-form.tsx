@@ -80,7 +80,7 @@ export function VatFirstCycleForm({ frequency, openFirstCycle }: Props) {
             onChange={(e) =>
               setFreqChoice(e.target.value as VatFrequency | "")
             }
-            className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink"
+            className="input-sl mt-1"
           >
             <option value="">Choose one…</option>
             <option value="Monthly">Monthly</option>
@@ -101,7 +101,7 @@ export function VatFirstCycleForm({ frequency, openFirstCycle }: Props) {
           type="date"
           value={periodEnd}
           onChange={(e) => setPeriodEnd(e.target.value)}
-          className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink"
+          className="input-sl mt-1"
         />
       </label>
       {error ? (
@@ -116,6 +116,7 @@ export function VatFirstCycleForm({ frequency, openFirstCycle }: Props) {
       <SLButton
         type="button"
         variant="primary"
+        block
         onClick={handleSubmit}
         disabled={pending || !canSubmit}
       >

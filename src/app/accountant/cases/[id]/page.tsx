@@ -643,7 +643,7 @@ export default async function AccountantCaseDetailPage({
                     {vatCycles.map((c) => (
                       <li
                         key={c.id}
-                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                        className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                       >
                         <div className="min-w-0">
                           <div className="font-semibold text-ink">
@@ -657,7 +657,7 @@ export default async function AccountantCaseDetailPage({
                             ) : null}
                           </div>
                         </div>
-                        <div className="shrink-0">
+                        <div className="sm:shrink-0">
                           <span
                             className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
                             style={{

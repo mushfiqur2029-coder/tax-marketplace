@@ -112,16 +112,20 @@ export default async function EngagementPage({
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         {/* Letter preview — isolated from the dashboard styles via iframe
              srcDoc, since the engagement letter has its own typography and
-             should look identical to the printed PDF. */}
-        <section className="card-sl p-2 sm:p-3">
+             should look identical to the printed PDF.
+             On mobile the iframe comes second (via lg:order-1) so the
+             sign CTA is visible without scrolling past a tall preview;
+             a shorter iframe height on mobile keeps the preview itself
+             scannable without eating the whole viewport. */}
+        <section className="order-2 card-sl p-2 sm:p-3 lg:order-1">
           <iframe
             title="Engagement letter preview"
             srcDoc={previewHtml}
-            className="h-[720px] w-full rounded-lg border border-line bg-white"
+            className="h-[460px] w-full rounded-lg border border-line bg-white sm:h-[600px] lg:h-[720px]"
           />
         </section>
 
-        <aside className="card-sl p-6 sm:p-8">
+        <aside className="order-1 card-sl p-6 sm:p-8 lg:order-2">
           <h3
             className="text-sm font-semibold uppercase tracking-wider text-slate"
             style={{ fontFamily: "var(--font-mono)" }}

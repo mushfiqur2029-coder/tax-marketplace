@@ -79,7 +79,7 @@ export function VatEditDatesForm({
             type="date"
             value={start}
             onChange={(e) => setStart(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink"
+            className="input-sl mt-1 bg-white"
           />
         </label>
         <label className="block">
@@ -93,7 +93,7 @@ export function VatEditDatesForm({
             type="date"
             value={end}
             onChange={(e) => setEnd(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink"
+            className="input-sl mt-1 bg-white"
           />
         </label>
       </div>

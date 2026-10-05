@@ -124,7 +124,7 @@ export function PrepareApprovalCard({
             value={ctPounds}
             onChange={(e) => setCtPounds(e.target.value)}
             placeholder="e.g. 1250.00"
-            className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink"
+            className="input-sl mt-1"
           />
         </label>
         <label className="block">
@@ -139,7 +139,7 @@ export function PrepareApprovalCard({
             value={hmrcRef}
             onChange={(e) => setHmrcRef(e.target.value)}
             placeholder="17-char reference from CT600"
-            className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink"
+            className="input-sl mt-1"
           />
         </label>
       </div>
@@ -156,7 +156,7 @@ export function PrepareApprovalCard({
           onChange={(e) => setNote(e.target.value)}
           rows={3}
           placeholder="Anything the client should read before approving."
-          className="mt-1 w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink"
+          className="input-sl mt-1"
         />
       </label>
 
