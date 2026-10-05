@@ -24,6 +24,8 @@ function linkFor(n: NotificationRow, role: Role): string {
   switch (n.type) {
     case "profile_change_request":
       return "/admin/profile-changes";
+    case "service_enquiry":
+      return "/admin/enquiries";
     case "withdrawal_requested":
       return "/admin/withdrawals";
     case "withdrawal_paid":
@@ -412,5 +414,7 @@ function typeLabel(t: NotificationType): string {
       return "VAT approval";
     case "vat_filed":
       return "VAT filed";
+    case "service_enquiry":
+      return "Enquiry";
   }
 }

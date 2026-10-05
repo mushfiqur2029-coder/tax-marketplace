@@ -66,7 +66,20 @@ export async function createCaseAction(
     );
 
     if (!getSegment(segment)) throw new Error("Please pick a segment.");
-    if (!getTier(tier)) throw new Error("Please pick a plan.");
+    const tierDef = getTier(tier);
+    if (!tierDef) throw new Error("Please pick a plan.");
+
+    // Enquiry-only tiers (bespoke, no flat fee) must not land in
+    // cases.tier — they live in service_enquiries. Belt-and-braces on
+    // the form's own routing: the client wizard sends enquiry-tier
+    // picks to /client/new/enquiry, but a crafted POST straight to
+    // createCaseAction would otherwise create a half-formed case with
+    // priceGbp=0 and no engagement path.
+    if (tierDef.requiresEnquiry) {
+      throw new Error(
+        "This service is bespoke — use the enquiry form instead of starting a case.",
+      );
+    }
 
     // Limited-company cases are flat-fee engagements. They don't have a
     // filing deadline, don't support the urgent upgrade, and skip the

@@ -8,7 +8,11 @@ export type TierId =
   // Limited company (three flat-fee services, £400 each, temporary pricing)
   | "dormant"
   | "non_vat_reg"
-  | "vat_reg";
+  | "vat_reg"
+  // Limited company — bespoke enquiry tier. Does NOT map to a cases.tier
+  // enum value; picking it diverts to the enquiry form. The server guard
+  // in createCaseAction refuses to insert this id into cases.tier.
+  | "vat_plus_accounts_200k";
 
 // Legacy limited-company tier IDs that are no longer sold. Kept as Postgres
 // enum values (vat_basic / vat_standard / vat_accounts) because dropping an
@@ -34,6 +38,14 @@ export type PlanTier = {
   features?: string[];          // bullet list (may be absent for description-only tiers)
   description?: string;         // used when features is absent
   footerLine?: string;          // italic line at the bottom of the card
+  // When set, the tier card renders this string in place of the "£N"
+  // amount. Used for bespoke-priced tiers where the fee depends on a
+  // scoping call.
+  priceDisplay?: string;
+  // Diverts the LC picker to the enquiry form instead of case
+  // creation. The server also refuses to open a case on a tier
+  // marked this way — single source of truth is checked twice.
+  requiresEnquiry?: boolean;
 };
 
 export const PLAN_TIERS: PlanTier[] = [
@@ -143,7 +155,8 @@ export const PLAN_TIERS: PlanTier[] = [
     id: "vat_reg",
     group: "company",
     title: "VAT-registered company",
-    tagline: "Year-end accounts, corporation tax, and ongoing VAT returns.",
+    tagline:
+      "Year-end accounts, corporation tax, and ongoing VAT returns. For annual turnover under £200k.",
     priceGbp: 400,
     priceGbpSubtitle: "one-off",
     features: [
@@ -153,7 +166,28 @@ export const PLAN_TIERS: PlanTier[] = [
       "Flat fee, no surprises",
     ],
     description:
-      "For VAT registered trading companies. Covers year-end accounts, corporation tax, and each VAT return in the engagement period.",
+      "For VAT registered trading companies with annual turnover under £200k. Covers year-end accounts, corporation tax, and each VAT return in the engagement period.",
+  },
+  {
+    // Bespoke tier for larger VAT-registered companies. Does NOT share
+    // the flat-fee flow — picking it diverts to /client/new/enquiry so
+    // we can scope + price on a call. No engagement letter, no
+    // checkout, no onboarding checklist attach to this tier.
+    id: "vat_plus_accounts_200k",
+    group: "company",
+    title: "VAT Registered + Accounts (over £200k turnover)",
+    tagline:
+      "Larger-company engagement — we scope and price around your business.",
+    priceGbp: 0,
+    priceDisplay: "Bespoke",
+    requiresEnquiry: true,
+    features: [
+      "Full year-end accounts + corporation tax",
+      "VAT return filing for every period",
+      "Scoping call to confirm fit + bespoke flat fee",
+    ],
+    description:
+      "For VAT-registered companies with annual turnover over £200k. We quote per engagement after a short call.",
   },
 ];
 

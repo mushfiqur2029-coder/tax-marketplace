@@ -13,6 +13,7 @@ export type AdminTab =
   | "profile-changes"
   | "addon-requests"
   | "addon-catalog"
+  | "enquiries"
   | "profile";
 
 type TabDef = {
@@ -31,6 +32,7 @@ const TABS: TabDef[] = [
   { key: "profile-changes", label: "Profile changes", href: "/admin/profile-changes", countKey: "profileChanges" },
   { key: "addon-requests", label: "Add-on requests", href: "/admin/addon-requests", countKey: "addonRequests" },
   { key: "addon-catalog", label: "Add-on catalog", href: "/admin/addon-catalog" },
+  { key: "enquiries", label: "Enquiries", href: "/admin/enquiries", countKey: "enquiries" },
   { key: "profile", label: "Account", href: "/admin/profile" },
 ];
 
@@ -43,6 +45,7 @@ function tabFromPath(pathname: string | null): AdminTab {
   if (pathname.startsWith("/admin/profile-changes")) return "profile-changes";
   if (pathname.startsWith("/admin/addon-requests")) return "addon-requests";
   if (pathname.startsWith("/admin/addon-catalog")) return "addon-catalog";
+  if (pathname.startsWith("/admin/enquiries")) return "enquiries";
   if (pathname.startsWith("/admin/profile")) return "profile";
   return "dashboard";
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Segment, SegmentId } from "@/lib/segments";
 import {
   tiersForSegment,
@@ -49,6 +50,7 @@ export function NewCaseForm({
   earliestUrgent,
   urgentFeePence,
 }: Props) {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode | null>(null);
   const [segment, setSegment] = useState<SegmentId | null>(null);
   const [tier, setTier] = useState<TierId | null>(null);
@@ -115,10 +117,23 @@ export function NewCaseForm({
         ? !!tier
         : false;
 
+  // Enquiry-only tiers (bespoke LC) don't create a case — they jump
+  // straight to the enquiry form at /client/new/enquiry. The tier id
+  // rides as a query param so the form can prefill the service_key
+  // and show the right title.
+  const isEnquiryTier = !!selectedTier?.requiresEnquiry;
+
   return (
     <form
       action={async (fd) => {
         setError(null);
+        if (isEnquiryTier && selectedTier) {
+          // No server round-trip — the enquiry form owns submission.
+          router.push(
+            `/client/new/enquiry?service=${encodeURIComponent(selectedTier.id)}`,
+          );
+          return;
+        }
         setPending(true);
         const res = await action(fd);
         setPending(false);
@@ -290,7 +305,8 @@ export function NewCaseForm({
         </>
       ) : null}
 
-      {/* Limited company flow: three flat-fee service cards, no deadline. */}
+      {/* Limited company flow: three flat-fee service cards + one
+          bespoke enquiry tile, no deadline. */}
       {mode === "company" ? (
         <section>
           <SectionHeading
@@ -298,11 +314,11 @@ export function NewCaseForm({
             title="Choose your limited-company service"
           />
           <p className="mt-2 max-w-xl text-sm text-slate">
-            Each service is a flat fee covering the whole engagement period —
-            no quarterly or monthly billing. You&apos;ll sign the engagement
-            letter and pay once we&apos;ve confirmed the service that fits.
+            Flat-fee services (first three) sign the engagement letter and
+            pay once we&apos;ve confirmed the fit. Larger-company engagements
+            (bespoke) go through a short enquiry form instead.
           </p>
-          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {COMPANY_TIERS.map((t) => (
               <TierButton
                 key={t.id}
@@ -345,12 +361,18 @@ export function NewCaseForm({
           className="w-full sm:w-auto"
           disabled={pending || !canSubmit}
         >
-          {pending ? "Creating…" : "Continue"}
+          {pending
+            ? "Creating…"
+            : isEnquiryTier
+              ? "Continue to enquiry"
+              : "Continue"}
         </SLButton>
         <span className="text-sm text-slate">
-          {mode === "company"
-            ? "You'll sign the engagement letter, pay the fee, then upload the required documents."
-            : "You'll answer a few questions next. Payment is the final step."}
+          {isEnquiryTier
+            ? "Short enquiry form next. We'll get back to you within one business day to arrange a call."
+            : mode === "company"
+              ? "You'll sign the engagement letter, pay the fee, then upload the required documents."
+              : "You'll answer a few questions next. Payment is the final step."}
         </span>
       </div>
     </form>
@@ -457,40 +479,61 @@ function OrderSummary({
         Order summary
       </span>
       {selectedTier ? (
-        <dl className="mt-4 space-y-2.5 text-sm">
-          <div className="flex items-baseline justify-between">
-            <dt className="text-ink">{selectedTier.title}</dt>
-            <dd className="font-semibold text-ink">
-              £{selectedTier.priceGbp}
-            </dd>
-          </div>
-          {isUrgent ? (
+        selectedTier.requiresEnquiry ? (
+          <div className="mt-4 space-y-2 text-sm">
             <div className="flex items-baseline justify-between">
-              <dt className="text-ink">Urgent processing</dt>
-              <dd className="font-semibold text-ink">+£{urgentFeeGbp}</dd>
+              <span className="text-ink">{selectedTier.title}</span>
+              <span className="font-semibold text-ink">
+                {selectedTier.priceDisplay ?? "Bespoke"}
+              </span>
             </div>
-          ) : null}
-          <div className="flex items-baseline justify-between border-t border-line pt-2.5">
-            <dt
-              className="text-[11px] font-bold uppercase tracking-widest text-slate"
-              style={{ fontFamily: "var(--font-mono)" }}
-            >
-              Total
-            </dt>
-            <dd
-              className="text-lg font-bold text-ink"
-              style={{ fontFamily: "var(--font-heading)" }}
-            >
-              £{selectedTier.priceGbp + (isUrgent ? urgentFeeGbp : 0)}
-            </dd>
+            <p className="text-[11px] text-slate">
+              Price confirmed on a short scoping call. No upfront charge.
+            </p>
           </div>
-        </dl>
+        ) : (
+          <>
+            <dl className="mt-4 space-y-2.5 text-sm">
+              <div className="flex items-baseline justify-between">
+                <dt className="text-ink">{selectedTier.title}</dt>
+                <dd className="font-semibold text-ink">
+                  £{selectedTier.priceGbp}
+                </dd>
+              </div>
+              {isUrgent ? (
+                <div className="flex items-baseline justify-between">
+                  <dt className="text-ink">Urgent processing</dt>
+                  <dd className="font-semibold text-ink">+£{urgentFeeGbp}</dd>
+                </div>
+              ) : null}
+              <div className="flex items-baseline justify-between border-t border-line pt-2.5">
+                <dt
+                  className="text-[11px] font-bold uppercase tracking-widest text-slate"
+                  style={{ fontFamily: "var(--font-mono)" }}
+                >
+                  Total
+                </dt>
+                <dd
+                  className="text-lg font-bold text-ink"
+                  style={{ fontFamily: "var(--font-heading)" }}
+                >
+                  £{selectedTier.priceGbp + (isUrgent ? urgentFeeGbp : 0)}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-3 text-[11px] text-slate">
+              Charged at checkout. Nothing today.
+            </p>
+          </>
+        )
       ) : (
-        <p className="mt-4 text-xs text-slate">{emptyHint}</p>
+        <>
+          <p className="mt-4 text-xs text-slate">{emptyHint}</p>
+          <p className="mt-3 text-[11px] text-slate">
+            Charged at checkout. Nothing today.
+          </p>
+        </>
       )}
-      <p className="mt-3 text-[11px] text-slate">
-        Charged at checkout. Nothing today.
-      </p>
     </aside>
   );
 }
@@ -520,7 +563,11 @@ function TierCardBody({ tier: t }: { tier: PlanTier }) {
             £{t.originalGbp}
           </span>
         ) : null}
-        <span className="text-3xl font-bold text-ink">£{t.priceGbp}</span>
+        {t.priceDisplay ? (
+          <span className="text-3xl font-bold text-ink">{t.priceDisplay}</span>
+        ) : (
+          <span className="text-3xl font-bold text-ink">£{t.priceGbp}</span>
+        )}
         {t.priceSuffix ? (
           <span className="text-sm font-semibold text-slate">
             {t.priceSuffix}

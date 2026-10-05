@@ -18,7 +18,8 @@ export type NotificationType =
   | "vat_cycle_opened"
   | "vat_docs_submitted"
   | "vat_approval_ready"
-  | "vat_filed";
+  | "vat_filed"
+  | "service_enquiry";
 
 export type NotificationRow = {
   id: string;
