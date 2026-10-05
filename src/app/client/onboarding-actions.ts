@@ -76,7 +76,7 @@ export async function saveChecklistAnswersAction(
   formData: FormData,
 ): Promise<ActionResult> {
   try {
-    const { supabase, tier, admin } = await assertCaseInOnboarding(caseId);
+    const { supabase, tier } = await assertCaseInOnboarding(caseId);
 
     const visibleFields = fieldsForTier(tier);
     // Build a patch of just the fields present in this FormData —
@@ -163,7 +163,12 @@ export async function saveChecklistAnswersAction(
           "Server isn't configured to accept the authentication code yet. Contact support.",
         );
       }
-      const { error: rpcErr } = await admin.rpc("set_company_auth_code", {
+      // User-session supabase so the RPC's auth.uid()-based client-id
+      // check actually sees the signed-in user. admin.rpc would have
+      // auth.uid()=null, which the pre-0041 three-valued logic silently
+      // bypassed — 0041 hardens that path too, so this must be the
+      // user session now.
+      const { error: rpcErr } = await supabase.rpc("set_company_auth_code", {
         p_case_id: caseId,
         p_plain: encryptPlain,
         p_key: key,

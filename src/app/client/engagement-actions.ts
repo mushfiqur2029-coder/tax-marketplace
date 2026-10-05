@@ -326,7 +326,7 @@ export async function revealCompanyAuthCodeAction(
 
     const { data: caseRow } = await admin
       .from("cases")
-      .select("accountant_id")
+      .select("accountant_id, company_auth_code_encrypted")
       .eq("id", caseId)
       .single();
     if (!caseRow) throw new Error("Case not found.");
@@ -338,7 +338,26 @@ export async function revealCompanyAuthCodeAction(
       .single();
     const isAdmin = meRow?.role === "admin";
     const isAssigned = caseRow.accountant_id === user.id;
-    if (!isAdmin && !isAssigned) throw new Error("Not allowed.");
+    if (!isAdmin && !isAssigned) {
+      // Deliberately distinct wording from the "not saved yet" state so
+      // the UI shows the right thing. Not-saved is handled upstream by
+      // the authCodeAvailable prop ("(not provided by client yet)");
+      // this branch only fires for a user who isn't the assigned
+      // accountant or an admin.
+      throw new Error(
+        "Only the assigned accountant or an admin can reveal this code.",
+      );
+    }
+
+    // Short-circuit the ciphertext-null case with a distinct ok+null
+    // result so the UI can show "(not provided by client yet)" rather
+    // than silently falling back to the Reveal button again. In normal
+    // flow this is unreachable because the parent panel passes
+    // authCodeAvailable=false when the column is null and renders the
+    // not-provided string instead of the Reveal button.
+    if (caseRow.company_auth_code_encrypted == null) {
+      return { ok: true, data: null };
+    }
 
     const key = process.env.COMPANY_AUTH_CODE_KEY;
     if (!key) {
@@ -350,7 +369,11 @@ export async function revealCompanyAuthCodeAction(
       );
     }
 
-    const { data, error } = await admin.rpc("get_company_auth_code", {
+    // Call via the user-session supabase client, not admin — the RPC's
+    // authz uses auth.uid(), which is null for service-role sessions
+    // (admin). This was the real cause of "Not allowed." firing for
+    // the assigned accountant. See migration 0041.
+    const { data, error } = await supabase.rpc("get_company_auth_code", {
       p_case_id: caseId,
       p_key: key,
     });
