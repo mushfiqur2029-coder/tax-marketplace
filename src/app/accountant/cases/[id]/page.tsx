@@ -474,7 +474,13 @@ export default async function AccountantCaseDetailPage({
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+      {/* Case detail: two-column at xl+ where there's genuine room for a
+          side chat panel. Below xl (which covers phones, tablets, and
+          even typical laptops at 1024-1280px wide) the chat and
+          main-content columns stack full-width — chat used to drop to
+          ~400px at 1024 which was unusable, and the lg breakpoint fired
+          too eagerly for a side-column layout. */}
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
         <div className="space-y-6">
           {data.row.engagement_signed_at ? (
             <section className="card-sl p-6 sm:p-8">
