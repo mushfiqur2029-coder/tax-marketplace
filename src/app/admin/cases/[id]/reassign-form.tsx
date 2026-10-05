@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -18,6 +19,7 @@ export function ReassignForm({
   reassign: (accountantId: string, note: string | null) => Promise<ActionResult>;
 }) {
   void caseId;
+  const router = useRouter();
   const [selected, setSelected] = useState<string>(current ?? "");
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
@@ -40,8 +42,14 @@ export function ReassignForm({
         }
         start(async () => {
           const res = await reassign(selected, note || null);
-          if (res.ok) setSaved(true);
-          else setError(res.error);
+          if (res.ok) {
+            setSaved(true);
+            // The "· current" marker in the select next to the newly
+            // assigned accountant comes from a server-component prop —
+            // refresh so the option list reflects the new assignment
+            // without needing a manual reload.
+            router.refresh();
+          } else setError(res.error);
         });
       }}
     >

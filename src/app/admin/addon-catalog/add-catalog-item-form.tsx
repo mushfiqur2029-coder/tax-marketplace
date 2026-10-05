@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -14,6 +15,7 @@ export function AddCatalogItemForm({
     amountPence: number;
   }) => Promise<ActionResult>;
 }) {
+  const router = useRouter();
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -41,6 +43,7 @@ export function AddCatalogItemForm({
             setName("");
             setDescription("");
             setAmountGbp("");
+            router.refresh();
           } else {
             setError(res.error);
           }

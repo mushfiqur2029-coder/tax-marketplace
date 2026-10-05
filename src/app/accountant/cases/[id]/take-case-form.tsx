@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 
 type TakeResult = { ok: true } | { ok: false; error: string };
 
 export function TakeCaseForm({ take }: { take: () => Promise<TakeResult> }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -16,7 +18,12 @@ export function TakeCaseForm({ take }: { take: () => Promise<TakeResult> }) {
           setError(null);
           start(async () => {
             const res = await take();
-            if (!res.ok) setError(res.error);
+            if (res.ok) {
+              // Taking the case flips every panel on the page: the
+              // "Take this case" button goes away, status transition
+              // appears, the chat opens up. Refresh to re-render.
+              router.refresh();
+            } else setError(res.error);
           });
         }}
       >

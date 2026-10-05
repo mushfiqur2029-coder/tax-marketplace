@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 
 type ApproveResult = { ok: true } | { ok: false; error: string };
@@ -13,6 +14,7 @@ type Props = {
 // distinct client component so it can own its own pending/error state without
 // forcing the whole detail page into a client component.
 export function ApproveAndFileButton({ approve }: Props) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +48,12 @@ export function ApproveAndFileButton({ approve }: Props) {
             setError(null);
             start(async () => {
               const res = await approve();
-              if (!res.ok) setError(res.error);
+              if (res.ok) {
+                // Status moves to `filed`; the whole case detail page
+                // changes its CTA + progress bar + banner — refresh so
+                // the next view is accurate without a manual reload.
+                router.refresh();
+              } else setError(res.error);
             });
           }}
           className="shrink-0"

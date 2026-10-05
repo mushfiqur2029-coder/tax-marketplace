@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 
 // Personal flow uses the four-step state machine. Limited-company
@@ -43,6 +44,7 @@ export function StatusTransition({
   advance: (next: string) => Promise<AdvanceResult>;
   variant?: "personal" | "limited_company";
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const map = variant === "limited_company" ? NEXT_LIMITED_COMPANY : NEXT_PERSONAL;
@@ -63,7 +65,15 @@ export function StatusTransition({
             setError(null);
             start(async () => {
               const res = await advance(step.next);
-              if (!res.ok) setError(res.error);
+              if (!res.ok) {
+                setError(res.error);
+                return;
+              }
+              // Status pill + available next-transition button both
+              // read `current` from the parent server component —
+              // refresh so the whole case page reflects the new status
+              // without a manual reload.
+              router.refresh();
             });
           }}
         >

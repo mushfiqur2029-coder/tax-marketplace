@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -11,6 +12,7 @@ export function PayoutForm({
   requestId: string;
   markPaid: (requestId: string, fd: FormData) => Promise<ActionResult>;
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -22,7 +24,12 @@ export function PayoutForm({
         setError(null);
         start(async () => {
           const res = await markPaid(requestId, fd);
-          if (!res.ok) setError(res.error);
+          if (res.ok) {
+            // Request moves from Pending to Paid tab on this page;
+            // without refresh the row would stay stuck in Pending
+            // until the admin reloaded.
+            router.refresh();
+          } else setError(res.error);
         });
       }}
       className="flex flex-col items-stretch gap-2 sm:items-end"

@@ -422,11 +422,17 @@ export async function clearCasePeriodAction(
 // supporting doc) tagged with its requirement_key. Keeps the storage
 // shape consistent with the client's own tagged uploads; the UI tells
 // which came from whom via uploaded_by.
+export type UploadedAccountantDoc = {
+  id: string;
+  file_name: string;
+  uploaded_at: string;
+};
+
 export async function uploadAccountantDocumentAction(
   caseId: string,
   requirementKey: string,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<UploadedAccountantDoc>> {
   try {
     const { me, supabase, row } = await loadCaseForAccountant(caseId);
     assertNotSuspended(me.status, "upload documents");
@@ -478,20 +484,31 @@ export async function uploadAccountantDocumentAction(
       });
     if (upErr) throw new Error(upErr.message);
 
-    const { error: dbErr } = await supabase.from("case_documents").insert({
-      case_id: caseId,
-      uploaded_by: me.id,
-      file_url: path,
-      file_name: file.name,
-      requirement_key: requirementKey,
-    });
-    if (dbErr) {
+    const { data: inserted, error: dbErr } = await supabase
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_url: path,
+        file_name: file.name,
+        requirement_key: requirementKey,
+      })
+      .select("id, file_name, uploaded_at")
+      .single();
+    if (dbErr || !inserted) {
       await supabase.storage.from("case-documents").remove([path]);
-      throw new Error(dbErr.message);
+      throw new Error(dbErr?.message ?? "Insert didn't take.");
     }
 
     revalidatePath(`/accountant/cases/${caseId}`);
-    return { ok: true };
+    return {
+      ok: true,
+      data: {
+        id: inserted.id,
+        file_name: inserted.file_name,
+        uploaded_at: inserted.uploaded_at,
+      },
+    };
   } catch (e) {
     return fail(e);
   }
@@ -894,7 +911,7 @@ export async function editVatCycleDatesAction(
 export async function uploadVatReturnDocAction(
   cycleId: string,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<UploadedAccountantDoc>> {
   try {
     const admin = createAdminClient();
     const { data: cycle, error: cycErr } = await admin
@@ -940,21 +957,32 @@ export async function uploadVatReturnDocAction(
       });
     if (upErr) throw new Error(upErr.message);
 
-    const { error: dbErr } = await supabase.from("case_documents").insert({
-      case_id: cycle.case_id,
-      vat_cycle_id: cycleId,
-      uploaded_by: me.id,
-      file_url: path,
-      file_name: file.name,
-      requirement_key: ACCOUNTANT_VAT_RETURN_DOC_KEY,
-    });
-    if (dbErr) {
+    const { data: inserted, error: dbErr } = await supabase
+      .from("case_documents")
+      .insert({
+        case_id: cycle.case_id,
+        vat_cycle_id: cycleId,
+        uploaded_by: me.id,
+        file_url: path,
+        file_name: file.name,
+        requirement_key: ACCOUNTANT_VAT_RETURN_DOC_KEY,
+      })
+      .select("id, file_name, uploaded_at")
+      .single();
+    if (dbErr || !inserted) {
       await supabase.storage.from(VAT_BUCKET).remove([path]);
-      throw new Error(dbErr.message);
+      throw new Error(dbErr?.message ?? "Insert didn't take.");
     }
 
     revalidatePath(`/accountant/cases/${cycle.case_id}`);
-    return { ok: true };
+    return {
+      ok: true,
+      data: {
+        id: inserted.id,
+        file_name: inserted.file_name,
+        uploaded_at: inserted.uploaded_at,
+      },
+    };
   } catch (e) {
     return fail(e);
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -13,6 +14,7 @@ export function AddAdminForm({
     password: string;
   }) => Promise<ActionResult<string>>;
 }) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,6 +42,10 @@ export function AddAdminForm({
             setName("");
             setEmail("");
             setPassword("");
+            // "Current admins (N)" list on the left is server-rendered
+            // — refresh so the new admin appears without needing a
+            // manual reload.
+            router.refresh();
           } else {
             setError(res.error);
           }

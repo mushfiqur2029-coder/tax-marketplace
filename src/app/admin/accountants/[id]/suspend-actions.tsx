@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -22,6 +23,7 @@ export function SuspendActions({
   currentStatus,
   setStatus,
 }: Props) {
+  const router = useRouter();
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +36,12 @@ export function SuspendActions({
     setError(null);
     start(async () => {
       const res = await setStatus(accountantId, next, note || null);
-      if (res.ok) setNote("");
-      else setError(res.error);
+      if (res.ok) {
+        setNote("");
+        // Current-status prop drives the button label — refresh so it
+        // flips between Suspend ↔ Reinstate on the same click.
+        router.refresh();
+      } else setError(res.error);
     });
   };
 

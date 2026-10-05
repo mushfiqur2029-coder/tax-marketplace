@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 
 export function ApprovalActions({
@@ -14,6 +15,7 @@ export function ApprovalActions({
     note: string | null,
   ) => Promise<import("@/lib/action-result").ActionResult>;
 }) {
+  const router = useRouter();
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -22,8 +24,12 @@ export function ApprovalActions({
     setError(null);
     start(async () => {
       const res = await decide(accountantId, decision, note || null);
-      if (res.ok) setNote("");
-      else setError(res.error);
+      if (res.ok) {
+        setNote("");
+        // Re-render the page so the accountant moves from Pending to
+        // Approved/Rejected without needing a manual refresh.
+        router.refresh();
+      } else setError(res.error);
     });
   };
 

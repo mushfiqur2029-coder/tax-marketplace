@@ -15,8 +15,8 @@ import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { SLButton } from "@/components/sl-button";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
-import { DocumentUploader } from "@/components/case/document-uploader";
 import { DocumentList } from "./document-list";
+import { UploadSection } from "./upload-section";
 
 export default async function DocumentsPage({
   params,
@@ -63,7 +63,7 @@ export default async function DocumentsPage({
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_320px]">
         <div className="card-sl p-6 sm:p-8">
-          <DocumentUploader action={uploadBound} />
+          <UploadSection action={uploadBound} />
           <div className="mt-8">
             <h3
               className="text-sm font-semibold uppercase tracking-wider text-slate"

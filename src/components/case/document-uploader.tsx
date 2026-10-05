@@ -23,6 +23,14 @@ type Props = {
    * statement PDF slot.
    */
   accept?: string;
+  /**
+   * Fires after each individual file upload resolves ok. Lets a parent
+   * that renders a server-component document list below the uploader
+   * call router.refresh() so the new file appears immediately — the
+   * uploader itself can't call useRouter because it doesn't own the
+   * list, only the drop zone + chip strip.
+   */
+  onEachUploadSuccess?: () => void;
 };
 
 // Kept in sync with MAX in src/app/client/actions.ts (uploadDocumentAction).
@@ -78,6 +86,7 @@ export function DocumentUploader({
   multiple = true,
   hint,
   accept,
+  onEachUploadSuccess,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<PendingItem[]>([]);
@@ -135,6 +144,11 @@ export function DocumentUploader({
           // now visible in the documents list below, so the chip becomes
           // redundant confirmation noise otherwise.
           if (res.ok) {
+            // Fire first so a parent that renders a server-component
+            // list refreshes before the chip disappears — if we fired
+            // after the setTimeout the list would briefly be out of
+            // sync with "Uploaded" chip gone + file still missing.
+            onEachUploadSuccess?.();
             window.setTimeout(() => {
               setItems((prev) => prev.filter((p) => p.id !== item.id));
             }, 3000);
@@ -142,7 +156,7 @@ export function DocumentUploader({
         })();
       }
     },
-    [action, multiple, accept],
+    [action, multiple, accept, onEachUploadSuccess],
   );
 
   const removeItem = useCallback((id: string) => {

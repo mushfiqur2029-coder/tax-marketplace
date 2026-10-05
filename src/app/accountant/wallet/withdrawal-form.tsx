@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -19,6 +20,7 @@ export function WithdrawalRequestForm({
     accountNumber: string;
   }) => Promise<ActionResult>;
 }) {
+  const router = useRouter();
   const [accountName, setAccountName] = useState("");
   const [sortCode, setSortCode] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -40,6 +42,11 @@ export function WithdrawalRequestForm({
             setSortCode("");
             setAccountNumber("");
             setSaved(true);
+            // The Available / Pending stat cards and the "Withdrawal
+            // history" list above are all server-component data —
+            // refresh so the new request appears instantly instead of
+            // after a manual reload.
+            router.refresh();
           } else {
             setError(res.error);
           }

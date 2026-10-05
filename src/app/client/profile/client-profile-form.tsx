@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import { AvatarPicker } from "@/components/avatar-picker";
 
@@ -24,6 +25,7 @@ export function ClientProfileForm({
   pending,
   submit,
 }: Props) {
+  const router = useRouter();
   const [form, setForm] = useState<Current>(current);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [pendingSubmit, start] = useTransition();
@@ -47,6 +49,12 @@ export function ClientProfileForm({
           if (res.ok) {
             setOk(true);
             setAvatarFile(null);
+            // The "pending edit" banner at the top is driven by a
+            // server-component prop — refresh so it appears
+            // immediately after the first submit (before refresh the
+            // banner would stay hidden until a manual reload even
+            // though the request is already queued server-side).
+            router.refresh();
           } else {
             setError(res.error);
           }

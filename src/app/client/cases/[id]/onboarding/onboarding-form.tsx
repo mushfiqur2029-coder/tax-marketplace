@@ -35,7 +35,7 @@ type Props = {
   uploadDoc: (
     requirementKey: string,
     fd: FormData,
-  ) => Promise<ActionResult>;
+  ) => Promise<ActionResult<UploadedDoc>>;
   removeDoc: (docId: string) => Promise<ActionResult>;
   submit: () => Promise<ActionResult>;
 };
@@ -772,35 +772,31 @@ function UploadRow({
   uploadDoc: (
     requirementKey: string,
     fd: FormData,
-  ) => Promise<ActionResult>;
+  ) => Promise<ActionResult<UploadedDoc>>;
   removeDoc: (docId: string) => Promise<ActionResult>;
 }) {
-  const [removing, startRemove] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Per-doc removing flag. useTransition sets a single boolean for the
+  // whole slot, which would race if the user clicked multiple Remove
+  // buttons in quick succession. Tracking the removing set per-id lets
+  // each button self-disable the moment it's clicked and blocks a
+  // second click from re-firing the same action.
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
   // Adapter: DocumentUploader hands us a FormData per file. We delegate
   // to the parent's uploadDoc with this slot's requirement_key baked in,
-  // and on success flip the optimistic local state so the "already
-  // uploaded" list below and the progress-bar counter both update
-  // immediately. The uploader itself owns the drag-drop + chip UI.
+  // and on success the server returns the real doc row (id + name +
+  // uploaded_at), which we feed into the parent list so the Remove
+  // button can act on a real DB id without waiting for a refresh.
   const slotAction = useCallback(
     async (fd: FormData): Promise<ActionResult> => {
       setError(null);
       const res = await uploadDoc(field.id, fd);
       if (res.ok) {
-        const file = fd.get("file");
-        if (file instanceof File) {
-          onUploaded({
-            id: `optimistic-${Date.now()}-${Math.random()
-              .toString(36)
-              .slice(2, 8)}`,
-            file_name: file.name,
-            uploaded_at: new Date().toISOString(),
-          });
-        }
-      } else {
-        setError(res.error);
+        onUploaded(res.data);
+        return { ok: true };
       }
+      setError(res.error);
       return res;
     },
     [field.id, uploadDoc, onUploaded],
@@ -811,15 +807,33 @@ function UploadRow({
   const allowMultiple = !!field.multi;
 
   const handleRemove = (docId: string) => {
+    // Guard against repeat clicks before the server round-trip returns.
+    // setRemovingIds flips synchronously so the second click sees the
+    // id in the set and short-circuits before touching the network.
+    if (removingIds.has(docId)) return;
     setError(null);
-    startRemove(async () => {
-      const res = await removeDoc(docId);
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      onRemoved(docId);
+    setRemovingIds((prev) => {
+      const next = new Set(prev);
+      next.add(docId);
+      return next;
     });
+    void (async () => {
+      try {
+        const res = await removeDoc(docId);
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        onRemoved(docId);
+      } finally {
+        setRemovingIds((prev) => {
+          if (!prev.has(docId)) return prev;
+          const next = new Set(prev);
+          next.delete(docId);
+          return next;
+        });
+      }
+    })();
   };
 
   // Non-multi slots that already have a doc: hide the uploader until the
@@ -845,29 +859,32 @@ function UploadRow({
       )}
       {docs.length > 0 ? (
         <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
-          {docs.map((d) => (
-            <li
-              key={d.id}
-              className="flex items-center justify-between gap-3 px-4 py-2.5"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-ink">
-                  {d.file_name}
-                </div>
-                <div className="text-xs text-slate">
-                  {formatDateTime(d.uploaded_at)}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleRemove(d.id)}
-                disabled={removing || d.id.startsWith("optimistic-")}
-                className="text-xs font-semibold text-red-700 underline underline-offset-4 hover:text-red-900 disabled:opacity-50"
+          {docs.map((d) => {
+            const isRemoving = removingIds.has(d.id);
+            return (
+              <li
+                key={d.id}
+                className="flex items-center justify-between gap-3 px-4 py-2.5"
               >
-                Remove
-              </button>
-            </li>
-          ))}
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-ink">
+                    {d.file_name}
+                  </div>
+                  <div className="text-xs text-slate">
+                    {formatDateTime(d.uploaded_at)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(d.id)}
+                  disabled={isRemoving}
+                  className="text-xs font-semibold text-red-700 underline underline-offset-4 hover:text-red-900 disabled:opacity-50"
+                >
+                  {isRemoving ? "Removing…" : "Remove"}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {error ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -24,6 +25,7 @@ type UpdateFn = (
 ) => Promise<ActionResult>;
 
 export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
+  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(row.name);
   const [description, setDescription] = useState(row.description);
@@ -43,8 +45,10 @@ export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
         amountPence: pence,
         active: row.active, // save() only edits fields; keep active as-is
       });
-      if (res.ok) setEditing(false);
-      else setError(res.error);
+      if (res.ok) {
+        setEditing(false);
+        router.refresh();
+      } else setError(res.error);
     });
   };
 
@@ -57,7 +61,12 @@ export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
         amountPence: row.amount_pence,
         active: !row.active,
       });
-      if (!res.ok) setError(res.error);
+      if (res.ok) {
+        // Deactivate flips the pill colour + moves the row between
+        // "Active" and "Inactive" sections — needs a page re-render
+        // since both lists live in the server component.
+        router.refresh();
+      } else setError(res.error);
     });
   };
 

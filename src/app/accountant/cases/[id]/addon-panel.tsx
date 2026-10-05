@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 import { formatDateTime } from "@/lib/format";
@@ -155,6 +156,7 @@ function PresetForm({
   catalog: CatalogOption[];
   requestPreset: (presetKey: string) => Promise<ActionResult>;
 }) {
+  const router = useRouter();
   const [key, setKey] = useState<string>(catalog[0]?.key ?? "");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -178,8 +180,13 @@ function PresetForm({
         setOk(null);
         start(async () => {
           const res = await requestPreset(key);
-          if (res.ok) setOk("Sent to the client for payment.");
-          else setError(res.error);
+          if (res.ok) {
+            setOk("Sent to the client for payment.");
+            // Addons list on this page is server-rendered from
+            // case_addons — refresh so the newly requested row appears
+            // without needing a manual reload.
+            router.refresh();
+          } else setError(res.error);
         });
       }}
       className="space-y-3"
@@ -240,6 +247,7 @@ function CustomForm({
     amountPence: number;
   }) => Promise<ActionResult>;
 }) {
+  const router = useRouter();
   const [description, setDescription] = useState("");
   const [amountGbp, setAmountGbp] = useState("");
   const [pending, start] = useTransition();
@@ -258,6 +266,7 @@ function CustomForm({
             setOk("Sent to admin for approval.");
             setDescription("");
             setAmountGbp("");
+            router.refresh();
           } else {
             setError(res.error);
           }

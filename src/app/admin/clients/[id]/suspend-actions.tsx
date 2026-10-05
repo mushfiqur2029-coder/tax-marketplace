@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 
 type Props = {
@@ -17,6 +18,7 @@ type Props = {
 // If the client is currently active (or warned), the button suspends. If
 // they're suspended, the button reinstates.
 export function SuspendActions({ clientId, currentStatus, setStatus }: Props) {
+  const router = useRouter();
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +31,10 @@ export function SuspendActions({ clientId, currentStatus, setStatus }: Props) {
     setError(null);
     start(async () => {
       const res = await setStatus(clientId, next, note || null);
-      if (res.ok) setNote("");
-      else setError(res.error);
+      if (res.ok) {
+        setNote("");
+        router.refresh();
+      } else setError(res.error);
     });
   };
 

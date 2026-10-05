@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -13,6 +14,7 @@ export function ReviewActions({
   approve: (id: string, note: string | null) => Promise<ActionResult>;
   reject: (id: string, note: string | null) => Promise<ActionResult>;
 }) {
+  const router = useRouter();
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -21,8 +23,13 @@ export function ReviewActions({
     setError(null);
     start(async () => {
       const res = await fn(id, note || null);
-      if (res.ok) setNote("");
-      else setError(res.error);
+      if (res.ok) {
+        setNote("");
+        // Row moves from Pending to Reviewed on this page — refresh so
+        // the two lists re-render with the new split instead of leaving
+        // the just-reviewed row stuck in Pending.
+        router.refresh();
+      } else setError(res.error);
     });
   };
 

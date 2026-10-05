@@ -196,11 +196,17 @@ export async function saveChecklistAnswersAction(
 // Upload a file tagged with its requirement_key so the client UI and the
 // accountant view can group uploads by checklist slot.
 // -------------------------------------------------------------------------
+export type UploadedChecklistDoc = {
+  id: string;
+  file_name: string;
+  uploaded_at: string;
+};
+
 export async function uploadChecklistDocumentAction(
   caseId: string,
   requirementKey: string,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<UploadedChecklistDoc>> {
   try {
     const { me, supabase, tier } = await assertCaseInOnboarding(caseId);
 
@@ -232,20 +238,36 @@ export async function uploadChecklistDocumentAction(
       });
     if (upErr) throw new Error(upErr.message);
 
-    const { error: dbErr } = await supabase.from("case_documents").insert({
-      case_id: caseId,
-      uploaded_by: me.id,
-      file_url: path,
-      file_name: file.name,
-      requirement_key: requirementKey,
-    });
-    if (dbErr) {
+    // Return the inserted row's id so the client can key the Remove
+    // button on a real UUID. Previously the client fabricated an
+    // "optimistic-" id, which the Remove-disabled guard then kept
+    // greyed out until a page refresh — classic "button doesn't do
+    // anything" bug.
+    const { data: inserted, error: dbErr } = await supabase
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_url: path,
+        file_name: file.name,
+        requirement_key: requirementKey,
+      })
+      .select("id, file_name, uploaded_at")
+      .single();
+    if (dbErr || !inserted) {
       await supabase.storage.from(BUCKET).remove([path]);
-      throw new Error(dbErr.message);
+      throw new Error(dbErr?.message ?? "Insert didn't take.");
     }
 
     revalidatePath(`/client/cases/${caseId}/onboarding`);
-    return { ok: true };
+    return {
+      ok: true,
+      data: {
+        id: inserted.id,
+        file_name: inserted.file_name,
+        uploaded_at: inserted.uploaded_at,
+      },
+    };
   } catch (e) {
     return fail(e);
   }

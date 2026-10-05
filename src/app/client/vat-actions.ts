@@ -57,11 +57,17 @@ async function assertClientOnCycle(cycleId: string) {
 // -------------------------------------------------------------------------
 // Upload a VAT cycle document (client).
 // -------------------------------------------------------------------------
+export type UploadedVatCycleDoc = {
+  id: string;
+  file_name: string;
+  uploaded_at: string;
+};
+
 export async function uploadVatCycleDocAction(
   cycleId: string,
   requirementKey: string,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<UploadedVatCycleDoc>> {
   try {
     const { me, supabase, cycle } = await assertClientOnCycle(cycleId);
     if (cycle.status !== "awaiting_client_docs") {
@@ -103,21 +109,32 @@ export async function uploadVatCycleDocAction(
       });
     if (upErr) throw new Error(upErr.message);
 
-    const { error: dbErr } = await supabase.from("case_documents").insert({
-      case_id: cycle.case_id,
-      vat_cycle_id: cycleId,
-      uploaded_by: me.id,
-      file_url: path,
-      file_name: file.name,
-      requirement_key: requirementKey,
-    });
-    if (dbErr) {
+    const { data: inserted, error: dbErr } = await supabase
+      .from("case_documents")
+      .insert({
+        case_id: cycle.case_id,
+        vat_cycle_id: cycleId,
+        uploaded_by: me.id,
+        file_url: path,
+        file_name: file.name,
+        requirement_key: requirementKey,
+      })
+      .select("id, file_name, uploaded_at")
+      .single();
+    if (dbErr || !inserted) {
       await supabase.storage.from(BUCKET).remove([path]);
-      throw new Error(dbErr.message);
+      throw new Error(dbErr?.message ?? "Insert didn't take.");
     }
 
     revalidatePath(`/client/cases/${cycle.case_id}/vat/${cycleId}`);
-    return { ok: true };
+    return {
+      ok: true,
+      data: {
+        id: inserted.id,
+        file_name: inserted.file_name,
+        uploaded_at: inserted.uploaded_at,
+      },
+    };
   } catch (e) {
     return fail(e);
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import { AvatarPicker } from "@/components/avatar-picker";
 
@@ -25,6 +26,7 @@ export function AccountantProfileForm({
   pending,
   submit,
 }: Props) {
+  const router = useRouter();
   const [form, setForm] = useState<Current>(current);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [pendingSubmit, start] = useTransition();
@@ -48,6 +50,9 @@ export function AccountantProfileForm({
           if (res.ok) {
             setOk(true);
             setAvatarFile(null);
+            // Refresh so the "pending edit" banner at the top of the
+            // page appears immediately once the first submit lands.
+            router.refresh();
           } else {
             setError(res.error);
           }
