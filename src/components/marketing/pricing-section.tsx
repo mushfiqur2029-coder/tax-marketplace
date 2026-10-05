@@ -4,19 +4,18 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   COMPANY_TIERS,
+  PERSONAL_TIERS,
   type PlanTier,
 } from "@/lib/plans";
 
-// Marketing pricing block. Personal pricing used to show three fixed
-// tiers (basic / standard / premium); the restructure replaces that
-// with nine situation-specific flat fees (migration 0045), which don't
-// fit a three-column grid. The Personal side now routes to the picker
-// where visitors see all nine options with the suggestion banner. A
-// dedicated marketing block for the nine services is scheduled for P4.
-// Business shows the three limited-company flat-fee services (Dormant,
-// Non-VAT Registered, VAT Registered); the deeper breakdown lives on
+// Marketing pricing block. Personal shows all nine flat-fee services
+// (migration 0045) in a compact 3x3 grid — each card routes into the
+// picker (hint-less; the service pick itself is the choice). Business
+// shows the three limited-company flat-fee services (Dormant, Non-VAT
+// Registered, VAT Registered); the deeper breakdown lives on
 // /limited-company-tax-returns via CompanyServicesPricing.
 const BUSINESS: PlanTier[] = COMPANY_TIERS;
+const PERSONAL: PlanTier[] = PERSONAL_TIERS;
 
 export function PricingSection() {
   const [mode, setMode] = useState<"personal" | "business">("personal");
@@ -61,7 +60,7 @@ export function PricingSection() {
         </div>
 
         {mode === "personal" ? (
-          <PersonalPlaceholder />
+          <PersonalGrid tiers={PERSONAL} />
         ) : (
           <div className="pricing-grid">
             {BUSINESS.map((t) => (
@@ -74,32 +73,56 @@ export function PricingSection() {
   );
 }
 
-// Nine personal services don't fit the three-column grid. Point to
-// the picker instead; a bespoke 9-up marketing block lands in P4.
-function PersonalPlaceholder() {
+// Nine Personal services. Rendered compact (title + 1-line tagline +
+// price + Choose) so a visitor can scan the catalogue without the page
+// becoming a wall. The full feature list lives on the picker — this
+// is the browse surface, not the decision surface.
+function PersonalGrid({ tiers }: { tiers: PlanTier[] }) {
   return (
-    <div className="mx-auto mt-10 max-w-2xl rounded-2xl border border-line bg-paper p-8 text-center shadow-sm">
-      <h3
-        className="text-xl font-semibold text-ink"
+    <>
+      <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {tiers.map((t) => (
+          <PersonalCompactCard key={t.id} tier={t} />
+        ))}
+      </div>
+      <p
+        className="mt-6 text-center text-[11px] uppercase tracking-widest text-slate"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
+        Every service · one flat fee · no surprises
+      </p>
+      <div className="mt-6 flex justify-center">
+        <Link
+          href="/client/new?mode=personal"
+          className="btn-sl btn-sl-outline"
+        >
+          Compare all nine side by side
+        </Link>
+      </div>
+    </>
+  );
+}
+
+function PersonalCompactCard({ tier: t }: { tier: PlanTier }) {
+  return (
+    <div className="group relative flex flex-col rounded-2xl border border-line bg-paper p-6 shadow-sm transition hover:border-sky/50 hover:-translate-y-0.5">
+      <h3 className="text-base font-semibold text-ink">{t.title}</h3>
+      <p className="mt-1 text-xs text-slate line-clamp-2">{t.tagline}</p>
+      <div
+        className="mt-4 flex items-baseline gap-1"
         style={{ fontFamily: "var(--font-heading)" }}
       >
-        Nine flat-fee personal services
-      </h3>
-      <p className="mt-3 text-sm text-slate">
-        From £199 for sole traders, Uber drivers, gig workers, and freelancers
-        to £1,000 for complex foreign/international situations. Each one is a
-        one-off fee with a qualified accountant and our accuracy guarantee —
-        pick the service that fits your situation.
-      </p>
+        <span className="text-2xl font-bold text-ink">£{t.priceGbp}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-widest text-slate">
+          one-off
+        </span>
+      </div>
       <Link
         href="/client/new?mode=personal"
-        className="btn-sl btn-sl-primary mt-6 inline-flex"
+        className="btn-sl btn-sl-outline btn-sl-block mt-5"
       >
-        See all nine services
+        Choose
       </Link>
-      <p className="mt-4 text-[11px] uppercase tracking-widest text-slate" style={{ fontFamily: "var(--font-mono)" }}>
-        One flat fee · no surprises
-      </p>
     </div>
   );
 }

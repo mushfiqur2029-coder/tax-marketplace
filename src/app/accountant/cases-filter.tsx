@@ -5,7 +5,15 @@ import { useSearchParams } from "next/navigation";
 
 export type CasesView = "live" | "queue" | "completed" | "pending";
 export type UrgencyFilter = "all" | "safe" | "soon" | "urgent";
-export type IncomeFilter = "all" | "basic" | "standard" | "premium";
+// Fee bands replace the old Personal basic/standard/premium filter.
+// Twelve tiers (nine Personal + three LC flat-fee) don't fit a per-tier
+// dropdown, and accountants typically pick by complexity-of-work which
+// correlates with fee. Boundaries map to the current catalogue:
+//   under_300  — dormant £150, five Personal £199 tiers, landlord_small
+//                £250, cis £299
+//   300_to_600 — non_resident £399, landlord_multi £599
+//   over_600   — non_vat_reg £700, vat_reg £1000, complex_international £1000
+export type FeeFilter = "all" | "under_300" | "300_to_600" | "over_600";
 export type DateFilter = "all" | "7d" | "30d" | "90d";
 
 export type ViewCounts = Record<CasesView, number>;
@@ -24,11 +32,11 @@ const URGENCY: { key: UrgencyFilter; label: string }[] = [
   { key: "urgent", label: "≤ 3 days / overdue" },
 ];
 
-const INCOME: { key: IncomeFilter; label: string }[] = [
-  { key: "all", label: "Any income" },
-  { key: "basic", label: "£99 (Basic)" },
-  { key: "standard", label: "£149 (Standard)" },
-  { key: "premium", label: "£349 (Premium)" },
+const FEE: { key: FeeFilter; label: string }[] = [
+  { key: "all", label: "Any fee" },
+  { key: "under_300", label: "Under £300" },
+  { key: "300_to_600", label: "£300 to £600" },
+  { key: "over_600", label: "Over £600" },
 ];
 
 const DATES: { key: DateFilter; label: string }[] = [
@@ -41,13 +49,13 @@ const DATES: { key: DateFilter; label: string }[] = [
 export function AccountantCasesFilter({
   view,
   urgency,
-  income,
+  fee,
   date,
   counts,
 }: {
   view: CasesView;
   urgency: UrgencyFilter;
-  income: IncomeFilter;
+  fee: FeeFilter;
   date: DateFilter;
   counts?: ViewCounts;
 }) {
@@ -57,7 +65,7 @@ export function AccountantCasesFilter({
       <div className="flex flex-wrap gap-2">
         <FilterSelect current={urgency} options={URGENCY} paramKey="urgency" label="Urgency" />
         <FilterSelect current={date} options={DATES} paramKey="date" label="Date" />
-        <FilterSelect current={income} options={INCOME} paramKey="income" label="Income" />
+        <FilterSelect current={fee} options={FEE} paramKey="fee" label="Fee" />
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
-import { getTier, type TierId } from "@/lib/plans";
+import { getTier } from "@/lib/plans";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
@@ -14,7 +14,7 @@ import {
   AccountantCasesFilter,
   type CasesView,
   type UrgencyFilter,
-  type IncomeFilter,
+  type FeeFilter,
   type DateFilter,
   type ViewCounts,
 } from "./cases-filter";
@@ -48,7 +48,7 @@ export default async function AccountantDashboard({
   searchParams: Promise<{
     view?: string;
     urgency?: string;
-    income?: string;
+    fee?: string;
     date?: string;
   }>;
 }) {
@@ -61,9 +61,11 @@ export default async function AccountantDashboard({
     raw.urgency === "safe" || raw.urgency === "soon" || raw.urgency === "urgent"
       ? raw.urgency
       : "all";
-  const income: IncomeFilter =
-    raw.income === "basic" || raw.income === "standard" || raw.income === "premium"
-      ? raw.income
+  const fee: FeeFilter =
+    raw.fee === "under_300" ||
+    raw.fee === "300_to_600" ||
+    raw.fee === "over_600"
+      ? raw.fee
       : "all";
   const date: DateFilter =
     raw.date === "7d" || raw.date === "30d" || raw.date === "90d"
@@ -127,7 +129,17 @@ export default async function AccountantDashboard({
           : live;
 
   const filtered = pool.filter((c) => {
-    if (income !== "all" && (c.tier as TierId) !== income) return false;
+    if (fee !== "all") {
+      // Resolve to a GBP price via the plan catalogue. Tiers we no
+      // longer sell (vat_basic / vat_standard / vat_accounts, or
+      // retired basic/standard/premium) return null here — those cases
+      // bucket as unknown and are hidden under any specific fee filter.
+      const price = getTier(c.tier)?.priceGbp ?? null;
+      if (price == null) return false;
+      if (fee === "under_300" && price >= 300) return false;
+      if (fee === "300_to_600" && (price < 300 || price > 600)) return false;
+      if (fee === "over_600" && price <= 600) return false;
+    }
     if (urgency !== "all") {
       if (!c.deadline) return false;
       const days = Math.round(
@@ -159,7 +171,7 @@ export default async function AccountantDashboard({
     >
       <AccountantSuspensionBanner />
       <AccountantCasesRealtimeRefresh accountantId={me.id} />
-      <AccountantCasesFilter view={view} urgency={urgency} income={income} date={date} counts={viewCounts} />
+      <AccountantCasesFilter view={view} urgency={urgency} fee={fee} date={date} counts={viewCounts} />
 
       {filtered.length === 0 ? (
         pool.length === 0 ? (
@@ -207,13 +219,14 @@ function renderCard(c: Row) {
   const tier = getTier(c.tier);
   const isMine = !!c.accountant_id;
   const companyName = companyNameFromAnswers(c.intake_answers, c.segment);
-  // Limited-company cases now hit the queue the moment payment lands,
-  // not after the client submits onboarding — so some entries will
-  // still be mid-checklist. Flag that visibly so the accountant knows
-  // whether they're picking up a complete submission or stepping in to
-  // help a client who's partway through.
+  // Cases hit the queue the moment payment lands, not after the client
+  // submits onboarding — so some entries will still be mid-checklist.
+  // Flag that visibly so the accountant knows whether they're picking
+  // up a complete submission or stepping in to help a client who's
+  // partway through. Applies to both Personal and Limited Company.
   const onboardingInProgress =
-    c.segment === "limited_company_vat" && !c.onboarding_submitted_at;
+    (c.segment === "limited_company_vat" || c.segment === "personal") &&
+    !c.onboarding_submitted_at;
   return (
     <Link
       href={`/accountant/cases/${c.id}`}

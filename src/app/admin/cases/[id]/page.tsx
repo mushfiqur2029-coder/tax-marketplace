@@ -390,7 +390,8 @@ export default async function AdminCasePage({
           ) : null}
 
           {row.onboarding_submitted_at &&
-          row.segment === "limited_company_vat" ? (
+          (row.segment === "limited_company_vat" ||
+            row.segment === "personal") ? (
             <section className="card-sl p-6 sm:p-8">
               <h3
                 className="text-sm font-semibold uppercase tracking-wider text-slate"
@@ -820,9 +821,13 @@ export default async function AdminCasePage({
             </section>
           ) : null}
 
-          {/* Legacy intake — personal cases only. Limited-company data lives
-              in the Onboarding checklist card above. */}
-          {row.segment !== "limited_company_vat" ? (
+          {/* Legacy intake — retired personal segments only (first_time_filer /
+              self_employed / landlord / investor / cis / high_earner). The
+              new "personal" segment has an empty seg.intake and uses the
+              Onboarding checklist card above like LC. */}
+          {row.segment !== "limited_company_vat" &&
+          row.segment !== "personal" &&
+          seg.intake.length > 0 ? (
           <section className="card-sl p-6 sm:p-8">
             <h3
               className="text-sm font-semibold uppercase tracking-wider text-slate"

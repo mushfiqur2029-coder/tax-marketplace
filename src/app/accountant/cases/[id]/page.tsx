@@ -130,13 +130,17 @@ export default async function AccountantCaseDetailPage({
   // tagged docs + check whether the encrypted auth code column is
   // populated so the panel can show a "Reveal" button vs "(not provided)".
   const isCompany = data.segment.id === "limited_company_vat";
-  // Onboarding panel renders even when the client hasn't submitted yet,
-  // so the accountant can see what the client has partially filled in
-  // and help via chat. The panel header surfaces whether the checklist
-  // has been submitted or is still in progress.
-  const showOnboarding = isCompany && data.isMine;
+  const isPersonal = data.segment.id === "personal";
+  // Both Personal (new 9-up catalogue) and Limited Company flow have
+  // an onboarding checklist. Onboarding panel renders even when the
+  // client hasn't submitted yet, so the accountant can see what the
+  // client has partially filled in and help via chat. The panel header
+  // surfaces whether the checklist has been submitted or is still in
+  // progress.
+  const hasOnboardingChecklist = isCompany || isPersonal;
+  const showOnboarding = hasOnboardingChecklist && data.isMine;
   const onboardingInProgress =
-    isCompany && !data.row.onboarding_submitted_at;
+    hasOnboardingChecklist && !data.row.onboarding_submitted_at;
   type OnboardingDocRow = {
     id: string;
     file_name: string;
@@ -148,21 +152,34 @@ export default async function AccountantCaseDetailPage({
   let onboardingAuthCodeAvailable = false;
   if (showOnboarding) {
     const adminClient = createAdminClient();
-    const [{ data: docRows }, { data: cryptoRow }] = await Promise.all([
-      adminClient
+    // Personal cases have no encrypted auth code; only LC queries that
+    // column. Running the Promise.all pair unconditionally for Personal
+    // would waste a round trip and surface a stale "Reveal" button.
+    if (isCompany) {
+      const [{ data: docRows }, { data: cryptoRow }] = await Promise.all([
+        adminClient
+          .from("case_documents")
+          .select("id, file_name, file_url, uploaded_at, requirement_key")
+          .eq("case_id", id)
+          .not("requirement_key", "is", null)
+          .order("uploaded_at", { ascending: true }),
+        adminClient
+          .from("cases")
+          .select("company_auth_code_encrypted")
+          .eq("id", id)
+          .single(),
+      ]);
+      onboardingDocs = (docRows ?? []) as OnboardingDocRow[];
+      onboardingAuthCodeAvailable = !!cryptoRow?.company_auth_code_encrypted;
+    } else {
+      const { data: docRows } = await adminClient
         .from("case_documents")
         .select("id, file_name, file_url, uploaded_at, requirement_key")
         .eq("case_id", id)
         .not("requirement_key", "is", null)
-        .order("uploaded_at", { ascending: true }),
-      adminClient
-        .from("cases")
-        .select("company_auth_code_encrypted")
-        .eq("id", id)
-        .single(),
-    ]);
-    onboardingDocs = (docRows ?? []) as OnboardingDocRow[];
-    onboardingAuthCodeAvailable = !!cryptoRow?.company_auth_code_encrypted;
+        .order("uploaded_at", { ascending: true });
+      onboardingDocs = (docRows ?? []) as OnboardingDocRow[];
+    }
   }
 
   // Limited-company period + approval section data. Only the assigned

@@ -93,7 +93,9 @@ export function OnboardingAnswersPanel({
               className="mb-3 text-sm font-semibold text-ink"
               style={{ fontFamily: "var(--font-heading)" }}
             >
-              Section {section.key} — {section.title}
+              {section.key === "P"
+                ? section.title
+                : `Section ${section.key} — ${section.title}`}
             </h4>
             <dl className="divide-y divide-line">
               {fieldsHere.map((field) => (
