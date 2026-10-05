@@ -95,11 +95,17 @@ export function IntakeForm({ segment, initial, action }: Props) {
         </p>
       ) : null}
 
-      <div className="flex gap-3">
-        <SLButton type="submit" variant="primary" disabled={pending}>
-          {pending ? "Saving…" : "Continue"}
-        </SLButton>
-      </div>
+      {/* Primary CTA fills on mobile so there's a clear next action
+          without the hand reaching for a tiny inline button; auto-width
+          at sm+ where there's room to sit beside other actions. */}
+      <SLButton
+        type="submit"
+        variant="primary"
+        className="w-full sm:w-auto"
+        disabled={pending}
+      >
+        {pending ? "Saving…" : "Continue"}
+      </SLButton>
     </form>
   );
 }

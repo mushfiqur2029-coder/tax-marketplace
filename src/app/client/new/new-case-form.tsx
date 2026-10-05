@@ -334,10 +334,15 @@ export function NewCaseForm({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-4">
+      {/* Submit stack: button fills on mobile with the subtitle below;
+          at sm+ they sit beside each other to recover horizontal space.
+          Previous flex-wrap left Continue as a half-width pill on
+          phones with the subtitle wrapping awkwardly below it. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
         <SLButton
           type="submit"
           variant="primary"
+          className="w-full sm:w-auto"
           disabled={pending || !canSubmit}
         >
           {pending ? "Creating…" : "Continue"}
