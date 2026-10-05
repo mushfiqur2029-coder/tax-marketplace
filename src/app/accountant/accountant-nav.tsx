@@ -22,7 +22,7 @@ export function AccountantNav({ active }: { active?: AccountantTab }) {
         : "cases");
 
   return (
-    <nav className="flex gap-1 overflow-x-auto py-2">
+    <nav className="scroll-row flex gap-1 overflow-x-auto py-2">
       {TABS.map((t) => {
         const isActive = derived === t.key;
         return (

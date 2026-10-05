@@ -57,7 +57,7 @@ export function AdminNav({ active, counts }: Props) {
   const derived = active ?? tabFromPath(pathname);
 
   return (
-    <nav className="flex gap-1 overflow-x-auto py-2">
+    <nav className="scroll-row flex gap-1 overflow-x-auto py-2">
       {TABS.map((t) => {
         const isActive = derived === t.key;
         const count = t.countKey && counts ? counts[t.countKey] : 0;

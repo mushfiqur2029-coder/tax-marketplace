@@ -297,6 +297,19 @@
   }
   .input-sl::placeholder { color: var(--slate); opacity: 0.6; }
 
+  /* Horizontally scrolling tab/filter row with edge fade indicators.
+     Used by AdminNav + AccountantNav when the tab list exceeds the
+     viewport on mobile (e.g. admin's 9-tab bar at 390px). Hides the
+     native scrollbar (noisy on narrow screens) and masks both edges
+     with a short transparent fade so partial tabs read as "there's
+     more, scroll". */
+  .scroll-row {
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+  }
+  .scroll-row::-webkit-scrollbar { display: none; }
+
   /* Scroll reveal — transition lives on .in so applying .reveal snaps to hidden
      without a fade-out flash. Reveal component only adds .reveal to elements
      below the fold; above-fold elements go straight to .reveal.in with no
