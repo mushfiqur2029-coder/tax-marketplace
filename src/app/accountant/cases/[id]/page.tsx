@@ -794,10 +794,14 @@ export default async function AccountantCaseDetailPage({
             </section>
           ) : null}
 
-          {/* Legacy intake answers card — only renders for personal-flow
-              cases. Limited-company answers live in the Onboarding
-              checklist card above instead, structured by section. */}
-          {!isCompany ? (
+          {/* Legacy intake answers card — only renders for retired personal
+              segments (first_time_filer / self_employed / landlord /
+              investor / cis / high_earner) whose seg.intake has fields.
+              Limited Company answers live in the Onboarding checklist
+              card above instead. The new personal segment also uses the
+              Onboarding checklist card and has an empty seg.intake, so
+              both conditions keep this header off those cases. */}
+          {!isCompany && !isPersonal && seg.intake.length > 0 ? (
             <section className="card-sl p-6 sm:p-8">
               <h3
                 className="text-sm font-semibold uppercase tracking-wider text-slate"
