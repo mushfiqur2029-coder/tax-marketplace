@@ -9,16 +9,21 @@ import type { ActionResult } from "@/lib/action-result";
 type Props = {
   sign: (signatureDataUrl: string) => Promise<ActionResult>;
   fee: string;
+  // Set true while an upstream prerequisite is unmet (e.g. company
+  // identity not yet picked). The form still renders in full so the
+  // signature pad warms up, but the submit button stays disabled.
+  disabled?: boolean;
 };
 
-export function EngagementSignForm({ sign, fee }: Props) {
+export function EngagementSignForm({ sign, fee, disabled }: Props) {
   const router = useRouter();
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = !!signatureDataUrl && accepted && !pending;
+  const canSubmit =
+    !!signatureDataUrl && accepted && !pending && !disabled;
 
   return (
     <form

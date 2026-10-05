@@ -8,8 +8,17 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { renderEngagementLetterHtml } from "@/lib/engagement/letter-template";
-import { signEngagementAction } from "@/app/client/engagement-actions";
+import {
+  clearCompanyIdentityAction,
+  setCompanyIdentityAction,
+  signEngagementAction,
+} from "@/app/client/engagement-actions";
+import {
+  caseEyebrow,
+  companyNameFromAnswers,
+} from "@/lib/case/company-label";
 import { EngagementSignForm } from "./sign-form";
+import { CompanyIdentityCard } from "./company-identity-card";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +33,9 @@ export default async function EngagementPage({
   const supabase = await createClient();
   const { data: caseRow } = await supabase
     .from("cases")
-    .select("id, client_id, segment, tier, status, engagement_signed_at")
+    .select(
+      "id, client_id, segment, tier, status, engagement_signed_at, intake_answers",
+    )
     .eq("id", id)
     .single();
   if (!caseRow || caseRow.client_id !== me.id) notFound();
@@ -51,6 +62,14 @@ export default async function EngagementPage({
   const clientName = (profile?.name ?? me.name ?? me.email).trim();
   const clientPhone = (profile?.contact_number ?? "").trim();
 
+  const answers =
+    (caseRow as unknown as { intake_answers: Record<string, string> | null })
+      .intake_answers ?? {};
+  const companyName = (answers.company_name ?? "").trim();
+  const companyNumber = (answers.company_number ?? "").trim();
+  const companyStatus = (answers.company_status ?? "").trim();
+  const companyReady = !!companyName && !!companyNumber;
+
   const todayLong = new Date().toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
@@ -60,6 +79,8 @@ export default async function EngagementPage({
 
   const previewHtml = renderEngagementLetterHtml({
     effectiveDate: todayLong,
+    companyName,
+    companyNumber,
     clientName,
     clientEmail: me.email,
     clientPhone: clientPhone || "—",
@@ -73,12 +94,28 @@ export default async function EngagementPage({
     "use server";
     return signEngagementAction(id, dataUrl);
   };
+  const setIdentity = async (input: {
+    companyName: string;
+    companyNumber: string;
+    companyStatus: string | null;
+  }) => {
+    "use server";
+    return setCompanyIdentityAction(id, input);
+  };
+  const clearIdentity = async () => {
+    "use server";
+    return clearCompanyIdentityAction(id);
+  };
 
   return (
     <DashboardShell
-      eyebrow={`${tier.title} · £${tier.priceGbp}`}
+      eyebrow={caseEyebrow({
+        segmentTitle: tier.title,
+        tierTitle: `£${tier.priceGbp}`,
+        companyName: companyNameFromAnswers(answers, caseRow.segment),
+      })}
       title="Review and sign your engagement letter"
-      description="Read the full letter below, draw your signature at the bottom, and tick to accept. The signed PDF is emailed to you and we start work after payment."
+      description="Confirm your company, read the full letter below, draw your signature at the bottom, and tick to accept. The signed PDF is emailed to you and we start work after payment."
       name={me.name}
       email={me.email}
       role={me.role}
@@ -109,6 +146,36 @@ export default async function EngagementPage({
         </div>
       )}
 
+      <section className="card-sl mb-6 p-6 sm:p-8">
+        <h3
+          className="text-sm font-semibold uppercase tracking-wider text-slate"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          Your company
+        </h3>
+        <p className="mt-2 text-sm text-slate">
+          Pick your company so we can print its real name and number on
+          the engagement letter. Companies House is the source of truth;
+          manual entry is available if your company is brand-new and not
+          yet showing.
+        </p>
+        <div className="mt-4">
+          <CompanyIdentityCard
+            initial={
+              companyReady
+                ? {
+                    company_number: companyNumber,
+                    company_name: companyName,
+                    company_status: companyStatus || "unknown",
+                  }
+                : null
+            }
+            setIdentity={setIdentity}
+            clearIdentity={clearIdentity}
+          />
+        </div>
+      </section>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         {/* Letter preview — isolated from the dashboard styles via iframe
              srcDoc, since the engagement letter has its own typography and
@@ -138,8 +205,25 @@ export default async function EngagementPage({
             Ledger&rsquo;s records. After signing you&apos;ll go straight
             to the £{tier.priceGbp} checkout.
           </p>
+          {!companyReady ? (
+            <div
+              className="mt-4 rounded-lg border px-3 py-2 text-xs"
+              role="status"
+              style={{
+                background: "rgba(217,159,25,0.10)",
+                borderColor: "rgba(217,159,25,0.45)",
+                color: "#8a5c05",
+              }}
+            >
+              Pick your company above before signing.
+            </div>
+          ) : null}
           <div className="mt-5">
-            <EngagementSignForm sign={sign} fee={`£${tier.priceGbp}`} />
+            <EngagementSignForm
+              sign={sign}
+              fee={`£${tier.priceGbp}`}
+              disabled={!companyReady}
+            />
           </div>
         </aside>
       </div>

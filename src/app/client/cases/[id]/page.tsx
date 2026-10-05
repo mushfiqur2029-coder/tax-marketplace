@@ -23,6 +23,10 @@ import {
   getMessageAttachmentSignedUrl,
 } from "@/app/messages";
 import { createClient } from "@/lib/supabase/server";
+import {
+  caseEyebrow,
+  companyNameFromAnswers,
+} from "@/lib/case/company-label";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
@@ -252,7 +256,14 @@ export default async function CaseDetailPage({
 
   return (
     <DashboardShell
-      eyebrow={`${data.segment.title} · ${data.tier.title}`}
+      eyebrow={caseEyebrow({
+        segmentTitle: data.segment.title,
+        tierTitle: data.tier.title,
+        companyName: companyNameFromAnswers(
+          data.row.intake_answers,
+          data.row.segment,
+        ),
+      })}
       title={isDraft ? "Finish your submission" : "Case dashboard"}
       description={
         isDraft

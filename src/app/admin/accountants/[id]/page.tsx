@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
+import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Avatar } from "@/components/avatar";
 import { StatusPill } from "@/components/case/status-pill";
@@ -43,7 +44,7 @@ export default async function AdminAccountantDetail({
   const [{ data: cases }, { data: tx }, { data: reqs }] = await Promise.all([
     admin
       .from("cases")
-      .select("id, segment, tier, status, deadline, created_at, submitted_at, client_id, is_urgent")
+      .select("id, segment, tier, status, deadline, created_at, submitted_at, client_id, is_urgent, intake_answers")
       .eq("accountant_id", id)
       .order("created_at", { ascending: false }),
     admin
@@ -159,6 +160,10 @@ export default async function AdminAccountantDetail({
                 {cases.map((c) => {
                   const seg = getSegment(c.segment);
                   const tier = getTier(c.tier);
+                  const companyName = companyNameFromAnswers(
+                    c.intake_answers,
+                    c.segment,
+                  );
                   return (
                     <li key={c.id} className="px-4 py-3 text-sm">
                       <div className="flex items-start gap-3">
@@ -174,9 +179,14 @@ export default async function AdminAccountantDetail({
                           className="min-w-0 flex-1 hover:text-sky"
                         >
                           <div className="truncate font-semibold text-ink">
-                            {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
+                            {companyName ?? `${seg?.title ?? c.segment} · ${tier?.title ?? c.tier}`}
                           </div>
                           <div className="truncate text-xs text-slate">
+                            {companyName ? (
+                              <>
+                                {seg?.title ?? c.segment} · {tier?.title ?? c.tier} ·{" "}
+                              </>
+                            ) : null}
                             Client {clientEmail.get(c.client_id) ?? "."} · started{" "}
                             {formatDateTime(c.created_at)}
                           </div>

@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
+import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
@@ -40,7 +41,7 @@ export default async function ClientDashboard({
   const { data: cases } = await supabase
     .from("cases")
     .select(
-      "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, is_urgent",
+      "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, is_urgent, intake_answers",
     )
     .eq("client_id", me.id)
     .order("created_at", { ascending: false });
@@ -102,6 +103,10 @@ export default async function ClientDashboard({
           {filtered.map((c) => {
             const seg = getSegment(c.segment);
             const tier = getTier(c.tier);
+            const companyName = companyNameFromAnswers(
+              c.intake_answers,
+              c.segment,
+            );
             return (
               <li key={c.id}>
                 <Link
@@ -119,8 +124,24 @@ export default async function ClientDashboard({
                     {seg?.numeral ?? "•"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-ink">
+                    {companyName ? (
+                      <div className="truncate text-sm font-semibold text-ink">
+                        {companyName}
+                      </div>
+                    ) : null}
+                    <div
+                      className={
+                        "flex flex-wrap items-center gap-2 " +
+                        (companyName ? "mt-0.5" : "")
+                      }
+                    >
+                      <span
+                        className={
+                          companyName
+                            ? "text-xs text-slate"
+                            : "text-sm font-semibold text-ink"
+                        }
+                      >
                         {seg?.title ?? c.segment}
                       </span>
                       <span className="text-xs text-slate">·</span>

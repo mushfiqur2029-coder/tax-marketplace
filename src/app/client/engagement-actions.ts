@@ -10,6 +10,13 @@ import { renderEngagementLetterHtml } from "@/lib/engagement/letter-template";
 import { renderPdfFromHtml } from "@/lib/engagement/pdf";
 import { sendEmailViaAppsScript } from "@/lib/email";
 
+// Shape of the three company identity keys we store in intake_answers.
+// company_status is retained from the Companies House pick so downstream
+// surfaces (approval cards, admin case detail) can show "Active" /
+// "Dissolved" without re-querying. "unknown" means the client typed it
+// in manually and we didn't verify.
+const COMPANY_NUMBER_RE = /^(?:\d{8}|[A-Za-z]{2}\d{6})$/;
+
 const BUCKET = "case-documents";
 
 // Format a Date as "1 October 2026" (en-GB long date). Used for both the
@@ -53,6 +60,135 @@ function stripDataUrlPrefix(dataUrl: string): string | null {
 // a missing APPSSCRIPT_EMAIL_URL env in local dev just logs a skipped
 // line. Flag in README once the Script is deployed.
 // -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
+// setCompanyIdentityAction
+// Called from the engagement sign page as the client picks (or manually
+// enters) their Companies House details. Writes company_name,
+// company_number and the picked company_status into intake_answers via
+// the merge RPC so a concurrent save can't clobber other keys. Only
+// valid in the pre-sign draft state — once engagement is signed the
+// snapshot is baked into the PDF and must not change here.
+// -------------------------------------------------------------------------
+export async function setCompanyIdentityAction(
+  caseId: string,
+  input: {
+    companyName: string;
+    companyNumber: string;
+    companyStatus: string | null;
+  },
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("client");
+    const supabase = await createClient();
+
+    const { data: caseRow, error: caseErr } = await supabase
+      .from("cases")
+      .select("id, client_id, segment, status, engagement_signed_at")
+      .eq("id", caseId)
+      .single();
+    if (caseErr || !caseRow) throw new Error("Case not found.");
+    if (caseRow.client_id !== me.id) throw new Error("Not your case.");
+    if (caseRow.segment !== "limited_company_vat") {
+      throw new Error("This case doesn't use a company identity.");
+    }
+    if (caseRow.engagement_signed_at) {
+      throw new Error(
+        "The engagement letter is already signed — contact support to correct the company details.",
+      );
+    }
+    if (caseRow.status !== "draft") {
+      throw new Error("This case is past the engagement step.");
+    }
+
+    const name = input.companyName.trim();
+    const number = input.companyNumber.trim().toUpperCase();
+    if (!name) throw new Error("Enter the company name.");
+    if (!COMPANY_NUMBER_RE.test(number)) {
+      throw new Error(
+        "Company number must be 8 digits, or 2 letters followed by 6 digits (e.g. SC123456).",
+      );
+    }
+    const status = (input.companyStatus ?? "unknown").trim() || "unknown";
+
+    const { data: rows, error: rpcErr } = await supabase.rpc(
+      "merge_case_intake_answers",
+      {
+        p_case_id: caseId,
+        p_patch: {
+          company_name: name,
+          company_number: number,
+          company_status: status,
+        },
+      },
+    );
+    if (rpcErr) throw new Error(rpcErr.message);
+    if ((rows ?? 0) === 0) {
+      throw new Error(
+        "Save didn't take — the database refused the write. Reload the page and try again.",
+      );
+    }
+
+    revalidatePath(`/client/cases/${caseId}/engagement`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
+// clearCompanyIdentityAction
+// Companion to setCompanyIdentityAction — used by the widget's "Change"
+// button so the client can pick a different company before signing.
+// Deliberately writes empty-string values rather than deleting keys
+// because the merge RPC only merges (|| in SQL has no delete semantic).
+// -------------------------------------------------------------------------
+export async function clearCompanyIdentityAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("client");
+    const supabase = await createClient();
+
+    const { data: caseRow, error: caseErr } = await supabase
+      .from("cases")
+      .select("id, client_id, segment, status, engagement_signed_at")
+      .eq("id", caseId)
+      .single();
+    if (caseErr || !caseRow) throw new Error("Case not found.");
+    if (caseRow.client_id !== me.id) throw new Error("Not your case.");
+    if (caseRow.engagement_signed_at) {
+      throw new Error(
+        "The engagement letter is already signed — contact support to correct the company details.",
+      );
+    }
+    if (caseRow.status !== "draft") {
+      throw new Error("This case is past the engagement step.");
+    }
+
+    const { data: rows, error: rpcErr } = await supabase.rpc(
+      "merge_case_intake_answers",
+      {
+        p_case_id: caseId,
+        p_patch: {
+          company_name: "",
+          company_number: "",
+          company_status: "",
+        },
+      },
+    );
+    if (rpcErr) throw new Error(rpcErr.message);
+    if ((rows ?? 0) === 0) {
+      throw new Error(
+        "Clear didn't take — the database refused the write. Reload and try again.",
+      );
+    }
+    revalidatePath(`/client/cases/${caseId}/engagement`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function signEngagementAction(
   caseId: string,
   signatureDataUrl: string,
@@ -64,7 +200,7 @@ export async function signEngagementAction(
     const { data: caseRow, error: caseErr } = await supabase
       .from("cases")
       .select(
-        "id, client_id, segment, tier, status, engagement_signed_at",
+        "id, client_id, segment, tier, status, engagement_signed_at, intake_answers",
       )
       .eq("id", caseId)
       .single();
@@ -83,6 +219,28 @@ export async function signEngagementAction(
     const tier = getTier(caseRow.tier);
     if (!tier || tier.group !== "company") {
       throw new Error("Case has no company service selected.");
+    }
+
+    // Company identity must be captured before signing — the engagement
+    // letter PDF prints company_name and company_number at the top of
+    // the Parties block, and the Section A pre-fills on onboarding are
+    // sourced from these two keys. Without them the letter is unsigned-
+    // able and Section A would be editable (surprise).
+    const ans =
+      (caseRow as unknown as {
+        intake_answers: Record<string, string> | null;
+      }).intake_answers ?? {};
+    const companyName = (ans.company_name ?? "").trim();
+    const companyNumber = (ans.company_number ?? "").trim().toUpperCase();
+    if (!companyName || !companyNumber) {
+      throw new Error(
+        "Pick your company from Companies House (or enter it manually) before signing.",
+      );
+    }
+    if (!COMPANY_NUMBER_RE.test(companyNumber)) {
+      throw new Error(
+        "Stored company number is in the wrong format. Click Change and re-enter it.",
+      );
     }
 
     // Pull the client's profile for snapshot. Phone can legitimately be
@@ -107,6 +265,8 @@ export async function signEngagementAction(
     let pdfBytes: Uint8Array;
     const letterHtml = renderEngagementLetterHtml({
       effectiveDate: signDate,
+      companyName,
+      companyNumber,
       clientName,
       clientEmail: me.email,
       clientPhone: clientPhone || "—",

@@ -5,6 +5,10 @@ import {
   uploadDocumentAction,
   deleteDocumentAction,
 } from "@/app/client/actions";
+import {
+  caseEyebrow,
+  companyNameFromAnswers,
+} from "@/lib/case/company-label";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
@@ -37,7 +41,14 @@ export default async function DocumentsPage({
 
   return (
     <DashboardShell
-      eyebrow={`${data.segment.title} · ${data.tier.title}`}
+      eyebrow={caseEyebrow({
+        segmentTitle: data.segment.title,
+        tierTitle: data.tier.title,
+        companyName: companyNameFromAnswers(
+          data.row.intake_answers,
+          data.row.segment,
+        ),
+      })}
       title="Upload your documents"
       description="Bank-level secure storage. Add what you have now. you can add more after payment."
       name={data.me.name}

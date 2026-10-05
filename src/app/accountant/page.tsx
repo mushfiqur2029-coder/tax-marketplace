@@ -3,6 +3,7 @@ import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
 import { getTier, type TierId } from "@/lib/plans";
+import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -35,6 +36,7 @@ type Row = {
   deadline: string | null;
   is_urgent: boolean;
   onboarding_submitted_at: string | null;
+  intake_answers: Record<string, string> | null;
 };
 
 // "Live" = cases actively being worked on right now.
@@ -84,7 +86,7 @@ export default async function AccountantDashboard({
     supabase
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at",
+        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at, intake_answers",
       )
       .eq("status", "submitted")
       .eq("stripe_payment_status", "succeeded")
@@ -93,7 +95,7 @@ export default async function AccountantDashboard({
     supabase
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at",
+        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at, intake_answers",
       )
       .eq("accountant_id", me.id)
       .order("created_at", { ascending: false }),
@@ -204,6 +206,7 @@ function renderCard(c: Row) {
   const seg = getSegment(c.segment);
   const tier = getTier(c.tier);
   const isMine = !!c.accountant_id;
+  const companyName = companyNameFromAnswers(c.intake_answers, c.segment);
   // Limited-company cases now hit the queue the moment payment lands,
   // not after the client submits onboarding — so some entries will
   // still be mid-checklist. Flag that visibly so the accountant knows
@@ -226,8 +229,24 @@ function renderCard(c: Row) {
         {seg?.numeral ?? "."}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-ink">
+        {companyName ? (
+          <div className="truncate text-sm font-semibold text-ink">
+            {companyName}
+          </div>
+        ) : null}
+        <div
+          className={
+            "flex flex-wrap items-center gap-2 " +
+            (companyName ? "mt-0.5" : "")
+          }
+        >
+          <span
+            className={
+              companyName
+                ? "text-xs text-slate"
+                : "text-sm font-semibold text-ink"
+            }
+          >
             {seg?.title ?? c.segment}
           </span>
           <span className="text-xs text-slate">.</span>

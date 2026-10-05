@@ -20,6 +20,10 @@ import {
 } from "@/app/messages";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
+import {
+  caseEyebrow,
+  companyNameFromAnswers,
+} from "@/lib/case/company-label";
 import { AccountantSuspensionBanner } from "@/app/accountant/suspension-banner";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -446,7 +450,14 @@ export default async function AccountantCaseDetailPage({
 
   return (
     <DashboardShell
-      eyebrow={`${data.segment.title} · ${data.tier.title}`}
+      eyebrow={caseEyebrow({
+        segmentTitle: data.segment.title,
+        tierTitle: data.tier.title,
+        companyName: companyNameFromAnswers(
+          data.row.intake_answers,
+          data.row.segment,
+        ),
+      })}
       title={data.isMine ? "Case dashboard" : "New case in the queue"}
       description={
         data.isMine

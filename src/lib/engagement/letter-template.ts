@@ -4,6 +4,12 @@ import path from "node:path";
 
 export type EngagementLetterFields = {
   effectiveDate: string;      // e.g. "1 October 2026"
+  // Captured on the engagement page before signing. Empty string for
+  // legacy cases that signed before the Companies House lookup landed —
+  // rendered as "—" rather than skipping the row, so the PDF layout
+  // stays stable across versions.
+  companyName: string;
+  companyNumber: string;      // 8 chars, Companies House format
   clientName: string;
   clientEmail: string;
   clientPhone: string;
@@ -218,9 +224,11 @@ export function renderEngagementLetterHtml(
 
   <h3>Parties involved with this engagement</h3>
   <dl class="meta">
-    <dt>Client Name</dt><dd>${esc(f.clientName)}</dd>
-    <dt>Client Email</dt><dd>${esc(f.clientEmail)}</dd>
-    <dt>Client Number</dt><dd>${esc(f.clientPhone)}</dd>
+    <dt>Company Name</dt><dd>${esc(f.companyName) || "—"}</dd>
+    <dt>Company Number</dt><dd>${esc(f.companyNumber) || "—"}</dd>
+    <dt>Director Name</dt><dd>${esc(f.clientName)}</dd>
+    <dt>Director Email</dt><dd>${esc(f.clientEmail)}</dd>
+    <dt>Director Number</dt><dd>${esc(f.clientPhone)}</dd>
     <dt>Accountants</dt><dd>NAFH ACCOUNTANTS LTD</dd>
     <dt>Platform</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
     <dt>Trading Name</dt><dd>Sterling Ledger</dd>

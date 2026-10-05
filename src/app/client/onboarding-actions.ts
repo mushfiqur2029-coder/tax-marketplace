@@ -90,6 +90,14 @@ export async function saveChecklistAnswersAction(
     for (const field of visibleFields) {
       if (field.kind === "upload") continue; // uploads live in case_documents
 
+      // Company identity is set at engagement sign and is immutable from
+      // onboarding. Silently drop any attempt to overwrite — the UI
+      // renders them read-only, so hitting this path means a bypass
+      // attempt and we don't want to leak either way.
+      if (field.id === "company_name" || field.id === "company_number") {
+        continue;
+      }
+
       const raw = formData.get(field.id);
       if (raw == null) continue; // not in this submit
       const value = String(raw).trim();

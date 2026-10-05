@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
+import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { setClientStatusAction } from "@/app/admin/actions";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
@@ -52,7 +53,7 @@ export default async function AdminClientDetail({
   const { data: cases } = await admin
     .from("cases")
     .select(
-      "id, segment, tier, status, stripe_payment_status, stripe_payment_id, deadline, created_at, submitted_at, accountant_id, is_urgent, urgent_fee_pence",
+      "id, segment, tier, status, stripe_payment_status, stripe_payment_id, deadline, created_at, submitted_at, accountant_id, is_urgent, urgent_fee_pence, intake_answers",
     )
     .eq("client_id", id)
     .order("created_at", { ascending: false });
@@ -162,6 +163,10 @@ export default async function AdminClientDetail({
                 {rows.map((c) => {
                   const seg = getSegment(c.segment);
                   const tier = getTier(c.tier);
+                  const companyName = companyNameFromAnswers(
+                    c.intake_answers,
+                    c.segment,
+                  );
                   return (
                     <li key={c.id} className="px-4 py-3 text-sm">
                       <div className="flex items-start gap-3">
@@ -177,9 +182,14 @@ export default async function AdminClientDetail({
                           className="min-w-0 flex-1 hover:text-sky"
                         >
                           <div className="truncate font-semibold text-ink">
-                            {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
+                            {companyName ?? `${seg?.title ?? c.segment} · ${tier?.title ?? c.tier}`}
                           </div>
                           <div className="truncate text-xs text-slate">
+                            {companyName ? (
+                              <>
+                                {seg?.title ?? c.segment} · {tier?.title ?? c.tier} ·{" "}
+                              </>
+                            ) : null}
                             {c.accountant_id
                               ? <>Accountant {accEmail.get(c.accountant_id) ?? "."}</>
                               : "Unassigned"}

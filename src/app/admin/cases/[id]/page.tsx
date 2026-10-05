@@ -5,6 +5,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import {
+  caseEyebrow,
+  companyNameFromAnswers,
+} from "@/lib/case/company-label";
+import {
   sendMessageAction,
   uploadMessageAttachmentAction,
   getMessageAttachmentSignedUrl,
@@ -319,7 +323,11 @@ export default async function AdminCasePage({
 
   return (
     <DashboardShell
-      eyebrow={`${seg.title} · ${tier.title}`}
+      eyebrow={caseEyebrow({
+        segmentTitle: seg.title,
+        tierTitle: tier.title,
+        companyName: companyNameFromAnswers(row.intake_answers, row.segment),
+      })}
       title="Case oversight"
       description={`Client ${client?.email ?? "."} · Accountant ${acc?.email ?? "unassigned"}`}
       name={me.name}

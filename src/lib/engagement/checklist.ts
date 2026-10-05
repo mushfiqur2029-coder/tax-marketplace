@@ -98,6 +98,27 @@ export const CHECKLIST_SECTIONS: ChecklistSectionDef[] = [
 export const CHECKLIST_FIELDS: ChecklistField[] = [
   // ---------------- Section A: Company Details ----------------
   {
+    id: "company_name",
+    section: "A",
+    label: "Company Name",
+    hint: "Exactly as it appears on the Companies House register.",
+    kind: "text",
+    requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
+  },
+  {
+    id: "company_number",
+    section: "A",
+    label: "Company Number",
+    hint: "8 characters from Companies House — either 8 digits or 2 letters + 6 digits (e.g. SC123456).",
+    kind: "text",
+    requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
+    pattern: {
+      regex: "^(?:\\d{8}|[A-Za-z]{2}\\d{6})$",
+      message:
+        "Company number must be 8 digits, or 2 letters followed by 6 digits (e.g. SC123456).",
+    },
+  },
+  {
     id: "company_auth_code",
     section: "A",
     label: "Company Authentication Code",

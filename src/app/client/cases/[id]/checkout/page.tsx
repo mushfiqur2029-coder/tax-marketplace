@@ -2,6 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loadClientCase } from "@/lib/case";
 import { startCheckoutAction } from "@/app/client/actions";
+import {
+  caseEyebrow,
+  companyNameFromAnswers,
+} from "@/lib/case/company-label";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
@@ -47,7 +51,14 @@ export default async function CheckoutPage({
 
   return (
     <DashboardShell
-      eyebrow={`${data.segment.title} · ${data.tier.title}`}
+      eyebrow={caseEyebrow({
+        segmentTitle: data.segment.title,
+        tierTitle: data.tier.title,
+        companyName: companyNameFromAnswers(
+          data.row.intake_answers,
+          data.row.segment,
+        ),
+      })}
       title="Review and pay"
       description="Your case is queued to accountants the moment payment succeeds."
       name={data.me.name}

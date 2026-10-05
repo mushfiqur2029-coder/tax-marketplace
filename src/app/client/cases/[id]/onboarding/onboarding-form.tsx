@@ -185,7 +185,28 @@ export function OnboardingForm({
             </h2>
           </div>
           <div className="space-y-5">
+            {/* Section A opens with the Company identity captured at
+                engagement sign — read-only here. Rendered as a single
+                locked card so the client doesn't try to re-type details
+                that are already baked into the signed PDF. */}
+            {section.key === "A" ? (
+              <CompanyIdentityReadonly
+                name={answers.company_name ?? ""}
+                number={answers.company_number ?? ""}
+                status={answers.company_status ?? "unknown"}
+              />
+            ) : null}
             {bySection(section.key).map((field) => {
+              // Skip the two company identity fields in the normal loop
+              // — they're rendered above as a locked block. The entries
+              // still live in CHECKLIST_FIELDS so progress math and
+              // the required-count submit guard treat them normally.
+              if (
+                field.id === "company_name" ||
+                field.id === "company_number"
+              ) {
+                return null;
+              }
               const required = field.requiredFor.includes(tierId);
               if (field.kind === "upload") {
                 return (
@@ -338,6 +359,84 @@ export function OnboardingForm({
 }
 
 // ---------------- Field rows ----------------
+
+// Section A opener. Company Name + Number were captured at engagement
+// sign and baked into the PDF, so they are not editable here — if the
+// client needs a correction it goes through support (the engagement
+// letter would need re-issuing anyway).
+function CompanyIdentityReadonly({
+  name,
+  number,
+  status,
+}: {
+  name: string;
+  number: string;
+  status: string;
+}) {
+  const statusLabel = companyStatusText(status);
+  const hasAny = !!name || !!number;
+  return (
+    <div className="rounded-xl border border-line bg-paper p-4">
+      <div
+        className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
+        Company (locked)
+      </div>
+      {hasAny ? (
+        <>
+          <div className="mt-1 text-base font-semibold text-ink">
+            {name || "—"}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate">
+            <span
+              className="rounded bg-cloud px-1.5 py-0.5 font-semibold text-ink"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              {number || "—"}
+            </span>
+            {statusLabel ? (
+              <span
+                className="rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                style={{
+                  background:
+                    status.toLowerCase() === "active"
+                      ? "rgba(19,217,160,0.14)"
+                      : "rgba(217,159,25,0.14)",
+                  color:
+                    status.toLowerCase() === "active" ? "#0E9E77" : "#8a5c05",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {statusLabel}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-3 text-[11px] text-slate">
+            Captured when you signed the engagement letter. Contact support
+            if either value is wrong — the engagement letter would need to
+            be re-issued.
+          </p>
+        </>
+      ) : (
+        <p className="mt-2 text-sm text-slate">
+          Company details aren&apos;t set on this case. If you reached
+          this screen without signing the engagement letter, contact
+          support.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function companyStatusText(s: string): string {
+  const t = s.trim().toLowerCase();
+  if (!t) return "";
+  if (t === "unknown") return "Unverified";
+  if (t === "active") return "Active";
+  if (t === "dissolved") return "Dissolved";
+  return t.replace(/-/g, " ");
+}
 
 function FieldLabel({
   label,

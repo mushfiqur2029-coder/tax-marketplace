@@ -3,6 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  caseEyebrow,
+  companyNameFromAnswers,
+} from "@/lib/case/company-label";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
@@ -120,7 +124,11 @@ export default async function OnboardingPage({
 
   return (
     <DashboardShell
-      eyebrow={`${tier.title} · £${tier.priceGbp}`}
+      eyebrow={caseEyebrow({
+        segmentTitle: tier.title,
+        tierTitle: `£${tier.priceGbp}`,
+        companyName: companyNameFromAnswers(answers, caseRow.segment),
+      })}
       title="Your onboarding checklist"
       description="Fill in each required item below. You can save progress as you go — nothing is sent to an accountant until you click Submit at the bottom."
       name={me.name}

@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
+import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -56,7 +57,7 @@ export default async function AdminDashboard({
     admin
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, client_id, accountant_id, is_urgent",
+        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, client_id, accountant_id, is_urgent, intake_answers",
       )
       .order("created_at", { ascending: false }),
     admin.from("users").select("id", { count: "exact", head: true }).eq("role", "client"),
@@ -232,6 +233,10 @@ export default async function AdminDashboard({
             {filteredCases.map((c) => {
               const seg = getSegment(c.segment);
               const tier = getTier(c.tier);
+              const companyName = companyNameFromAnswers(
+                c.intake_answers,
+                c.segment,
+              );
               return (
                 <li key={c.id}>
                   <Link
@@ -248,8 +253,24 @@ export default async function AdminDashboard({
                       {seg?.numeral ?? "•"}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-ink">
+                      {companyName ? (
+                        <div className="truncate text-sm font-semibold text-ink">
+                          {companyName}
+                        </div>
+                      ) : null}
+                      <div
+                        className={
+                          "flex flex-wrap items-center gap-2 " +
+                          (companyName ? "mt-0.5" : "")
+                        }
+                      >
+                        <span
+                          className={
+                            companyName
+                              ? "text-xs text-slate"
+                              : "text-sm font-semibold text-ink"
+                          }
+                        >
                           {seg?.title ?? c.segment}
                         </span>
                         <span className="text-xs text-slate">·</span>
