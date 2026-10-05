@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Segment, SegmentId } from "@/lib/segments";
 import {
-  tiersForSegment,
+  PERSONAL_TIERS,
   COMPANY_TIERS,
   type PlanTier,
   type TierId,
@@ -13,122 +12,80 @@ import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
-  // Full segment catalogue. The wizard filters it down based on the top-
-  // level Personal / Limited Company split before showing it to the user.
-  segments: Segment[];
   // On success the action redirects (never resolves normally). If it does
   // resolve, it returned an error which we render inline.
   action: (fd: FormData) => Promise<ActionResult>;
-  // YYYY-MM-DD strings, computed server-side in Europe/London with UK bank
-  // holidays excluded. Used as the picker's `min` and as helper copy.
-  // Only used in the Personal flow; Limited Company has no deadline step.
-  earliestStandard: string;
-  earliestUrgent: string;
-  urgentFeePence: number;
+  // Pre-selected top-level mode from the URL (?mode=personal|company).
+  // Marketing CTAs link straight into the right side so the user doesn't
+  // have to click twice.
+  initialMode?: Mode | null;
+  // Soft hint keyed on the originating marketing page. Shown as an
+  // info banner above the Personal tile grid; never auto-selects.
+  hint?: PersonalHint | null;
 };
 
 type Mode = "personal" | "company";
 
-// Pretty format a YYYY-MM-DD string as "Mon 6 Oct 2026".
-function formatDay(ymd: string): string {
-  if (!ymd) return "";
-  const [y, m, d] = ymd.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
+// Keys match the marketing page slugs we route from.
+export type PersonalHint =
+  | "first-time-filers"
+  | "self-employed"
+  | "landlords"
+  | "investors"
+  | "high-earners"
+  | "cis-construction";
 
-export function NewCaseForm({
-  segments,
-  action,
-  earliestStandard,
-  earliestUrgent,
-  urgentFeePence,
-}: Props) {
+const HINT_COPY: Record<PersonalHint, string> = {
+  "first-time-filers":
+    "First Self Assessment? Most first-timers pick Sole trader / self-employed or a Landlord option. All nine tiers include the same accurate preparation and accountant sign-off.",
+  "self-employed":
+    "Self-employed? Pick Sole trader / self-employed for general work, or one of the specialist tiers (Uber, delivery, CIS) if that fits closer.",
+  landlords:
+    "Letting UK property? Landlord (1-2 properties) covers most situations. Portfolio owners pick Landlord (multiple). Living overseas? Non-resident landlord handles NRLS.",
+  investors:
+    "Investment income or dividends? Freelancer / consultant covers dividends and side income. For foreign investment positions or treaty questions, pick Complex foreign / international.",
+  "high-earners":
+    "Higher-rate income from multiple sources? Freelancer / consultant fits most of these. If foreign residence or treaty questions apply, Complex foreign / international is the right pick.",
+  "cis-construction":
+    "CIS subcontractor filing? Pick CIS subcontractors — most workers are owed a refund and we reconcile every deduction.",
+};
+
+export function NewCaseForm({ action, initialMode = null, hint = null }: Props) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode | null>(null);
-  const [segment, setSegment] = useState<SegmentId | null>(null);
+  const [mode, setMode] = useState<Mode | null>(initialMode);
   const [tier, setTier] = useState<TierId | null>(null);
-  const [deadline, setDeadline] = useState<string>("");
-  const [isUrgent, setIsUrgent] = useState<boolean>(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const personalSegments = useMemo(
-    () => segments.filter((s) => s.id !== "limited_company_vat"),
-    [segments],
-  );
+  const selectedTier = useMemo<PlanTier | null>(() => {
+    if (!tier) return null;
+    const pool = mode === "company" ? COMPANY_TIERS : PERSONAL_TIERS;
+    return pool.find((t) => t.id === tier) ?? null;
+  }, [mode, tier]);
 
-  const tiers = useMemo(() => tiersForSegment(segment), [segment]);
-  const selectedTier = useMemo(
-    () => tiers.find((t) => t.id === tier) ?? null,
-    [tiers, tier],
-  );
-
-  const minDate = isUrgent ? earliestUrgent : earliestStandard;
-  const urgentFeeGbp = urgentFeePence / 100;
-
-  // When the user flips the top-level mode, clear downstream choices so the
+  // When the user flips the top-level mode, clear the tier so the
   // wrong-side state can't leak into the form submission.
   const onPickMode = (next: Mode) => {
     setMode(next);
     setTier(null);
-    setDeadline("");
-    setIsUrgent(false);
     setError(null);
-    if (next === "company") {
-      // Only one segment on the company side; pin it now so the submit path
-      // doesn't need extra branching.
-      setSegment("limited_company_vat");
-    } else {
-      setSegment(null);
-    }
   };
 
-  // When the urgent toggle flips off, snap any too-early date back to
-  // empty so the picker doesn't quietly submit an invalid value.
-  const onToggleUrgent = (next: boolean) => {
-    setIsUrgent(next);
-    const newMin = next ? earliestUrgent : earliestStandard;
-    if (deadline && deadline < newMin) {
-      setDeadline("");
-    }
-  };
-
-  const handleSegment = (nextId: SegmentId) => {
-    setSegment(nextId);
-    const nextTiers = tiersForSegment(nextId);
-    const stillValid = tier ? nextTiers.some((t) => t.id === tier) : false;
-    if (!stillValid) {
-      const featured = nextTiers.find((t) => t.featured);
-      setTier(featured?.id ?? nextTiers[0]?.id ?? null);
-    }
-  };
-
-  const canSubmit =
-    mode === "personal"
-      ? !!segment && !!tier && !!deadline
-      : mode === "company"
-        ? !!tier
-        : false;
+  const canSubmit = !!mode && !!tier;
 
   // Enquiry-only tiers (bespoke LC) don't create a case — they jump
-  // straight to the enquiry form at /client/new/enquiry. The tier id
-  // rides as a query param so the form can prefill the service_key
-  // and show the right title.
+  // straight to the enquiry form at /client/new/enquiry.
   const isEnquiryTier = !!selectedTier?.requiresEnquiry;
+
+  // Resolve the segment server-side from the tier; the form only
+  // needs to send mode + tier.
+  const segmentId = mode === "company" ? "limited_company_vat" : "personal";
 
   return (
     <form
       action={async (fd) => {
         setError(null);
         if (isEnquiryTier && selectedTier) {
-          // No server round-trip — the enquiry form owns submission.
           router.push(
             `/client/new/enquiry?service=${encodeURIComponent(selectedTier.id)}`,
           );
@@ -142,10 +99,8 @@ export function NewCaseForm({
       }}
       className="space-y-10"
     >
-      <input type="hidden" name="segment" value={segment ?? ""} />
+      <input type="hidden" name="segment" value={segmentId} />
       <input type="hidden" name="tier" value={tier ?? ""} />
-      <input type="hidden" name="deadline" value={deadline} />
-      <input type="hidden" name="is_urgent" value={isUrgent ? "true" : "false"} />
 
       {/* Step 1: top-level Personal vs Limited Company */}
       <section>
@@ -155,7 +110,7 @@ export function NewCaseForm({
             active={mode === "personal"}
             onClick={() => onPickMode("personal")}
             title="Personal"
-            tagline="Self Assessment for individuals, self-employed, landlords, CIS, investors, and high earners."
+            tagline="Self Assessment for individuals — nine flat-fee services by situation."
           />
           <ModeCard
             active={mode === "company"}
@@ -166,143 +121,50 @@ export function NewCaseForm({
         </div>
       </section>
 
-      {/* Personal flow: segment → tier → deadline */}
+      {/* Personal flow: 9-tile picker, flat fee, no deadline step. */}
       {mode === "personal" ? (
-        <>
-          <section>
-            <SectionHeading eyebrow="Step 2" title="Which best describes you?" />
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {personalSegments.map((s) => {
-                const active = segment === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => handleSegment(s.id)}
-                    aria-pressed={active}
-                    className={
-                      "card-sl group relative text-left transition p-6 " +
-                      (active
-                        ? "!border-sky/70 !shadow-[0_18px_38px_-18px_rgba(25,156,217,0.45)]"
-                        : "hover:border-sky/40 hover:-translate-y-0.5")
-                    }
-                  >
-                    <div
-                      className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl text-white text-lg font-bold"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, var(--navy), var(--sky))",
-                      }}
-                    >
-                      {s.numeral}
-                    </div>
-                    <h3 className="text-base font-semibold text-ink">
-                      {s.title}
-                    </h3>
-                    <p className="mt-1 text-sm text-slate">{s.tagline}</p>
-                    {active ? (
-                      <span
-                        className="absolute right-4 top-4 inline-flex h-6 w-6 items-center justify-center rounded-full text-white text-xs font-bold"
-                        style={{
-                          background:
-                            "linear-gradient(135deg, var(--sky), var(--mint))",
-                        }}
-                      >
-                        ✓
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {segment ? (
-            <section>
-              <SectionHeading eyebrow="Step 3" title="Choose a plan" />
-              <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-                {tiers.map((t) => (
-                  <TierButton
-                    key={t.id}
-                    tier={t}
-                    active={tier === t.id}
-                    onClick={() => setTier(t.id)}
-                  />
-                ))}
-              </div>
-            </section>
+        <section>
+          <SectionHeading
+            eyebrow="Step 2"
+            title="Which best describes your situation?"
+          />
+          {hint && HINT_COPY[hint] ? (
+            <p
+              className="mt-4 rounded-xl border border-sky/30 bg-sky/5 p-4 text-sm text-ink"
+              role="note"
+            >
+              <span
+                className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-sky"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Suggestion
+              </span>
+              {HINT_COPY[hint]}
+            </p>
           ) : null}
-
-          <section>
-            <SectionHeading
-              eyebrow="Step 4"
-              title="When do you need it filed by?"
-            />
-            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-              <div className="space-y-4">
-                <label className="block max-w-xs">
-                  <span
-                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate"
-                    style={{ fontFamily: "var(--font-mono)" }}
-                  >
-                    Filing deadline
-                  </span>
-                  <input
-                    type="date"
-                    required
-                    className="input-sl"
-                    value={deadline}
-                    onChange={(e) => setDeadline(e.target.value)}
-                    min={minDate}
-                  />
-                </label>
-                <p className="text-xs text-slate">
-                  Earliest standard date:{" "}
-                  <span className="font-semibold text-ink">
-                    {formatDay(earliestStandard)}
-                  </span>
-                  . Need it sooner? Tick{" "}
-                  <span className="font-semibold">Urgent</span>.
-                </p>
-                <label
-                  className="flex items-start gap-3 rounded-xl border border-line bg-paper p-3 cursor-pointer transition hover:border-sky/50"
-                  style={
-                    isUrgent
-                      ? {
-                          background: "rgba(25,156,217,0.06)",
-                          borderColor: "rgba(25,156,217,0.55)",
-                        }
-                      : undefined
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={isUrgent}
-                    onChange={(e) => onToggleUrgent(e.target.checked)}
-                    className="mt-1 h-4 w-4 shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-ink">
-                      Urgent filing (+£{urgentFeeGbp})
-                    </div>
-                    <div className="mt-0.5 text-xs text-slate">
-                      Any date from the next working day.{" "}
-                      {isUrgent
-                        ? `Earliest urgent date: ${formatDay(earliestUrgent)}.`
-                        : "Ticking this widens the picker below."}
-                    </div>
-                  </div>
-                </label>
-              </div>
-              <OrderSummary
-                selectedTier={selectedTier}
-                isUrgent={isUrgent}
-                urgentFeeGbp={urgentFeeGbp}
-                emptyHint="Pick a plan above to see the total."
+          <p className="mt-4 max-w-xl text-sm text-slate">
+            Each service is a one-off flat fee. You&apos;ll sign a short
+            engagement letter next, then pay — once we have both, we upload
+            your documents and get started.
+          </p>
+          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {PERSONAL_TIERS.map((t) => (
+              <TierButton
+                key={t.id}
+                tier={t}
+                active={tier === t.id}
+                onClick={() => setTier(t.id)}
               />
-            </div>
-          </section>
-        </>
+            ))}
+          </div>
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+            <div />
+            <OrderSummary
+              selectedTier={selectedTier}
+              emptyHint="Pick a service above to see the fee."
+            />
+          </div>
+        </section>
       ) : null}
 
       {/* Limited company flow: three flat-fee service cards + one
@@ -332,8 +194,6 @@ export function NewCaseForm({
             <div />
             <OrderSummary
               selectedTier={selectedTier}
-              isUrgent={false}
-              urgentFeeGbp={urgentFeeGbp}
               emptyHint="Pick a service above to see the fee."
             />
           </div>
@@ -350,10 +210,6 @@ export function NewCaseForm({
         </p>
       ) : null}
 
-      {/* Submit stack: button fills on mobile with the subtitle below;
-          at sm+ they sit beside each other to recover horizontal space.
-          Previous flex-wrap left Continue as a half-width pill on
-          phones with the subtitle wrapping awkwardly below it. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
         <SLButton
           type="submit"
@@ -370,9 +226,7 @@ export function NewCaseForm({
         <span className="text-sm text-slate">
           {isEnquiryTier
             ? "Short enquiry form next. We'll get back to you within one business day to arrange a call."
-            : mode === "company"
-              ? "You'll sign the engagement letter, pay the fee, then upload the required documents."
-              : "You'll answer a few questions next. Payment is the final step."}
+            : "You'll sign the engagement letter, pay the fee, then upload the required documents."}
         </span>
       </div>
     </form>
@@ -461,13 +315,9 @@ function TierButton({
 
 function OrderSummary({
   selectedTier,
-  isUrgent,
-  urgentFeeGbp,
   emptyHint,
 }: {
   selectedTier: PlanTier | null;
-  isUrgent: boolean;
-  urgentFeeGbp: number;
   emptyHint: string;
 }) {
   return (
@@ -500,12 +350,6 @@ function OrderSummary({
                   £{selectedTier.priceGbp}
                 </dd>
               </div>
-              {isUrgent ? (
-                <div className="flex items-baseline justify-between">
-                  <dt className="text-ink">Urgent processing</dt>
-                  <dd className="font-semibold text-ink">+£{urgentFeeGbp}</dd>
-                </div>
-              ) : null}
               <div className="flex items-baseline justify-between border-t border-line pt-2.5">
                 <dt
                   className="text-[11px] font-bold uppercase tracking-widest text-slate"
@@ -517,7 +361,7 @@ function OrderSummary({
                   className="text-lg font-bold text-ink"
                   style={{ fontFamily: "var(--font-heading)" }}
                 >
-                  £{selectedTier.priceGbp + (isUrgent ? urgentFeeGbp : 0)}
+                  £{selectedTier.priceGbp}
                 </dd>
               </div>
             </dl>
@@ -602,6 +446,11 @@ function TierCardBody({ tier: t }: { tier: PlanTier }) {
         </ul>
       ) : t.description ? (
         <p className="mt-4 text-sm text-slate">{t.description}</p>
+      ) : null}
+      {t.footerLine ? (
+        <p className="mt-4 pt-3 border-t border-line text-[11px] italic text-slate">
+          {t.footerLine}
+        </p>
       ) : null}
     </>
   );

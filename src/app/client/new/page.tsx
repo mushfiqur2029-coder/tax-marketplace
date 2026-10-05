@@ -4,33 +4,43 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { redirect } from "next/navigation";
-import { SEGMENTS } from "@/lib/segments";
 import { createCaseAction } from "@/app/client/actions";
-import { NewCaseForm } from "./new-case-form";
-import {
-  earliestStandardDeadline,
-  earliestUrgentDeadline,
-  URGENT_FEE_PENCE,
-} from "@/lib/working-days";
+import { NewCaseForm, type PersonalHint } from "./new-case-form";
 
-export default async function NewCasePage() {
+type Mode = "personal" | "company";
+
+const HINT_KEYS: PersonalHint[] = [
+  "first-time-filers",
+  "self-employed",
+  "landlords",
+  "investors",
+  "high-earners",
+  "cis-construction",
+];
+
+export default async function NewCasePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string; hint?: string }>;
+}) {
   const me = await requireRole("client");
   // Suspended clients can't start new cases; kick them back to their
   // dashboard where the banner explains the state.
   if (me.status === "suspended") redirect("/client");
 
-  // Compute deadline bounds server-side so the picker can enforce them
-  // via the `min` attribute even before the form is submitted.
-  const [earliestStandard, earliestUrgent] = await Promise.all([
-    earliestStandardDeadline(),
-    earliestUrgentDeadline(),
-  ]);
+  const sp = await searchParams;
+  const initialMode: Mode | null =
+    sp.mode === "personal" || sp.mode === "company" ? sp.mode : null;
+  const hint: PersonalHint | null =
+    sp.hint && (HINT_KEYS as string[]).includes(sp.hint)
+      ? (sp.hint as PersonalHint)
+      : null;
 
   return (
     <DashboardShell
       eyebrow="New tax return"
-      title="Pick your situation and plan"
-      description="One flat fee, no surprises. Every plan includes a qualified accountant and our accuracy guarantee."
+      title="Pick your situation"
+      description="One flat fee, no surprises. Every service includes a qualified accountant and our accuracy guarantee."
       name={me.name}
       email={me.email}
       role={me.role}
@@ -38,11 +48,9 @@ export default async function NewCasePage() {
     >
       <ClientSuspensionBanner />
       <NewCaseForm
-        segments={SEGMENTS}
         action={createCaseAction}
-        earliestStandard={earliestStandard}
-        earliestUrgent={earliestUrgent}
-        urgentFeePence={URGENT_FEE_PENCE}
+        initialMode={initialMode}
+        hint={hint}
       />
       <p className="mt-8 text-sm text-slate">
         Changed your mind?{" "}

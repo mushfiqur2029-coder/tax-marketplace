@@ -39,7 +39,12 @@ export default async function EngagementPage({
     .eq("id", id)
     .single();
   if (!caseRow || caseRow.client_id !== me.id) notFound();
-  if (caseRow.segment !== "limited_company_vat") notFound();
+  if (
+    caseRow.segment !== "limited_company_vat" &&
+    caseRow.segment !== "personal"
+  ) {
+    notFound();
+  }
 
   // Already signed → send them to the next step. The sign page is one-
   // shot; coming back here after signing is almost certainly a stale
@@ -49,7 +54,51 @@ export default async function EngagementPage({
   }
 
   const tier = getTier(caseRow.tier);
-  if (!tier || tier.group !== "company") notFound();
+  if (!tier) notFound();
+
+  // Personal engagement letter + sign flow lands in P2. For now, show a
+  // "coming shortly" stub so the picker + case creation path is a clean,
+  // committable scaffold without a user-facing 404.
+  if (caseRow.segment === "personal") {
+    return (
+      <DashboardShell
+        eyebrow={`${tier.title} · £${tier.priceGbp}`}
+        title="Your case is created"
+        description="Thanks — we have your service pick."
+        name={me.name}
+        email={me.email}
+        role={me.role}
+        bell={<Bell userId={me.id} role={me.role} />}
+      >
+        <ClientSuspensionBanner />
+        <section className="card-sl p-6 sm:p-8 max-w-xl">
+          <h3 className="text-lg font-semibold text-ink">
+            Engagement letter is being set up
+          </h3>
+          <p className="mt-3 text-sm text-slate">
+            The engagement letter for Personal services is being
+            finalised. We&apos;ll notify you as soon as it&rsquo;s ready
+            to sign so you can continue to payment and upload your
+            documents.
+          </p>
+          <p className="mt-3 text-sm text-slate">
+            Nothing has been charged. Your case is held in draft until
+            the letter is ready.
+          </p>
+          <div className="mt-6">
+            <Link
+              href={`/client/cases/${id}`}
+              className="text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
+            >
+              Back to the case
+            </Link>
+          </div>
+        </section>
+      </DashboardShell>
+    );
+  }
+
+  if (tier.group !== "company") notFound();
 
   // Pull the profile for the on-screen preview so the letter the client
   // signs shows their real name/phone, not placeholders.

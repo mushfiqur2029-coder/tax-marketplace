@@ -1,7 +1,21 @@
 import type { SegmentId } from "./segments";
 
 export type TierId =
-  // Personal
+  // Personal — new 9-up flat-fee catalogue (migration 0045). Each tier
+  // targets a specific client situation; picking the tier IS the
+  // service choice, there is no additional segment step.
+  | "uber_driver"
+  | "cis_subcontractor"
+  | "sole_trader"
+  | "landlord_small"
+  | "non_resident_landlord"
+  | "gig_worker"
+  | "freelancer_consultant"
+  | "landlord_multi"
+  | "complex_international"
+  // Personal — retired tiers. Enum values stay in Postgres; the wizard
+  // filters them out and the server guard in createCaseAction rejects
+  // them. Kept in the union so legacy references still typecheck.
   | "basic"
   | "standard"
   | "premium"
@@ -51,78 +65,158 @@ export type PlanTier = {
   requiresEnquiry?: boolean;
 };
 
+// ---------- Personal (9 flat-fee services) ----------
+//
+// Shared feature line that every personal tier includes verbatim.
+const PERSONAL_BASE_FEATURE = "Prepared and filed Self Assessment, signed off by a qualified accountant";
+const PERSONAL_FOOTER = "Flat fee, no surprises.";
+
 export const PLAN_TIERS: PlanTier[] = [
-  // ---------- Personal ----------
   {
-    id: "basic",
+    id: "uber_driver",
     group: "personal",
-    title: "Prepared & Filed Accurately",
-    tagline: "Expert sign off, so you know it's right.",
-    priceGbp: 99,
-    originalGbp: 169,
-    saveGbp: 70,
+    title: "Uber / private-hire drivers",
+    tagline: "For Uber, Bolt, Addison Lee, and other private-hire drivers.",
+    priceGbp: 199,
     priceGbpSubtitle: "one-off",
-    heroLine: "Expert sign off, so you know it's right.",
     features: [
-      "Accountant prepares & files your Self Assessment",
-      "Accuracy Guarantee",
-      "Message your accountant during filing",
+      PERSONAL_BASE_FEATURE,
+      "Mileage and allowable vehicle costs reviewed with you",
+      "Platform fees, insurance, licensing claimed where allowable",
+      "Accuracy guarantee + accountant message during filing",
     ],
-    footerLine: "If your situation is straightforward, this is enough.",
+    footerLine: PERSONAL_FOOTER,
   },
   {
-    id: "standard",
+    id: "cis_subcontractor",
     group: "personal",
-    title: "Filed, Optimised & Protected",
-    tagline: "We find what you're owed, and protect you if HMRC asks questions.",
-    priceGbp: 149,
-    originalGbp: 249,
-    saveGbp: 100,
+    title: "CIS subcontractors",
+    tagline: "Reconcile your deductions and claim what HMRC owes you.",
+    priceGbp: 299,
     priceGbpSubtitle: "one-off",
-    featured: true,
-    heroLine:
-      "We find what you're owed, and protect you if HMRC asks questions.",
     features: [
-      "Everything in Prepared & Filed Accurately",
-      "Deduction & relief optimisation + strategic tax planning call",
-      "Full HMRC protection (audit + letter support)",
+      PERSONAL_BASE_FEATURE,
+      "CIS deductions reconciled and refund position calculated",
+      "Vehicle, tools, and materials claimed where allowable",
+      "Full HMRC letter + enquiry support",
     ],
-    footerLine:
-      "Most filers choose this, if you'd rather not leave money on the table.",
+    footerLine: PERSONAL_FOOTER,
   },
   {
-    id: "premium",
+    id: "sole_trader",
     group: "personal",
-    title: "Filed + a Year-Round Tax Partner",
-    tagline:
-      "An accountant on retainer, helping you stay on top of your tax position all year.",
-    priceGbp: 349,
-    originalGbp: 499,
-    saveGbp: 150,
+    title: "Sole trader / self-employed",
+    tagline: "Sole traders and freelancers — all your allowable expenses captured.",
+    priceGbp: 199,
     priceGbpSubtitle: "one-off",
-    heroLine:
-      "An accountant on retainer, helping you stay on top of your tax position all year.",
     features: [
-      "Everything in Filed, Optimised & Protected",
-      "Year-round access to your accountant",
-      "Annual tax efficiency review",
-      "HMRC agent representation",
+      PERSONAL_BASE_FEATURE,
+      "Trading income and allowable expenses captured in full",
+      "Cash-basis treatment where it suits your situation",
+      "Accuracy guarantee + accountant message during filing",
     ],
-    footerLine:
-      "If your situation is more complex, or you want year-round accountant support.",
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
+    id: "landlord_small",
+    group: "personal",
+    title: "Landlord (1-2 properties)",
+    tagline: "Rental income and allowable expenses, for one or two let properties.",
+    priceGbp: 250,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "Rental income and allowable expenses captured per property",
+      "Mortgage interest treated under the current rules",
+      "Repair vs improvement advice where it matters",
+    ],
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
+    id: "non_resident_landlord",
+    group: "personal",
+    title: "Non-resident landlord",
+    tagline: "Living abroad with UK property — NRLS treatment under current rules.",
+    priceGbp: 399,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "Non-Resident Landlord Scheme (NRLS) treatment included",
+      "Rental income, mortgage interest, and expenses captured",
+      "Guidance on withholding tax and gross-payment status",
+    ],
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
+    id: "gig_worker",
+    group: "personal",
+    title: "Delivery / gig workers",
+    tagline: "Deliveroo, Uber Eats, Amazon Flex, Just Eat — gig income done right.",
+    priceGbp: 199,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "Platform earnings and allowable expenses captured",
+      "Mileage and vehicle costs reviewed with you",
+      "Accuracy guarantee + accountant message during filing",
+    ],
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
+    id: "freelancer_consultant",
+    group: "personal",
+    title: "Freelancer / consultant",
+    tagline: "Freelance work, side projects, and consulting income in one return.",
+    priceGbp: 199,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "Freelance income and expenses captured in full",
+      "Dividends, interest, and other side income included",
+      "Accuracy guarantee + accountant message during filing",
+    ],
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
+    id: "landlord_multi",
+    group: "personal",
+    title: "Landlord (multiple properties)",
+    tagline: "Portfolio landlords — property-by-property and overall position.",
+    priceGbp: 599,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "Multi-property rental income and expenses captured",
+      "Mortgage interest treated under the current rules",
+      "Property-by-property profit/loss and tax position",
+    ],
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
+    id: "complex_international",
+    group: "personal",
+    title: "Complex foreign / international",
+    tagline: "Foreign income, multiple residencies, or treaty positions.",
+    priceGbp: 1000,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "Foreign income, remittance basis, and residency reviewed",
+      "Double taxation relief considered where applicable",
+      "Guidance on treaty positions and HMRC disclosures",
+    ],
+    footerLine: PERSONAL_FOOTER,
   },
 
-  // ---------- Limited company (3 self-serve flat-fee services) ----------
+  // ---------- Limited company (3 self-serve flat-fee services + bespoke) ----------
   //
-  // The three "services" from the Limited Company flow map 1:1 to a tier
-  // here. Picking the service IS picking the tier; there's no additional
+  // Picking the service IS picking the tier; there's no additional
   // plan-tier step for the company path. The 4th tier
   // (vat_plus_accounts_200k) is the bespoke "over £200k turnover"
   // enquiry flow — defined below but not sold as a flat fee.
   //
-  // Wallet credit (migration 0044) splits each fee 50/50 with the
-  // assigned accountant on case complete — keep the trigger's amounts
-  // in lockstep with these priceGbp values if either changes.
+  // Wallet credit splits each fee 50/50 with the assigned accountant on
+  // case complete (migration 0045 trigger).
   {
     id: "dormant",
     group: "company",
@@ -146,10 +240,6 @@ export const PLAN_TIERS: PlanTier[] = [
     tagline: "Full year-end accounts and corporation tax, done.",
     priceGbp: 700,
     priceGbpSubtitle: "one-off",
-    // No "Most chosen" badge on the limited-company tiles — the three
-    // services target different companies rather than offering better
-    // value at the same shape. The badge stays on the Personal path
-    // where tiers have a real "value" recommendation.
     features: [
       "Annual accounts prepared and filed at Companies House",
       "Corporation tax return (CT600) filed with HMRC",
@@ -210,6 +300,11 @@ export const PERSONAL_TIERS: PlanTier[] = PLAN_TIERS.filter(
 export const COMPANY_TIERS: PlanTier[] = PLAN_TIERS.filter(
   (t) => t.group === "company",
 );
+
+// Retired personal tiers. The old wizard offered these on top of a
+// segment; neither is sold anymore. Kept here so legacy references
+// still resolve to *something* if an admin opens an archived case.
+export const RETIRED_PERSONAL_TIER_IDS = ["basic", "standard", "premium"] as const;
 
 export function tiersForSegment(segmentId: SegmentId | null | undefined): PlanTier[] {
   if (segmentId === "limited_company_vat") return COMPANY_TIERS;

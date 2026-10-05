@@ -35,6 +35,11 @@ export type ServicePageData = {
   extraAfterPricing?: React.ReactNode;
   howHeading?: string;
   howSteps?: { n: number; title: string; body: string }[];
+  // Hero CTA override. Marketing pages for the 9-up Personal catalogue
+  // link straight into the picker with a soft hint so the suggestion
+  // banner shows for returning visitors. Default is /register for new
+  // signups.
+  primaryCta?: { href: string; label?: string };
 };
 
 export function ServicePage({ data }: { data: ServicePageData }) {
@@ -65,8 +70,11 @@ export function ServicePage({ data }: { data: ServicePageData }) {
                   {data.lede}
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
-                  <SLLink href="/register" variant="primary">
-                    Start your return
+                  <SLLink
+                    href={data.primaryCta?.href ?? "/register"}
+                    variant="primary"
+                  >
+                    {data.primaryCta?.label ?? "Start your return"}
                     <svg
                       width="16"
                       height="16"

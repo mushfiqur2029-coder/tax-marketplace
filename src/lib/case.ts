@@ -70,9 +70,11 @@ export type CaseData = {
   tier: PlanTier;
   docs: CaseDoc[];
   progress: {
-    // Personal-flow progress markers. Not applicable on limited-company
-    // cases (they short-circuit intake and documents via a different
-    // post-payment checklist that lands in Batch 3).
+    // Legacy personal-flow markers. Both Personal (new 9-up catalogue)
+    // and Limited Company now use the engagement → pay → onboarding
+    // chain; these fields stay for compat with retired-personal cases
+    // (none exist after the data wipe) and are always false for new
+    // Personal / Limited Company cases.
     intakeDone: boolean;
     hasDocs: boolean;
     paid: boolean;
@@ -88,9 +90,11 @@ export type CaseData = {
     periodDatesSet: boolean;
     // True once the client has submitted the second-stage docs.
     periodDocsSubmitted: boolean;
-    // What the client should do next on this case. "engagement",
-    // "onboarding", and "period_docs" are only ever emitted for
-    // limited-company cases.
+    // What the client should do next on this case. Both Personal (new
+    // 9-up) and Limited Company flow through engagement → checkout →
+    // onboarding → (period_docs for non-dormant LC) → done. "intake"
+    // and "documents" remain in the union for retired-personal
+    // compatibility but are never emitted now.
     nextStep:
       | "engagement"
       | "intake"
@@ -137,29 +141,28 @@ export async function loadClientCase(caseId: string): Promise<CaseData> {
     caseRow.period_start_date && caseRow.period_end_date
   );
   const periodDocsSubmitted = !!caseRow.period_docs_submitted_at;
-  const isCompany = caseRow.segment === "limited_company_vat";
-  // Dormant short-circuits the period-docs step entirely — there's no
-  // trading period to document.
+  // Both Personal (new 9-up catalogue) and Limited Company take the
+  // engagement → pay → onboarding chain. period_docs applies to
+  // non-dormant Limited Company only.
+  const isFlatFeeFlow =
+    caseRow.segment === "limited_company_vat" ||
+    caseRow.segment === "personal";
   const needsPeriodDocs =
-    isCompany && periodDocsApplyToTier(tier.id as TierId);
+    caseRow.segment === "limited_company_vat" &&
+    periodDocsApplyToTier(tier.id as TierId);
 
-  // Next-step calculation branches on the two flows. Personal: intake →
-  // documents → checkout. Limited-company: engagement → checkout →
-  // onboarding → period_docs (non-dormant only). For limited-company we
-  // deliberately keep intake / hasDocs out of the next-step chain since
-  // they don't apply (the per-service checklist is tracked via
-  // onboarding_submitted_at and period_docs_submitted_at).
   let nextStep: CaseData["progress"]["nextStep"];
-  if (isCompany) {
+  if (isFlatFeeFlow) {
     if (!engagementSigned) nextStep = "engagement";
     else if (!paid) nextStep = "checkout";
     else if (!onboardingSubmitted) nextStep = "onboarding";
     else if (needsPeriodDocs && !periodDocsSubmitted) nextStep = "period_docs";
     else nextStep = "done";
   } else {
-    if (!intakeDone) nextStep = "intake";
-    else if (!hasDocs) nextStep = "documents";
-    else if (!paid) nextStep = "checkout";
+    // Retired personal cases (none exist after the data wipe). The
+    // branch is dead but kept so loadClientCase cleanly handles any
+    // residual rows without a type assertion.
+    if (!paid) nextStep = "checkout";
     else nextStep = "done";
   }
 

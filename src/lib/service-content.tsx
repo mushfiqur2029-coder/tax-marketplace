@@ -4,6 +4,7 @@ import type { ServicePageData } from "@/components/marketing/service-page";
 // and design-reference/service-self-employed.html. Do not invent new copy.
 
 export const selfEmployedPage: ServicePageData = {
+  primaryCta: { href: "/client/new?mode=personal&hint=self-employed" },
   slug: "self-employed",
   breadcrumb: "Self-employed",
   eyebrow: "Self-employed tax",
@@ -60,6 +61,7 @@ export const selfEmployedPage: ServicePageData = {
 };
 
 export const landlordsPage: ServicePageData = {
+  primaryCta: { href: "/client/new?mode=personal&hint=landlords" },
   slug: "landlords",
   breadcrumb: "Landlords",
   eyebrow: "Landlord tax",
@@ -107,6 +109,7 @@ export const landlordsPage: ServicePageData = {
 };
 
 export const firstTimeFilersPage: ServicePageData = {
+  primaryCta: { href: "/client/new?mode=personal&hint=first-time-filers" },
   slug: "first-time-filers",
   breadcrumb: "First-time filers",
   eyebrow: "First tax return",
@@ -154,6 +157,7 @@ export const firstTimeFilersPage: ServicePageData = {
 };
 
 export const investorsPage: ServicePageData = {
+  primaryCta: { href: "/client/new?mode=personal&hint=investors" },
   slug: "investors",
   breadcrumb: "Investors",
   eyebrow: "Investor tax",
@@ -201,6 +205,7 @@ export const investorsPage: ServicePageData = {
 };
 
 export const highEarnersPage: ServicePageData = {
+  primaryCta: { href: "/client/new?mode=personal&hint=high-earners" },
   slug: "high-earners",
   breadcrumb: "High earners",
   eyebrow: "High earner tax",
@@ -295,6 +300,7 @@ export const expatsPage: ServicePageData = {
 };
 
 export const cisConstructionPage: ServicePageData = {
+  primaryCta: { href: "/client/new?mode=personal&hint=cis-construction" },
   slug: "cis-construction",
   breadcrumb: "CIS / Construction",
   eyebrow: "CIS tax",

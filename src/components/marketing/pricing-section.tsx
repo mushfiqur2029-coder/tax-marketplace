@@ -3,15 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
-  PERSONAL_TIERS,
   COMPANY_TIERS,
   type PlanTier,
 } from "@/lib/plans";
 
-// Marketing pricing block. Personal tiers come from PLAN_TIERS so the
-// homepage stays in lockstep with the client checkout flow. Business
-// shows the three limited-company flat-fee services (Dormant, Non-VAT
-// Registered, VAT Registered); the deeper breakdown lives on
+// Marketing pricing block. Personal pricing used to show three fixed
+// tiers (basic / standard / premium); the restructure replaces that
+// with nine situation-specific flat fees (migration 0045), which don't
+// fit a three-column grid. The Personal side now routes to the picker
+// where visitors see all nine options with the suggestion banner. A
+// dedicated marketing block for the nine services is scheduled for P4.
+// Business shows the three limited-company flat-fee services (Dormant,
+// Non-VAT Registered, VAT Registered); the deeper breakdown lives on
 // /limited-company-tax-returns via CompanyServicesPricing.
 const BUSINESS: PlanTier[] = COMPANY_TIERS;
 
@@ -57,64 +60,46 @@ export function PricingSection() {
           </button>
         </div>
 
-        <div className="pricing-grid">
-          {mode === "personal"
-            ? PERSONAL_TIERS.map((t) => <PersonalCard key={t.id} tier={t} />)
-            : BUSINESS.map((t) => <BusinessCard key={t.id} tier={t} />)}
-        </div>
+        {mode === "personal" ? (
+          <PersonalPlaceholder />
+        ) : (
+          <div className="pricing-grid">
+            {BUSINESS.map((t) => (
+              <BusinessCard key={t.id} tier={t} />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
 }
 
-function PersonalCard({ tier: t }: { tier: PlanTier }) {
+// Nine personal services don't fit the three-column grid. Point to
+// the picker instead; a bespoke 9-up marketing block lands in P4.
+function PersonalPlaceholder() {
   return (
-    <div className={"price-card" + (t.featured ? " featured" : "")}>
-      {t.featured ? <span className="price-badge">Most chosen</span> : null}
-      <h3>{t.title}</h3>
-      <div className="mt-2 flex items-baseline gap-2">
-        {t.originalGbp ? (
-          <span
-            className="text-lg font-semibold text-slate line-through decoration-slate/60"
-            style={{ fontFamily: "var(--font-heading)" }}
-          >
-            £{t.originalGbp}
-          </span>
-        ) : null}
-        <span className="price !mb-0">£{t.priceGbp}</span>
-        {t.saveGbp ? (
-          <span
-            className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider"
-            style={{
-              background: "rgba(19, 217, 160, 0.14)",
-              color: "#0E9E77",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            Save £{t.saveGbp}
-          </span>
-        ) : null}
-      </div>
-      {t.heroLine ? <p className="tier-sub mt-3">{t.heroLine}</p> : null}
-      {t.features && t.features.length > 0 ? (
-        <ul>
-          {t.features.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      ) : null}
-      {t.footerLine ? (
-        <p className="mb-4 -mt-2 text-xs italic text-slate">{t.footerLine}</p>
-      ) : null}
-      <Link
-        href="/register"
-        className={
-          "btn-sl btn-sl-block " +
-          (t.featured ? "btn-sl-primary" : "btn-sl-outline")
-        }
+    <div className="mx-auto mt-10 max-w-2xl rounded-2xl border border-line bg-paper p-8 text-center shadow-sm">
+      <h3
+        className="text-xl font-semibold text-ink"
+        style={{ fontFamily: "var(--font-heading)" }}
       >
-        Choose {t.title}
+        Nine flat-fee personal services
+      </h3>
+      <p className="mt-3 text-sm text-slate">
+        From £199 for sole traders, Uber drivers, gig workers, and freelancers
+        to £1,000 for complex foreign/international situations. Each one is a
+        one-off fee with a qualified accountant and our accuracy guarantee —
+        pick the service that fits your situation.
+      </p>
+      <Link
+        href="/client/new?mode=personal"
+        className="btn-sl btn-sl-primary mt-6 inline-flex"
+      >
+        See all nine services
       </Link>
+      <p className="mt-4 text-[11px] uppercase tracking-widest text-slate" style={{ fontFamily: "var(--font-mono)" }}>
+        One flat fee · no surprises
+      </p>
     </div>
   );
 }

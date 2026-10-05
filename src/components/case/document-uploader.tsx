@@ -33,7 +33,7 @@ type Props = {
   onEachUploadSuccess?: () => void;
 };
 
-// Kept in sync with MAX in src/app/client/actions.ts (uploadDocumentAction).
+// Kept in sync with case-document upload actions (onboarding + VAT period docs).
 const MAX_BYTES = 50 * 1024 * 1024;
 
 function formatBytes(n: number): string {

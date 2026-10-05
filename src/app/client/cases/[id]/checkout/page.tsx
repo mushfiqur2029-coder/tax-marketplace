@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loadClientCase } from "@/lib/case";
 import { startCheckoutAction } from "@/app/client/actions";
@@ -27,16 +26,11 @@ export default async function CheckoutPage({
   if (data.row.status !== "draft") {
     redirect(`/client/cases/${id}`);
   }
-  const isCompany = data.segment.id === "limited_company_vat";
-  if (isCompany) {
-    // Limited-company clients gate on the engagement letter, not intake —
-    // their intake_answers stay null throughout the Batch 1-2 flow (the
-    // per-service document checklist is a Batch 3 step, post-payment).
-    if (!data.progress.engagementSigned) {
-      redirect(`/client/cases/${id}/engagement`);
-    }
-  } else if (!data.progress.intakeDone) {
-    redirect(`/client/cases/${id}/intake`);
+  // Both Personal (new 9-up catalogue) and Limited Company gate on the
+  // engagement letter — intake was retired. If the letter isn't signed,
+  // push them back to the engagement page.
+  if (!data.progress.engagementSigned) {
+    redirect(`/client/cases/${id}/engagement`);
   }
   // Suspended clients can't take payments; send them back to their case
   // page where the banner explains why.
@@ -85,45 +79,13 @@ export default async function CheckoutPage({
           <h3 className="text-lg font-semibold text-ink">What we have from you</h3>
           <dl className="mt-4 divide-y divide-line">
             <Row label="Service" value={data.tier.title} />
-            {isCompany ? (
-              <Row label="Engagement letter" value="Signed" />
-            ) : (
-              <>
-                <Row
-                  label="Intake"
-                  value={`${Object.keys(data.row.intake_answers ?? {}).length} answered`}
-                />
-                <Row
-                  label="Documents"
-                  value={
-                    data.docs.length > 0
-                      ? `${data.docs.length} uploaded`
-                      : "None (you can add later)"
-                  }
-                />
-              </>
-            )}
+            <Row label="Engagement letter" value="Signed" />
           </dl>
 
-          {isCompany ? (
-            // Limited-company clients can't change the engagement after
-            // it's signed (legal document). The document checklist lives
-            // post-payment in a later batch, so there's nothing to edit
-            // here either.
-            <p className="mt-6 text-xs text-slate">
-              Once paid, we&rsquo;ll ask you to upload the documents required
-              for your service in the next step.
-            </p>
-          ) : (
-            <div className="mt-6 flex flex-wrap gap-2 text-sm">
-              <Link href={`/client/cases/${id}/intake`} className="btn-sl btn-sl-outline">
-                Edit intake
-              </Link>
-              <Link href={`/client/cases/${id}/documents`} className="btn-sl btn-sl-outline">
-                Edit documents
-              </Link>
-            </div>
-          )}
+          <p className="mt-6 text-xs text-slate">
+            Once paid, we&rsquo;ll ask you to upload the documents required
+            for your service in the next step.
+          </p>
         </div>
 
         <aside className="card-sl p-6">

@@ -6,7 +6,11 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment, type SegmentId } from "@/lib/segments";
-import { getTier, type TierId } from "@/lib/plans";
+import {
+  getTier,
+  RETIRED_PERSONAL_TIER_IDS,
+  type TierId,
+} from "@/lib/plans";
 import type Stripe from "stripe";
 import { stripe, siteUrl } from "@/lib/stripe";
 import { type ActionResult, fail } from "@/lib/action-result";
@@ -46,7 +50,10 @@ function assertNotSuspended(status: string, action: string): void {
 }
 
 // -------------------------------------------------------------------------
-// Create a case draft with segment + tier, then redirect into intake.
+// Create a case draft with segment + tier, then redirect into the
+// engagement letter. Both Personal (new 9-up catalogue) and Limited
+// Company flows take the same shape: pick a service, sign the letter,
+// pay, upload documents. There is no intake form and no deadline step.
 // -------------------------------------------------------------------------
 // createCaseAction uses redirect() on success. fail() re-throws Next's
 // NEXT_REDIRECT digest so control flow still works — only real errors get
@@ -59,15 +66,23 @@ export async function createCaseAction(
     assertNotSuspended(me.status, "start a new return");
     const segment = String(formData.get("segment") ?? "") as SegmentId;
     const tier = String(formData.get("tier") ?? "") as TierId;
-    const deadlineRaw = String(formData.get("deadline") ?? "").trim();
-    // is_urgent comes in as a checkbox — treat "on"/"true" as truthy.
-    const isUrgent = ["on", "true", "1"].includes(
-      String(formData.get("is_urgent") ?? "").toLowerCase(),
-    );
 
-    if (!getSegment(segment)) throw new Error("Please pick a segment.");
+    // Only two segments are sold now. Retired personal segments
+    // (first_time_filer / self_employed / landlord / investor / cis /
+    // high_earner) are kept in the type for safety but rejected here.
+    if (segment !== "personal" && segment !== "limited_company_vat") {
+      throw new Error("Please pick a service.");
+    }
+    if (!getSegment(segment)) throw new Error("Please pick a service.");
+
     const tierDef = getTier(tier);
-    if (!tierDef) throw new Error("Please pick a plan.");
+    if (!tierDef) throw new Error("Please pick a service.");
+
+    // Retired personal tiers (basic / standard / premium). The TypeScript
+    // union keeps them for legacy references; the sale path refuses.
+    if ((RETIRED_PERSONAL_TIER_IDS as readonly string[]).includes(tier)) {
+      throw new Error("That option is no longer available. Please pick from the current list.");
+    }
 
     // Enquiry-only tiers (bespoke, no flat fee) must not land in
     // cases.tier — they live in service_enquiries. Belt-and-braces on
@@ -81,41 +96,13 @@ export async function createCaseAction(
       );
     }
 
-    // Limited-company cases are flat-fee engagements. They don't have a
-    // filing deadline, don't support the urgent upgrade, and skip the
-    // 5-working-day rule — the engagement letter + payment flow runs
-    // first, then the per-service document checklist (handled downstream).
-    const isCompany = segment === "limited_company_vat";
-
-    let deadline: string | null = null;
-    let effectiveUrgent = false;
-    let urgentFeePence = 0;
-
-    if (!isCompany) {
-      if (!deadlineRaw) throw new Error("Please pick a filing deadline.");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineRaw)) {
-        throw new Error("Please pick a valid deadline.");
-      }
-
-      // Server-side gate: at least 5 working days for standard, at least
-      // the next working day for urgent. Both computed in Europe/London and
-      // exclude UK bank holidays.
-      const check = await validateDeadline(deadlineRaw, isUrgent);
-      if (!check.ok) {
-        throw new Error(
-          check.reason === "too_early_standard"
-            ? `Standard deadlines need at least 5 working days. Earliest available: ${check.earliest}. Tick "Urgent filing" for sooner.`
-            : `Even urgent needs the next working day at minimum. Earliest available: ${check.earliest}.`,
-        );
-      }
-
-      // Store deadline as a UTC ISO timestamp anchored at midnight London
-      // date. The picker gives us the calendar date; adding T00:00 in
-      // London and converting to ISO keeps the semantics stable across
-      // machines.
-      deadline = new Date(`${deadlineRaw}T00:00:00Z`).toISOString();
-      effectiveUrgent = isUrgent;
-      urgentFeePence = isUrgent ? URGENT_FEE_PENCE : 0;
+    // Segment / tier cross-check: can't put a company tier on a
+    // personal case or vice versa.
+    const tierSide: "personal" | "company" = tierDef.group;
+    const segmentSide: "personal" | "company" =
+      segment === "limited_company_vat" ? "company" : "personal";
+    if (tierSide !== segmentSide) {
+      throw new Error("That service doesn't match the selected mode.");
     }
 
     const supabase = await createClient();
@@ -127,9 +114,11 @@ export async function createCaseAction(
         tier,
         status: "draft",
         stripe_payment_status: "pending",
-        deadline,
-        is_urgent: effectiveUrgent,
-        urgent_fee_pence: urgentFeePence,
+        // No deadline / urgent on either flow. The columns stay in the
+        // schema for the retired personal cases that already carry them.
+        deadline: null,
+        is_urgent: false,
+        urgent_fee_pence: 0,
       })
       .select("id")
       .single();
@@ -137,133 +126,9 @@ export async function createCaseAction(
     if (error || !data) throw new Error(error?.message ?? "Could not create case.");
 
     revalidatePath("/client");
-    // Limited-company clients go straight to the engagement letter;
-    // personal clients continue with the existing intake form.
-    redirect(
-      isCompany
-        ? `/client/cases/${data.id}/engagement`
-        : `/client/cases/${data.id}/intake`,
-    );
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-// -------------------------------------------------------------------------
-// Save intake answers.
-// -------------------------------------------------------------------------
-export async function updateIntakeAction(
-  caseId: string,
-  formData: FormData,
-): Promise<ActionResult> {
-  try {
-    const { supabase, caseRow } = await assertCaseOwner(caseId);
-    if (caseRow.status !== "draft") throw new Error("Case already submitted.");
-
-    const seg = getSegment(caseRow.segment);
-    if (!seg) throw new Error("Case has no segment.");
-
-    const answers: Record<string, string> = {};
-    for (const field of seg.intake) {
-      const raw = formData.get(field.name);
-      const val = raw == null ? "" : String(raw).trim();
-      if (field.required && !val) {
-        throw new Error(`${field.label} is required.`);
-      }
-      if (val) answers[field.name] = val;
-    }
-
-    const { error } = await supabase
-      .from("cases")
-      .update({ intake_answers: answers })
-      .eq("id", caseId);
-
-    if (error) throw new Error(error.message);
-
-    revalidatePath(`/client/cases/${caseId}`);
-    redirect(`/client/cases/${caseId}/documents`);
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-// -------------------------------------------------------------------------
-// Upload a document (called from a client component via a form action).
-// -------------------------------------------------------------------------
-export async function uploadDocumentAction(
-  caseId: string,
-  formData: FormData,
-): Promise<ActionResult> {
-  try {
-    const { me, supabase, caseRow } = await assertCaseOwner(caseId);
-    if (caseRow.status !== "draft") {
-      throw new Error("Documents can only be added while case is draft.");
-    }
-
-    const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) {
-      throw new Error("Pick a file first.");
-    }
-    const MAX = 50 * 1024 * 1024;
-    if (file.size > MAX) throw new Error("File is over 50 MB.");
-
-    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-    const path = `${caseId}/${Date.now()}_${safeName}`;
-
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const { error: upErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, buf, {
-        contentType: file.type || "application/octet-stream",
-        upsert: false,
-      });
-    if (upErr) throw new Error(upErr.message);
-
-    const { error: dbErr } = await supabase.from("case_documents").insert({
-      case_id: caseId,
-      uploaded_by: me.id,
-      file_url: path,
-      file_name: file.name,
-    });
-    if (dbErr) {
-      // Best-effort cleanup on DB failure.
-      await supabase.storage.from(BUCKET).remove([path]);
-      throw new Error(dbErr.message);
-    }
-
-    revalidatePath(`/client/cases/${caseId}/documents`);
-    return { ok: true };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function deleteDocumentAction(
-  caseId: string,
-  documentId: string,
-): Promise<ActionResult> {
-  try {
-    const { supabase, caseRow } = await assertCaseOwner(caseId);
-    if (caseRow.status !== "draft") throw new Error("Case already submitted.");
-
-    const { data: doc, error: fetchErr } = await supabase
-      .from("case_documents")
-      .select("id, file_url, case_id")
-      .eq("id", documentId)
-      .single();
-    if (fetchErr || !doc || doc.case_id !== caseId) {
-      throw new Error("Document not found.");
-    }
-
-    await supabase.storage.from(BUCKET).remove([doc.file_url]);
-    const { error: dbErr } = await supabase
-      .from("case_documents")
-      .delete()
-      .eq("id", documentId);
-    if (dbErr) throw new Error(dbErr.message);
-
-    revalidatePath(`/client/cases/${caseId}/documents`);
-    return { ok: true };
+    // Both Personal and Limited Company go through the engagement letter
+    // next. The letter page branches on segment to pick the variant.
+    redirect(`/client/cases/${data.id}/engagement`);
   } catch (e) {
     return fail(e);
   }

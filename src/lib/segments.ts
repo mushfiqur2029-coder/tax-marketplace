@@ -1,11 +1,21 @@
 export type SegmentId =
+  // Current client-side segments. Personal and Limited Company both now
+  // use the same shape: a single flat-fee tier picks the service; no
+  // intake form; engagement letter + payment + doc checklist handle
+  // scoping. The old 6 personal segments below are retained for safety
+  // (migration 0045 keeps their enum values; no case data references
+  // them after the data wipe) but the wizard filters them out.
+  | "personal"
+  | "limited_company_vat"
+  // Retired personal segments. Kept in the type so old code paths that
+  // branch on segment id compile; the wizard never shows them and the
+  // server guard in createCaseAction refuses to accept them on insert.
   | "first_time_filer"
   | "self_employed"
   | "landlord"
   | "investor"
   | "cis"
-  | "high_earner"
-  | "limited_company_vat";
+  | "high_earner";
 
 export type IntakeField = {
   name: string;
@@ -27,6 +37,18 @@ export type Segment = {
 };
 
 export const SEGMENTS: Segment[] = [
+  {
+    // Personal — single flat-fee segment. The service is picked by
+    // tier (9 flat-fee options in src/lib/plans.ts), not by segment.
+    // No intake form: the engagement letter and the per-tier doc
+    // checklist (handled downstream) carry the scoping.
+    id: "personal",
+    title: "Personal",
+    tagline: "Self Assessment for individuals — flat-fee services by situation.",
+    numeral: "①",
+    intake: [],
+    suggestedDocs: [],
+  },
   {
     id: "first_time_filer",
     title: "First-time filer",
