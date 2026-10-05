@@ -207,11 +207,17 @@ export async function submitPeriodDocsAction(
       );
     }
 
-    const { error: updateErr } = await supabase
+    const { data: updData, error: updateErr } = await supabase
       .from("cases")
       .update({ period_docs_submitted_at: new Date().toISOString() })
-      .eq("id", caseId);
+      .eq("id", caseId)
+      .select("id");
     if (updateErr) throw new Error(updateErr.message);
+    if (!updData || updData.length === 0) {
+      throw new Error(
+        "Submit didn't take — the database refused the write. Reload the page and try again.",
+      );
+    }
 
     if (caseRow.accountant_id) {
       const { data: meRow } = await admin

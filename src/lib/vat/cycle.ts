@@ -22,6 +22,17 @@ export function getVatFrequency(
   return null;
 }
 
+// True when the client picked "I don't know" (or left the field blank)
+// for VAT return frequency. The accountant's first-cycle form uses
+// this to decide whether to also prompt them for the frequency alongside
+// the first period end date — then writes their choice back to
+// intake_answers so subsequent cycle math has a real frequency.
+export function vatFrequencyNeedsAccountantInput(
+  intakeAnswers: Record<string, string> | null | undefined,
+): boolean {
+  return getVatFrequency(intakeAnswers) === null;
+}
+
 // Reads the client's 9-digit VAT Registration Number from Section D.
 // Used as the HMRC payment reference on the client's approval card —
 // not re-entered per cycle.

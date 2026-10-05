@@ -125,8 +125,13 @@ export default async function AccountantCaseDetailPage({
   // tagged docs + check whether the encrypted auth code column is
   // populated so the panel can show a "Reveal" button vs "(not provided)".
   const isCompany = data.segment.id === "limited_company_vat";
-  const showOnboarding =
-    isCompany && data.isMine && !!data.row.onboarding_submitted_at;
+  // Onboarding panel renders even when the client hasn't submitted yet,
+  // so the accountant can see what the client has partially filled in
+  // and help via chat. The panel header surfaces whether the checklist
+  // has been submitted or is still in progress.
+  const showOnboarding = isCompany && data.isMine;
+  const onboardingInProgress =
+    isCompany && !data.row.onboarding_submitted_at;
   type OnboardingDocRow = {
     id: string;
     file_name: string;
@@ -224,12 +229,15 @@ export default async function AccountantCaseDetailPage({
   const vatFrequency = getVatFrequency(
     (data.row.intake_answers ?? null) as Record<string, string> | null,
   );
+  // VAT section renders even when vatFrequency is null (client picked
+  // "I don't know" in Section D) — the first-cycle form prompts the
+  // accountant to confirm the frequency alongside the first period
+  // end date, and the server action persists it back.
   const showVatSection =
     isCompany &&
     data.tier.id === "vat_reg" &&
     data.isMine &&
-    !!data.row.onboarding_submitted_at &&
-    !!vatFrequency;
+    !!data.row.onboarding_submitted_at;
   let vatCycles: VatCycleRow[] = [];
   let currentVatCycle: VatCycleRow | null = null;
   let currentVatReturnDocs: {
@@ -403,7 +411,9 @@ export default async function AccountantCaseDetailPage({
     "use server";
     return prepareApprovalAction(id, input);
   };
-  const openFirstVatCycle = async (input: { periodEndDate: string }) => {
+  const openFirstVatCycle = async (
+    input: Parameters<typeof openFirstVatCycleAction>[1],
+  ) => {
     "use server";
     return openFirstVatCycleAction(id, input);
   };
@@ -488,6 +498,19 @@ export default async function AccountantCaseDetailPage({
               >
                 Onboarding checklist
               </h3>
+              {onboardingInProgress ? (
+                <p
+                  className="mt-2 rounded-lg px-3 py-2 text-xs font-medium"
+                  style={{
+                    background: "rgba(217, 159, 25, 0.14)",
+                    color: "#B57E12",
+                  }}
+                >
+                  Onboarding is still in progress — the client hasn&apos;t
+                  submitted the checklist yet. What you see below is
+                  partial. Reach out via chat if they look stuck.
+                </p>
+              ) : null}
               <div className="mt-4">
                 <OnboardingAnswersPanel
                   sections={sectionsForTier(data.tier.id as TierId)}
@@ -597,15 +620,16 @@ export default async function AccountantCaseDetailPage({
                 VAT returns
               </h3>
               <p className="mt-1 text-xs text-slate">
-                Section D frequency: <b>{vatFrequency}</b>. The system
-                opens each new cycle automatically once the previous one
-                is filed.
+                Section D frequency:{" "}
+                <b>{vatFrequency ?? "not confirmed by client"}</b>. The
+                system opens each new cycle automatically once the
+                previous one is filed.
               </p>
 
               {vatCycles.length === 0 ? (
                 <div className="mt-4">
                   <VatFirstCycleForm
-                    frequency={vatFrequency!}
+                    frequency={vatFrequency}
                     openFirstCycle={openFirstVatCycle}
                   />
                 </div>

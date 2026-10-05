@@ -66,17 +66,14 @@ export async function loadAccountantCase(
   if (!segment || !tier) notFound();
 
   const isMine = row.accountant_id === me.id;
-  // Limited-company cases are only takeable once the onboarding
-  // checklist is submitted — otherwise the accountant has nothing to
-  // work with. Personal cases don't have an onboarding step, so this
-  // extra gate is a no-op for them.
-  const needsOnboarding =
-    row.segment === "limited_company_vat" && !row.onboarding_submitted_at;
+  // Limited-company cases are takeable the moment payment lands, even
+  // if the client hasn't finished the onboarding checklist. Clients
+  // often need help filling it in; the accountant case detail page
+  // flags "Onboarding in progress" so there's no surprise about state.
   const canTake =
     !row.accountant_id &&
     row.status === "submitted" &&
-    row.stripe_payment_status === "succeeded" &&
-    !needsOnboarding;
+    row.stripe_payment_status === "succeeded";
 
   if (!isMine && !canTake) {
     // Case exists but is assigned to another accountant (or was paid but

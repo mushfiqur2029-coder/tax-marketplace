@@ -34,6 +34,7 @@ type Row = {
   accountant_id: string | null;
   deadline: string | null;
   is_urgent: boolean;
+  onboarding_submitted_at: string | null;
 };
 
 // "Live" = cases actively being worked on right now.
@@ -70,13 +71,15 @@ export default async function AccountantDashboard({
   const me = await requireApprovedAccountant();
   const supabase = await createClient();
 
-  // Queue filter has a limited-company carve-out. Personal cases hit the
-  // queue the moment payment lands + status=submitted. Limited-company
-  // cases hit the queue only after onboarding_submitted_at is stamped,
-  // since the per-service document checklist (Sections A/B/C/D) runs
-  // post-payment and an accountant can't start work without it. We
-  // express this via .or(): "segment is not limited_company_vat, OR
-  // onboarding_submitted_at IS NOT NULL".
+  // Queue filter: paid cases with no accountant assigned, regardless of
+  // whether onboarding is submitted yet. Batch 3 originally gated the
+  // limited-company carve-out on onboarding_submitted_at (accountant
+  // waits for the client to finish Sections A/B/C/[D] before seeing the
+  // case), but clients often need help filling that in, so we now
+  // surface paid cases immediately. The card renders a "Onboarding in
+  // progress" badge for limited-company cases without
+  // onboarding_submitted_at so the accountant knows the case isn't yet
+  // a fully-populated, ready-to-work queue entry.
   const [queueRes, mineRes] = await Promise.all([
     supabase
       .from("cases")
@@ -86,7 +89,6 @@ export default async function AccountantDashboard({
       .eq("status", "submitted")
       .eq("stripe_payment_status", "succeeded")
       .is("accountant_id", null)
-      .or("segment.neq.limited_company_vat,onboarding_submitted_at.not.is.null")
       .order("submitted_at", { ascending: true }),
     supabase
       .from("cases")
@@ -202,6 +204,13 @@ function renderCard(c: Row) {
   const seg = getSegment(c.segment);
   const tier = getTier(c.tier);
   const isMine = !!c.accountant_id;
+  // Limited-company cases now hit the queue the moment payment lands,
+  // not after the client submits onboarding — so some entries will
+  // still be mid-checklist. Flag that visibly so the accountant knows
+  // whether they're picking up a complete submission or stepping in to
+  // help a client who's partway through.
+  const onboardingInProgress =
+    c.segment === "limited_company_vat" && !c.onboarding_submitted_at;
   return (
     <Link
       href={`/accountant/cases/${c.id}`}
@@ -231,6 +240,18 @@ function renderCard(c: Row) {
             ? `Started ${formatDate(c.created_at)}`
             : `Submitted ${c.submitted_at ? formatDateTime(c.submitted_at) : "."}`}
         </div>
+        {onboardingInProgress ? (
+          <div
+            className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+            style={{
+              background: "rgba(217, 159, 25, 0.14)",
+              color: "#B57E12",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            Onboarding in progress · client may need help
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-col items-end gap-1">
         <StatusPill status={c.status} />

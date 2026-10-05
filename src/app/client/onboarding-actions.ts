@@ -26,10 +26,17 @@ const BUCKET = "case-documents";
 async function assertCaseInOnboarding(caseId: string) {
   const me = await requireRole("client");
   const supabase = await createClient();
+  // intake_answers has to be in this SELECT: both save and submit
+  // merge/validate against caseRow.intake_answers, so leaving it out
+  // silently nukes everything on every save (next = { ...{}, [field]: v })
+  // and makes submit mark every answered field as missing. Was masked
+  // for ages by 0039's RLS block — all writes failed anyway — so the
+  // bug didn't surface until the policy fix landed and writes started
+  // actually hitting the row.
   const { data: caseRow, error } = await supabase
     .from("cases")
     .select(
-      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at",
+      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at, intake_answers",
     )
     .eq("id", caseId)
     .single();
@@ -122,11 +129,24 @@ export async function saveChecklistAnswersAction(
       }
     }
 
-    const { error: updErr } = await supabase
+    // .select("id") turns a 0-rows-affected RLS block from a silent
+    // success ({error:null,data:null}) into a loud error. That silent
+    // shape was exactly how the onboarding fields appeared to save
+    // but never actually did — see migration 0039 for the fuller
+    // story. Defense in depth: even if a future RLS change
+    // accidentally re-locks this path, the user will get an error
+    // they can act on rather than discovering it on submit.
+    const { data: updData, error: updErr } = await supabase
       .from("cases")
       .update({ intake_answers: next })
-      .eq("id", caseId);
+      .eq("id", caseId)
+      .select("id");
     if (updErr) throw new Error(updErr.message);
+    if (!updData || updData.length === 0) {
+      throw new Error(
+        "Save didn't take — the database refused the write. Reload the page and try again.",
+      );
+    }
 
     if (encryptPlain != null) {
       const key = process.env.COMPANY_AUTH_CODE_KEY;
@@ -334,11 +354,17 @@ export async function submitChecklistAction(
       );
     }
 
-    const { error: updErr } = await supabase
+    const { data: updData, error: updErr } = await supabase
       .from("cases")
       .update({ onboarding_submitted_at: new Date().toISOString() })
-      .eq("id", caseId);
+      .eq("id", caseId)
+      .select("id");
     if (updErr) throw new Error(updErr.message);
+    if (!updData || updData.length === 0) {
+      throw new Error(
+        "Submit didn't take — the database refused the write. Reload the page and try again.",
+      );
+    }
 
     revalidatePath(`/client/cases/${caseId}`);
     revalidatePath(`/client/cases/${caseId}/onboarding`);

@@ -396,10 +396,12 @@ function TextRow({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={(e) => {
-          if (e.target.value !== value) return; // consumer stale guard
-          onBlurSave(e.target.value);
-        }}
+        // Always save the input's actual value on blur. The earlier
+        // `e.target.value !== value → skip` guard was backwards: that's
+        // exactly the window where state hasn't flushed yet and the
+        // DOM holds the authoritative user input, so skipping dropped
+        // the save on fast type-and-blur sequences.
+        onBlur={(e) => onBlurSave(e.target.value)}
         className="input-sl mt-2"
       />
       {saving ? (

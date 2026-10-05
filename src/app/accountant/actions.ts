@@ -25,6 +25,7 @@ import {
   getVatFrequency,
   poundsToPence,
   type VatApprovalPayload,
+  type VatFrequency,
 } from "@/lib/vat/cycle";
 
 export type { ActionResult };
@@ -686,14 +687,14 @@ async function assertVatReadyForAccountant(caseId: string) {
       "Client hasn't completed onboarding yet — can't open VAT cycles.",
     );
   }
+  // Frequency can legitimately be null here — the client may have
+  // picked "I don't know" in Section D. Callers that need a concrete
+  // Monthly/Quarterly/Annually (openFirstVatCycle, editVatCycleDates)
+  // handle null themselves; callers that don't need it (upload the
+  // return PDF, prepare approval) ignore the null.
   const frequency = getVatFrequency(
     caseRow.intake_answers as Record<string, string> | null,
   );
-  if (!frequency) {
-    throw new Error(
-      "VAT return frequency is missing from the client's Section D answers.",
-    );
-  }
   return { me, supabase, admin, caseRow, frequency };
 }
 
@@ -701,13 +702,44 @@ async function assertVatReadyForAccountant(caseId: string) {
 // the first period end date, we compute start / HMRC due date / label
 // from the Section D frequency and write cycle #1. Subsequent cycles
 // auto-create on approve-and-file.
+//
+// `frequency` is accepted as an optional second input for the "I don't
+// know" path — if the client picked that in Section D the accountant
+// picks it here, we persist it back to intake_answers so later cycle
+// math has a real value.
 export async function openFirstVatCycleAction(
   caseId: string,
-  input: { periodEndDate: string }, // YYYY-MM-DD
+  input: { periodEndDate: string; frequency?: VatFrequency }, // YYYY-MM-DD
 ): Promise<ActionResult<{ cycleId: string }>> {
   try {
-    const { me, admin, caseRow, frequency } =
+    const { me, admin, caseRow, frequency: storedFreq } =
       await assertVatReadyForAccountant(caseId);
+
+    const frequency: VatFrequency | null = storedFreq ?? input.frequency ?? null;
+    if (!frequency) {
+      throw new Error(
+        "VAT return frequency is missing — pick Monthly, Quarterly, or Annually to open the first cycle.",
+      );
+    }
+
+    // If the client didn't commit to a frequency (chose "I don't know"
+    // or left it blank), the accountant's choice here is authoritative
+    // — write it back so subsequent cycles and the client's visible
+    // Section D answer agree.
+    if (!storedFreq && input.frequency) {
+      const prev =
+        (caseRow.intake_answers as Record<string, string> | null) ?? {};
+      const { error: persistErr } = await admin
+        .from("cases")
+        .update({
+          intake_answers: {
+            ...prev,
+            vat_return_frequency: input.frequency,
+          },
+        })
+        .eq("id", caseId);
+      if (persistErr) throw new Error(persistErr.message);
+    }
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.periodEndDate)) {
       throw new Error("Period end date must be YYYY-MM-DD.");
@@ -801,6 +833,16 @@ export async function editVatCycleDatesAction(
     );
     void me;
     void caseRow;
+
+    if (!frequency) {
+      // Shouldn't happen in practice — opening the first cycle persists
+      // a concrete frequency even when the client said "I don't know".
+      // Guard here is defense in depth so a bad intake_answers edit
+      // can't leave the label math unable to run.
+      throw new Error(
+        "VAT return frequency isn't set on this case — open the first cycle first.",
+      );
+    }
 
     const newLabel = computePeriodLabel(
       input.periodStart,
