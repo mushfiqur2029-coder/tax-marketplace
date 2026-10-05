@@ -76,20 +76,15 @@ export async function saveChecklistAnswersAction(
   formData: FormData,
 ): Promise<ActionResult> {
   try {
-    const { supabase, caseRow, tier, admin } = await assertCaseInOnboarding(
-      caseId,
-    );
+    const { supabase, tier, admin } = await assertCaseInOnboarding(caseId);
 
     const visibleFields = fieldsForTier(tier);
-    const existing =
-      (caseRow as unknown as { intake_answers: Record<string, string> | null })
-        .intake_answers ?? {};
-
-    // Build the next answers map by merging what's in the form with what
-    // was already there. We only touch fields that appear in the form —
-    // leaves other sections' values untouched, so a per-section save
-    // doesn't blow away unrelated progress.
-    const next: Record<string, string> = { ...existing };
+    // Build a patch of just the fields present in this FormData —
+    // nothing read from the current DB state. The merge happens
+    // atomically in SQL via the merge_case_intake_answers RPC
+    // (migration 0040), so two concurrent saves can't race by both
+    // reading an older `existing`.
+    const patch: Record<string, string> = {};
     let encryptPlain: string | null = null;
 
     for (const field of visibleFields) {
@@ -118,34 +113,41 @@ export async function saveChecklistAnswersAction(
       if (field.kind === "select" && field.showOtherOn) {
         const otherRaw = formData.get(`${field.id}_other`);
         if (otherRaw != null) {
-          next[`${field.id}_other`] = String(otherRaw).trim();
+          patch[`${field.id}_other`] = String(otherRaw).trim();
         }
       }
 
-      if (value) {
-        next[field.id] = value;
-      } else {
-        delete next[field.id];
-      }
+      // Patch always includes the field. Empty-string values overwrite
+      // the stored value rather than deleting the key — the submit
+      // validator treats "" as missing, same as absent, so the behavior
+      // is identical from the form's perspective. (jsonb || only
+      // merges; implementing key-delete would need a separate RPC
+      // param and we don't need it.)
+      patch[field.id] = value;
     }
 
-    // .select("id") turns a 0-rows-affected RLS block from a silent
-    // success ({error:null,data:null}) into a loud error. That silent
-    // shape was exactly how the onboarding fields appeared to save
-    // but never actually did — see migration 0039 for the fuller
-    // story. Defense in depth: even if a future RLS change
-    // accidentally re-locks this path, the user will get an error
-    // they can act on rather than discovering it on submit.
-    const { data: updData, error: updErr } = await supabase
-      .from("cases")
-      .update({ intake_answers: next })
-      .eq("id", caseId)
-      .select("id");
-    if (updErr) throw new Error(updErr.message);
-    if (!updData || updData.length === 0) {
-      throw new Error(
-        "Save didn't take — the database refused the write. Reload the page and try again.",
+    // Only hit the RPC if there's actually something to merge — a save
+    // that only touched the encrypted field would otherwise fire a
+    // no-op update.
+    if (Object.keys(patch).length > 0) {
+      // merge_case_intake_answers performs a single-statement
+      // UPDATE cases SET intake_answers = coalesce(..., '{}') || patch
+      // under the normal RLS policies for the case. The RPC returns
+      // the row count — 0 means an RLS block (same silent-success
+      // shape that bit us in #0039 before). We surface it loudly.
+      const { data: rows, error: rpcErr } = await supabase.rpc(
+        "merge_case_intake_answers",
+        {
+          p_case_id: caseId,
+          p_patch: patch,
+        },
       );
+      if (rpcErr) throw new Error(rpcErr.message);
+      if ((rows ?? 0) === 0) {
+        throw new Error(
+          "Save didn't take — the database refused the write. Reload the page and try again.",
+        );
+      }
     }
 
     if (encryptPlain != null) {
