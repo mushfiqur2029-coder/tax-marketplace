@@ -69,7 +69,7 @@ export default async function CheckoutPage({
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <div className="card-sl p-6 sm:p-8">
           <h3 className="text-lg font-semibold text-ink">What we have from you</h3>
           <dl className="mt-4 divide-y divide-line">

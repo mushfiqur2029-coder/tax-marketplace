@@ -205,7 +205,7 @@ export function NewCaseForm({
           {segment ? (
             <section>
               <SectionHeading eyebrow="Step 3" title="Choose a plan" />
-              <div className="mt-6 grid gap-4 lg:grid-cols-3">
+              <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
                 {tiers.map((t) => (
                   <TierButton
                     key={t.id}
@@ -223,7 +223,7 @@ export function NewCaseForm({
               eyebrow="Step 4"
               title="When do you need it filed by?"
             />
-            <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
               <div className="space-y-4">
                 <label className="block max-w-xs">
                   <span
@@ -302,7 +302,7 @@ export function NewCaseForm({
             no quarterly or monthly billing. You&apos;ll sign the engagement
             letter and pay once we&apos;ve confirmed the service that fits.
           </p>
-          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
             {COMPANY_TIERS.map((t) => (
               <TierButton
                 key={t.id}
@@ -312,7 +312,7 @@ export function NewCaseForm({
               />
             ))}
           </div>
-          <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
             <div />
             <OrderSummary
               selectedTier={selectedTier}

@@ -87,7 +87,7 @@ export default async function AdminAccountantDetail({
       subnav={<AdminNav active="accountants" counts={navCounts} />}
       bell={<Bell userId={me.id} role={me.role} />}
     >
-      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
         {/* Profile */}
         <aside className="card-sl p-6">
           <div className="flex flex-col items-center text-center">
@@ -160,27 +160,29 @@ export default async function AdminAccountantDetail({
                   const seg = getSegment(c.segment);
                   const tier = getTier(c.tier);
                   return (
-                    <li key={c.id} className="flex items-center gap-3 px-4 py-3 text-sm">
-                      <span
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white"
-                        style={{ background: "linear-gradient(135deg, var(--navy), var(--sky))" }}
-                        aria-hidden="true"
-                      >
-                        {seg?.numeral ?? "•"}
-                      </span>
-                      <Link
-                        href={`/admin/cases/${c.id}`}
-                        className="min-w-0 flex-1 hover:text-sky"
-                      >
-                        <div className="truncate font-semibold text-ink">
-                          {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
-                        </div>
-                        <div className="text-xs text-slate">
-                          Client {clientEmail.get(c.client_id) ?? "."} · started{" "}
-                          {formatDateTime(c.created_at)}
-                        </div>
-                      </Link>
-                      <div className="flex flex-col items-end gap-1">
+                    <li key={c.id} className="px-4 py-3 text-sm">
+                      <div className="flex items-start gap-3">
+                        <span
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white"
+                          style={{ background: "linear-gradient(135deg, var(--navy), var(--sky))" }}
+                          aria-hidden="true"
+                        >
+                          {seg?.numeral ?? "•"}
+                        </span>
+                        <Link
+                          href={`/admin/cases/${c.id}`}
+                          className="min-w-0 flex-1 hover:text-sky"
+                        >
+                          <div className="truncate font-semibold text-ink">
+                            {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
+                          </div>
+                          <div className="truncate text-xs text-slate">
+                            Client {clientEmail.get(c.client_id) ?? "."} · started{" "}
+                            {formatDateTime(c.created_at)}
+                          </div>
+                        </Link>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-11">
                         <StatusPill status={c.status} />
                         {c.is_urgent ? <UrgentPill size="sm" /> : null}
                         {c.deadline ? (

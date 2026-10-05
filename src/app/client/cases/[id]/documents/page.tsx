@@ -50,7 +50,7 @@ export default async function DocumentsPage({
         <StepTracker steps={buildSteps(id, data, "documents")} />
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_320px]">
         <div className="card-sl p-6 sm:p-8">
           <DocumentUploader action={uploadBound} />
           <div className="mt-8">

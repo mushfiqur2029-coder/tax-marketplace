@@ -109,7 +109,7 @@ export default async function EngagementPage({
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         {/* Letter preview — isolated from the dashboard styles via iframe
              srcDoc, since the engagement letter has its own typography and
              should look identical to the printed PDF.

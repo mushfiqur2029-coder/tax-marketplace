@@ -100,7 +100,7 @@ export default async function WalletPage({
         <StatCard label="Paid out" pence={paid} tone="slate" />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         <section className="card-sl p-6 sm:p-8">
           <h3
             className="text-sm font-semibold uppercase tracking-wider text-slate"

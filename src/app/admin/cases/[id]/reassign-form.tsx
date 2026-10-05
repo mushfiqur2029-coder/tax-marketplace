@@ -79,8 +79,13 @@ export function ReassignForm({
           placeholder="e.g. workload balancing"
         />
       </label>
-      <div className="flex flex-wrap items-center gap-3">
-        <SLButton type="submit" variant="primary" disabled={pending}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+        <SLButton
+          type="submit"
+          variant="primary"
+          className="w-full sm:w-auto"
+          disabled={pending}
+        >
           {pending ? "Saving…" : "Reassign"}
         </SLButton>
         {saved ? <span className="text-xs text-[#0E9E77] font-semibold">Reassigned ✓</span> : null}

@@ -64,7 +64,7 @@ export default async function AdminAddonCatalogPage() {
       subnav={<AdminNav active="addon-catalog" counts={navCounts} />}
       bell={<Bell userId={me.id} role={me.role} />}
     >
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <div className="space-y-8">
           <section>
             <h2

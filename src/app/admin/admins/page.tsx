@@ -43,7 +43,7 @@ export default async function AdminAdminsPage() {
       subnav={<AdminNav active="admins" counts={navCounts} />}
       bell={<Bell userId={me.id} role={me.role} />}
     >
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <section>
           <h2
             className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
