@@ -1,30 +1,40 @@
 import "server-only";
+import nodemailer, { type Transporter } from "nodemailer";
 import {
   getOwnerOAuthClient,
   hasGmailSendScope,
   readRefreshToken,
 } from "@/lib/calendar/oauth-token";
 
-// Email delivery. Two paths exist for historical reasons:
+// Email delivery. Three send paths in priority order:
 //
-//   - sendEmailViaGmail (preferred): uses the OAuth2 refresh token
+//   - sendEmailViaSmtp (primary): nodemailer over SMTP, authenticated
+//     against the real Sterling Ledger mailbox. The From address is
+//     the mailbox itself (info@sterlingledger.co.uk) with no relaying
+//     or aliasing. Driven by SMTP_HOST / SMTP_PORT / SMTP_SECURE /
+//     SMTP_USER / SMTP_PASSWORD env.
+//
+//   - sendEmailViaGmail (fallback): uses the OAuth2 refresh token
 //     stored by /api/auth/google/connect to call Gmail's REST API as
-//     the connected admin. No external service, no shared secret —
-//     only Google credentials we already have. Requires the stored
-//     token to carry the gmail.send scope.
+//     the connected Gmail account (nextnoor04@gmail.com). Kept wired
+//     so email keeps flowing if SMTP ever has an outage, at the cost
+//     of a non-matching From address — the recipient's eye sees it as
+//     nextnoor04@gmail.com, not info@sterlingledger.co.uk. Only use
+//     this path deliberately or when SMTP is skipped.
 //
 //   - sendEmailViaAppsScript (legacy): posts to a Google Apps Script
 //     Web App that calls GmailApp.sendEmail. Never actually deployed
 //     in production — the APPSSCRIPT_* env vars have been unset the
 //     whole time, so every call quietly logged "skipped" and returned
-//     ok. Kept as a fallback for anyone who prefers that path.
+//     ok. Kept as a last-ditch fallback for anyone who prefers that
+//     path.
 //
 // sendEmail() below is the entry point every caller should use. It
-// prefers the Gmail API when configured, falls back to Apps Script,
-// and finally returns a clear "skipped" when neither is available.
+// tries SMTP first, falls back to Gmail, then Apps Script, and
+// finally returns a clear "skipped" when none are configured.
 
 export type EmailResult =
-  | { ok: true; skipped: false; via: "gmail" | "appsscript" }
+  | { ok: true; skipped: false; via: "smtp" | "gmail" | "appsscript" }
   | { ok: true; skipped: true; reason: string }
   | { ok: false; skipped: false; error: string };
 
@@ -128,7 +138,133 @@ export async function sendEmailViaAppsScript(
 }
 
 // ------------------------------------------------------------------
-// Gmail API path
+// SMTP path (primary)
+// ------------------------------------------------------------------
+
+// Lazy singleton — nodemailer connects on first use and keeps a
+// pool of sockets open so repeated sends within a serverless
+// invocation don't each incur a TLS handshake.
+let smtpTransporter: Transporter | null = null;
+
+function getSmtpTransporter(): Transporter | null {
+  if (
+    clearlyUnset(process.env.SMTP_HOST) ||
+    clearlyUnset(process.env.SMTP_PORT) ||
+    clearlyUnset(process.env.SMTP_USER) ||
+    clearlyUnset(process.env.SMTP_PASSWORD)
+  ) {
+    return null;
+  }
+  if (smtpTransporter) return smtpTransporter;
+  // SMTP_SECURE=true -> implicit TLS (port 465). Any other value falls
+  // back to STARTTLS semantics (port 587). Nodemailer calls this flag
+  // "secure".
+  const secure =
+    (process.env.SMTP_SECURE ?? "").toLowerCase() === "true" ||
+    process.env.SMTP_SECURE === "1";
+  const port = Number.parseInt(process.env.SMTP_PORT!, 10);
+  smtpTransporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number.isFinite(port) ? port : secure ? 465 : 587,
+    secure,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASSWORD,
+    },
+    // Pool keeps the socket warm across sends in one invocation.
+    pool: true,
+    maxConnections: 2,
+    maxMessages: 20,
+  });
+  return smtpTransporter;
+}
+
+export async function sendEmailViaSmtp(
+  params: EmailParams,
+): Promise<EmailResult> {
+  const transporter = getSmtpTransporter();
+  if (!transporter) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "SMTP env not configured (SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD)",
+    };
+  }
+  const from = process.env.SMTP_USER!;
+  // Same self-BCC / to-BCC dedup as the Gmail path so no recipient
+  // appears twice in the delivery.
+  const bcc = (params.bcc ?? []).filter((addr) => {
+    const a = addr.trim().toLowerCase();
+    return (
+      a &&
+      a !== from.trim().toLowerCase() &&
+      a !== params.to.trim().toLowerCase()
+    );
+  });
+
+  // Fold the legacy pdfBase64 + filename shape into the generic
+  // attachments array before handing to nodemailer, matching the
+  // Gmail helper's behaviour.
+  const attachments = [
+    ...(params.attachments ?? []).map((a) => ({
+      filename: a.filename,
+      content: Buffer.from(a.base64, "base64"),
+      contentType: a.mimeType ?? "application/octet-stream",
+    })),
+  ];
+  if (params.pdfBase64 && params.filename) {
+    attachments.push({
+      filename: params.filename,
+      content: Buffer.from(params.pdfBase64, "base64"),
+      contentType: "application/pdf",
+    });
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: params.to,
+      bcc: bcc.length > 0 ? bcc : undefined,
+      subject: params.subject,
+      html: params.html,
+      attachments,
+    });
+    // Guard against the "accepted-but-no-recipients" oddity some
+    // relays produce; if nodemailer thinks nothing was accepted,
+    // surface that as a failure so sendEmail falls through to the
+    // next path.
+    if (
+      Array.isArray(info.accepted) &&
+      info.accepted.length === 0
+    ) {
+      console.error(
+        `[email] smtp accepted no recipients to=${params.to}` +
+          (params.logCaseId ? ` case=${params.logCaseId}` : "") +
+          ` response=${info.response ?? "?"}`,
+      );
+      return {
+        ok: false,
+        skipped: false,
+        error: "SMTP accepted no recipients",
+      };
+    }
+    return { ok: true, skipped: false, via: "smtp" };
+  } catch (err) {
+    console.error(
+      `[email] smtp send threw to=${params.to}` +
+        (params.logCaseId ? ` case=${params.logCaseId}` : "") +
+        ` err=${err instanceof Error ? err.message : String(err)}`,
+    );
+    return {
+      ok: false,
+      skipped: false,
+      error: err instanceof Error ? err.message : "smtp send failed",
+    };
+  }
+}
+
+// ------------------------------------------------------------------
+// Gmail API path (fallback)
 // ------------------------------------------------------------------
 
 // Build an RFC 5322 MIME message, then base64url-encode it for the
@@ -360,14 +496,25 @@ export async function sendEmailViaGmail(
   }
 }
 
-// Entry point every caller should use. Prefers Gmail when configured
-// AND the token has gmail.send; otherwise falls back to Apps Script
-// (which, in current deployments, logs skipped). The dispatcher means
-// callers don't need to know which backend is live.
+// Entry point every caller should use. Tries SMTP first (so emails
+// genuinely come from the Sterling Ledger mailbox), falls back to
+// Gmail (nextnoor04@gmail.com) if SMTP is unconfigured or skipped,
+// and finally Apps Script. The dispatcher means callers don't need
+// to know which backend is live.
+//
+// Behaviour on a hard failure of the primary (ok=false): we do NOT
+// retry on the next path. A real send error (bad credentials, bounce,
+// SMTP relay rejected the message) is a signal to look at config,
+// not to silently re-send through a different From address. Only a
+// "skipped" result (not configured) falls through.
 export async function sendEmail(params: EmailParams): Promise<EmailResult> {
+  const smtp = await sendEmailViaSmtp(params);
+  if (smtp.ok && !smtp.skipped) return smtp;
+  if (!smtp.ok) return smtp;
+  // SMTP was skipped (env not set). Try Gmail.
   const gmail = await sendEmailViaGmail(params);
   if (gmail.ok && !gmail.skipped) return gmail;
   if (!gmail.ok) return gmail;
-  // Gmail was skipped (no token / no scope). Try Apps Script fallback.
+  // Gmail skipped too. Last-ditch Apps Script.
   return sendEmailViaAppsScript(params);
 }
