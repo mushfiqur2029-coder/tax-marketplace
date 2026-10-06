@@ -49,6 +49,10 @@ export function EnquiryForm({
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Captured once the enquiry row is persisted; forwarded to the
+  // booking picker so the resulting bookings row links back to the
+  // originating enquiry.
+  const [enquiryId, setEnquiryId] = useState<string | null>(null);
 
   const canSubmit =
     !!company &&
@@ -83,6 +87,7 @@ export function EnquiryForm({
         setError(res.error);
         return;
       }
+      setEnquiryId(res.data.id);
       setDone(true);
     });
   };
@@ -94,6 +99,7 @@ export function EnquiryForm({
         contactName={contactName}
         contactEmail={contactEmail}
         contactPhone={contactPhone}
+        enquiryId={enquiryId}
         companyName={company?.company_name ?? ""}
         companyNumber={company?.company_number ?? ""}
         bookingEnabled={bookingEnabled}
@@ -213,6 +219,7 @@ function ConfirmationCard({
   companyName,
   companyNumber,
   bookingEnabled,
+  enquiryId,
 }: {
   serviceTitle: string;
   contactName: string;
@@ -221,6 +228,7 @@ function ConfirmationCard({
   companyName: string;
   companyNumber: string;
   bookingEnabled: boolean;
+  enquiryId: string | null;
 }) {
   const [booked, setBooked] = useState<BookingResult | null>(null);
 
@@ -341,6 +349,7 @@ function ConfirmationCard({
                 attendeeEmail={contactEmail}
                 attendeeName={contactName}
                 serviceLabel={serviceTitle}
+                enquiryId={enquiryId ?? undefined}
                 onBooked={setBooked}
               />
             </div>

@@ -31,6 +31,11 @@ function linkFor(n: NotificationRow, role: Role): string {
       // service_enquiry row is visible; from there they jump to the
       // calendar to add the Meet link.
       return "/admin/enquiries";
+    case "enquiry_contacted":
+    case "enquiry_closed":
+      // Client-facing. Lands on the dashboard where the "Upcoming calls"
+      // card surfaces the booking + enquiry status together.
+      return "/client";
     case "withdrawal_requested":
       return "/admin/withdrawals";
     case "withdrawal_paid":
@@ -423,5 +428,8 @@ function typeLabel(t: NotificationType): string {
       return "Enquiry";
     case "booking_created":
       return "Booking";
+    case "enquiry_contacted":
+    case "enquiry_closed":
+      return "Enquiry";
   }
 }

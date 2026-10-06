@@ -3,7 +3,9 @@ import { requireRole } from "@/lib/auth";
 import {
   createBooking,
   isCalendarConfigured,
+  SLOT_MINUTES_DEFAULT,
 } from "@/lib/calendar/booking";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { insertBookingCreatedNotifications } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,12 @@ type Body = {
   // ("VAT Registered + Accounts (over £200k)"). Optional; the server
   // falls back to summary.
   serviceLabel?: string;
+  // Optional link to the originating service_enquiries row. Lets the
+  // persisted bookings row carry context so the client dashboard can
+  // show the booking + its enquiry together. Future booking surfaces
+  // (support calls, consultations) can leave this null and still use
+  // the picker end-to-end.
+  enquiryId?: string;
 };
 
 // POST /api/booking/create
@@ -87,6 +95,38 @@ export async function POST(req: NextRequest) {
       attendeeEmail,
       attendeeName,
     });
+
+    // Persist the booking so the client can see "your call is booked"
+    // on return visits, not just on the one-off confirmation screen
+    // right after booking. Server role bypasses RLS; the row is scoped
+    // to the signed-in client via me.id and the SELECT policy restricts
+    // reads to the owner.
+    const startDate = new Date(startIso);
+    const endDate = new Date(startDate.getTime() + SLOT_MINUTES_DEFAULT * 60_000);
+    const admin = createAdminClient();
+    const { error: bookingInsertErr } = await admin.from("bookings").insert({
+      client_id: me.id,
+      service_enquiry_id: body.enquiryId ?? null,
+      starts_at: startDate.toISOString(),
+      ends_at: endDate.toISOString(),
+      duration_minutes: SLOT_MINUTES_DEFAULT,
+      google_event_id: result.eventId,
+      google_event_url: result.htmlLink,
+      meet_link: result.meetLink,
+      status: "confirmed",
+      attendee_name: attendeeName ?? null,
+      attendee_email: attendeeEmail,
+      service_label: body.serviceLabel?.trim() || summary,
+    });
+    if (bookingInsertErr) {
+      // Log but don't fail the response — the Google event already
+      // exists and is the ultimate source of truth. The admin
+      // notification below is the backstop for staff visibility.
+      console.error(
+        `[booking] persist failed event=${result.eventId}:`,
+        bookingInsertErr.message,
+      );
+    }
 
     // Fan a 'booking_created' notification out to every admin AND the
     // calendar owner. Service-account bookings can't attach a Meet

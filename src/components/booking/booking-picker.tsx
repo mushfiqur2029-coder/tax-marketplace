@@ -35,6 +35,11 @@ type Props = {
   // (e.g. "VAT Registered + Accounts (over £200k)"). Falls back to
   // `summary` server-side if omitted.
   serviceLabel?: string;
+  // Optional link to a service_enquiries row. The server persists this
+  // on the bookings row so the client dashboard can show the booking +
+  // its enquiry together. Other callers (future support bookings) can
+  // leave this unset.
+  enquiryId?: string;
   // How many business days forward to show. Default 10.
   daysToShow?: number;
   // Called once the booking succeeds; the parent typically swaps its
@@ -162,6 +167,7 @@ export function BookingPicker({
   attendeeEmail,
   attendeeName,
   serviceLabel,
+  enquiryId,
   daysToShow = DAYS_TO_SHOW_DEFAULT,
   onBooked,
 }: Props) {
@@ -247,6 +253,7 @@ export function BookingPicker({
           attendeeName,
           humanLabel,
           serviceLabel,
+          enquiryId,
         }),
       });
       const data = await res.json();
@@ -296,7 +303,12 @@ export function BookingPicker({
             disabled={!canGoBack}
             onClick={() => pageBy(-PAGE_WORKING_DAYS)}
           />
-          <div className="scroll-row -mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1 pb-2 sm:gap-3">
+          {/* No .scroll-row here on purpose: the fade-edge mask only
+              signalled "more content, scroll" and the paging arrows
+              communicate that more clearly now. Keep the scrollbar
+              hidden via arbitrary utilities so narrow widths don't
+              sprout a native bar beneath the strip. */}
+          <div className="-mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1 pb-2 sm:gap-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {days.map((ymd) => (
               <DayCard
                 key={ymd}

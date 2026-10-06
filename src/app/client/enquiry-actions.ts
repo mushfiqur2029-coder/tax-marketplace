@@ -2,8 +2,10 @@
 
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
 import { getTier } from "@/lib/plans";
+import { insertEnquiryStatusNotification } from "@/lib/notifications";
 
 // Shape mirrors the CompanyLookup widget's CompanyPick + the three
 // contact fields on the enquiry form. company_status is nullable in
@@ -92,6 +94,23 @@ export async function setServiceEnquiryStatusAction(
   try {
     await requireRole("admin");
     const supabase = await createClient();
+
+    // Capture the previous status + context in one round-trip. Needed for
+    // the client-facing notification: we only fire on an actual transition
+    // (admin re-saving contacted → contacted shouldn't spam the client),
+    // and we need the service_key + client_id to compose the message.
+    const admin = createAdminClient();
+    const { data: prev } = await admin
+      .from("service_enquiries")
+      .select("id, status, client_id, service_key")
+      .eq("id", id)
+      .maybeSingle<{
+        id: string;
+        status: "new" | "contacted" | "closed";
+        client_id: string;
+        service_key: string;
+      }>();
+
     const { data, error } = await supabase
       .from("service_enquiries")
       .update({
@@ -107,6 +126,26 @@ export async function setServiceEnquiryStatusAction(
     if (!data || data.length === 0) {
       throw new Error("Enquiry not found or no rows updated.");
     }
+
+    // Only notify the client on actual transitions INTO contacted or
+    // closed. Best-effort — a failed notification doesn't roll back the
+    // status change (admin's save would be broken for a UI-only
+    // concern).
+    if (
+      prev &&
+      prev.status !== status &&
+      (status === "contacted" || status === "closed")
+    ) {
+      const tier = getTier(prev.service_key);
+      await insertEnquiryStatusNotification({
+        clientId: prev.client_id,
+        status,
+        serviceLabel: tier?.title ?? "bespoke",
+      }).catch((err) => {
+        console.error("[enquiry status notification] failed:", err);
+      });
+    }
+
     return { ok: true };
   } catch (e) {
     return fail(e);

@@ -20,7 +20,9 @@ export type NotificationType =
   | "vat_approval_ready"
   | "vat_filed"
   | "service_enquiry"
-  | "booking_created";
+  | "booking_created"
+  | "enquiry_contacted"
+  | "enquiry_closed";
 
 export type NotificationRow = {
   id: string;
@@ -488,6 +490,39 @@ export async function insertBookingCreatedNotifications(params: {
   const { error } = await admin.from("notifications").insert(rows);
   logNotifyError(
     { type: "booking_created", recipientCount: rows.length },
+    error,
+  );
+}
+
+// Client-facing enquiry transitions. Admin flips status via
+// setServiceEnquiryStatusAction; both 'contacted' and 'closed' need
+// to reach the client so they aren't left wondering what happened.
+// 'new' isn't exposed as a transition because the row starts there
+// and admin never flips back.
+export async function insertEnquiryStatusNotification(params: {
+  clientId: string;
+  status: "contacted" | "closed";
+  serviceLabel: string;
+}) {
+  const admin = createAdminClient();
+  const message =
+    params.status === "contacted"
+      ? `Someone from Sterling Ledger has picked up your ${params.serviceLabel} enquiry — look out for an email or call.`
+      : `Your ${params.serviceLabel} enquiry has been closed. If you weren't expecting that, reply to our last email and we'll take another look.`;
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.clientId,
+    type:
+      params.status === "contacted"
+        ? ("enquiry_contacted" as const)
+        : ("enquiry_closed" as const),
+    case_id: null,
+    message,
+  });
+  logNotifyError(
+    {
+      type:
+        params.status === "contacted" ? "enquiry_contacted" : "enquiry_closed",
+    },
     error,
   );
 }

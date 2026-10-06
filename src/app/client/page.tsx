@@ -38,13 +38,26 @@ export default async function ClientDashboard({
 
   const me = await requireRole("client");
   const supabase = await createClient();
-  const { data: cases } = await supabase
-    .from("cases")
-    .select(
-      "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, is_urgent, intake_answers",
-    )
-    .eq("client_id", me.id)
-    .order("created_at", { ascending: false });
+  const [{ data: cases }, { data: upcomingBookings }] = await Promise.all([
+    supabase
+      .from("cases")
+      .select(
+        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, is_urgent, intake_answers",
+      )
+      .eq("client_id", me.id)
+      .order("created_at", { ascending: false }),
+    // Upcoming confirmed calls, ordered soonest first. RLS limits to
+    // the signed-in client; the dashboard surfaces these in a card
+    // above the cases list so the booking survives page reloads
+    // (not just the one-off confirmation screen right after booking).
+    supabase
+      .from("bookings")
+      .select("id, starts_at, ends_at, duration_minutes, meet_link, service_label, status")
+      .eq("client_id", me.id)
+      .eq("status", "confirmed")
+      .gte("ends_at", new Date().toISOString())
+      .order("starts_at", { ascending: true }),
+  ]);
 
   const all = cases ?? [];
   const filtered = all.filter((c) => {
@@ -73,8 +86,14 @@ export default async function ClientDashboard({
           { table: "cases", filter: `client_id=eq.${me.id}` },
           // Covers add-on paid updates (status flip) so the "Payment required" badge disappears live.
           { table: "case_addons" },
+          // Bookings for the upcoming-calls section; booking in a
+          // second tab or admin cancelling updates the first tab
+          // without a reload.
+          { table: "bookings", filter: `client_id=eq.${me.id}` },
         ]}
       />
+
+      <UpcomingCalls bookings={upcomingBookings ?? []} />
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <ClientCasesFilter active={view} counts={counts} />
@@ -170,5 +189,121 @@ export default async function ClientDashboard({
         </ul>
       )}
     </>
+  );
+}
+
+type UpcomingBooking = {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  duration_minutes: number;
+  meet_link: string | null;
+  service_label: string | null;
+  status: string;
+};
+
+// Surfaces any confirmed, future bookings for the signed-in client.
+// Hidden entirely when the client has no upcoming calls so the dashboard
+// stays uncluttered on the typical "no scoping call booked" state.
+function UpcomingCalls({ bookings }: { bookings: UpcomingBooking[] }) {
+  if (bookings.length === 0) return null;
+  return (
+    <section className="mb-6">
+      <h2
+        className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
+        Upcoming calls
+      </h2>
+      <ul className="grid gap-3">
+        {bookings.map((b) => (
+          <li key={b.id}>
+            <UpcomingCallCard booking={b} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function UpcomingCallCard({ booking }: { booking: UpcomingBooking }) {
+  const start = new Date(booking.starts_at);
+  const dateLong = start.toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/London",
+  });
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(start);
+  const dayNum = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    day: "numeric",
+  }).format(start);
+  const monthShort = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    month: "short",
+  }).format(start);
+  const dayShort = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    weekday: "short",
+  }).format(start);
+
+  return (
+    <div className="card-sl flex items-center gap-4 p-5">
+      <div
+        className="relative shrink-0 flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-xl text-white"
+        style={{
+          background: "linear-gradient(135deg, var(--navy), var(--sky))",
+        }}
+        aria-hidden="true"
+      >
+        <span
+          className="text-[10px] font-semibold uppercase tracking-widest text-white/85"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          {dayShort}
+        </span>
+        <span
+          className="text-xl font-bold leading-none"
+          style={{ fontFamily: "var(--font-heading)" }}
+        >
+          {dayNum}
+        </span>
+        <span
+          className="text-[10px] uppercase tracking-widest text-white/85"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          {monthShort}
+        </span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div
+          className="text-base font-semibold text-ink sm:text-lg"
+          style={{ fontFamily: "var(--font-heading)" }}
+        >
+          Your call is booked for {dateLong} at {time}.
+        </div>
+        <div className="mt-1 text-xs text-slate">
+          <strong className="text-ink">{booking.duration_minutes} min</strong>
+          {booking.service_label ? ` · ${booking.service_label}` : null}
+        </div>
+      </div>
+      {booking.meet_link ? (
+        <a
+          href={booking.meet_link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 rounded-full bg-navy-deep px-4 py-2 text-xs font-semibold text-white transition hover:opacity-90"
+        >
+          Join call
+        </a>
+      ) : null}
+    </div>
   );
 }
