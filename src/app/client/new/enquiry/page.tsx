@@ -56,6 +56,7 @@ export default async function ClientEnquiryPage({
         defaultContactName={defaultContactName}
         defaultContactEmail={defaultContactEmail}
         defaultContactPhone={defaultContactPhone}
+        bookingUrl={process.env.GOOGLE_CALENDAR_BOOKING_URL ?? null}
         submit={submitServiceEnquiryAction}
       />
 

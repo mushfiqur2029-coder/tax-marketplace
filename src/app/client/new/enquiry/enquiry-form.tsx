@@ -19,6 +19,12 @@ type Props = {
   defaultContactName: string;
   defaultContactEmail: string;
   defaultContactPhone: string;
+  // Google Calendar Appointment Schedule link. Shown on the
+  // post-submit confirmation as a "Schedule your call" CTA that opens
+  // in a new tab. Null if the env var isn't configured — the thank-you
+  // screen falls back to the "we'll email you" line so the enquiry
+  // still looks handled.
+  bookingUrl: string | null;
   submit: (
     input: ServiceEnquiryInput,
   ) => Promise<ActionResult<{ id: string }>>;
@@ -30,6 +36,7 @@ export function EnquiryForm({
   defaultContactName,
   defaultContactEmail,
   defaultContactPhone,
+  bookingUrl,
   submit,
 }: Props) {
   const [company, setCompany] = useState<CompanyPick | null>(null);
@@ -102,17 +109,53 @@ export function EnquiryForm({
           className="text-xl font-semibold text-ink"
           style={{ fontFamily: "var(--font-heading)" }}
         >
-          Thanks. We&rsquo;ll be in touch shortly.
+          Thanks. Your enquiry is in.
         </h2>
         <p className="mt-2 text-sm text-slate">
           We&rsquo;ve logged your enquiry for{" "}
-          <strong className="text-ink">{serviceTitle}</strong>. Someone from
-          Sterling Ledger will email <strong>{contactEmail}</strong> within
-          one business day to arrange a time for the scoping call.
+          <strong className="text-ink">{serviceTitle}</strong>. Pick a time
+          for your scoping call using the button below — you&rsquo;ll get a
+          Google Meet link and a calendar invite to{" "}
+          <strong>{contactEmail}</strong> once you&rsquo;ve booked.
+        </p>
+        <p className="mt-2 text-sm text-slate">
+          Prefer not to book right now? That&rsquo;s fine. Someone from
+          Sterling Ledger will email you within one business day either way.
         </p>
         <p className="mt-4 text-xs text-slate">
           Nothing is charged yet. The fee is confirmed on the call.
         </p>
+        {bookingUrl ? (
+          <div className="mt-6">
+            {/* External Google Appointment Schedule page — opens in a new
+                tab because Google's booking pages don't always render
+                cleanly in an iframe, and the user may want to come back
+                to this confirmation afterwards. */}
+            <a
+              href={bookingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-navy-deep px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+            >
+              Schedule your call
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </a>
+          </div>
+        ) : null}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <SLLink
             href="/client"
@@ -196,12 +239,10 @@ export function EnquiryForm({
           Schedule a call
         </h2>
         <p className="mt-2 text-sm text-slate">
-          After you submit, we&rsquo;ll email you within one business day to
-          book a time that suits you.
-        </p>
-        <p className="mt-2 text-xs text-slate">
-          Direct booking is coming soon as a shared feature across every
-          service. The real calendar integration lands in a later update.
+          After you submit, you&rsquo;ll see a link to book your scoping call
+          directly from our calendar — pick a time that works for you and
+          you&rsquo;ll get a Google Meet link straight away. If you prefer,
+          we&rsquo;ll also email you within one business day.
         </p>
       </section>
 
