@@ -257,6 +257,125 @@ export async function removeAdminAction(
 }
 
 // -------------------------------------------------------------------------
+// Delete a stale, unpaid draft case. Primary-admin only.
+//
+// Eligibility (server-enforced, not just UI-filtered):
+//   - case.status = 'draft'
+//   - case.stripe_payment_status is NOT 'succeeded' (never fully paid;
+//     an abandoned Stripe session that happened to flip succeeded then
+//     was abandoned later would still be excluded)
+//   - case.created_at < now() - 3 days
+//
+// Cleanup:
+//   - case_documents rows CASCADE from cases, but the storage bucket
+//     "case-documents" does NOT auto-delete the files. We explicitly
+//     list every file_url for the case and remove them from storage
+//     before dropping the DB row. If the delete fails we still drop
+//     the row — orphaned storage objects are easier to clean up later
+//     than a half-deleted DB state.
+//
+// Audit: logged to admin_actions with action='draft_case_deleted'
+// BEFORE the delete, so the row survives even if the delete fails
+// partway. Same belt-and-braces as the admin removal.
+// -------------------------------------------------------------------------
+
+// Same 3-day threshold is referenced server-side (eligibility check)
+// AND client-side (filter query + display). One constant keeps them
+// in lockstep.
+export const STALE_DRAFT_DAYS = 3;
+
+export async function deleteStaleDraftCaseAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error(
+        "Only the primary admin can delete stale draft cases.",
+      );
+    }
+    const admin = createAdminClient();
+
+    const { data: row, error: fetchErr } = await admin
+      .from("cases")
+      .select(
+        "id, client_id, status, stripe_payment_status, created_at",
+      )
+      .eq("id", caseId)
+      .maybeSingle();
+    if (fetchErr || !row) throw new Error("Case not found.");
+
+    if (row.status !== "draft") {
+      throw new Error(
+        "Only draft cases can be deleted here. Non-draft cases carry status + payment history.",
+      );
+    }
+    if (row.stripe_payment_status === "succeeded") {
+      throw new Error(
+        "This draft shows a succeeded payment on record. Refusing to delete — reconcile the payment first.",
+      );
+    }
+
+    const createdMs = new Date(row.created_at).getTime();
+    const ageDays = (Date.now() - createdMs) / (1000 * 60 * 60 * 24);
+    if (ageDays < STALE_DRAFT_DAYS) {
+      throw new Error(
+        `Draft is only ${ageDays.toFixed(1)} days old. Must be at least ${STALE_DRAFT_DAYS} days old before deletion.`,
+      );
+    }
+
+    // Collect every storage path for this case so we can purge the
+    // bucket after the DB cascade clears case_documents.
+    const { data: docs } = await admin
+      .from("case_documents")
+      .select("file_url")
+      .eq("case_id", caseId);
+    const storagePaths = (docs ?? [])
+      .map((d) => d.file_url)
+      .filter((p): p is string => !!p);
+
+    // Audit log BEFORE delete. target_user_id = the client who owned
+    // the draft, so the admin_actions row still points to the right
+    // user after the cases row vanishes.
+    await admin.from("admin_actions").insert({
+      target_user_id: row.client_id,
+      admin_id: me.id,
+      action: "draft_case_deleted",
+      note: `Deleted stale draft case ${caseId} (age ${ageDays.toFixed(1)} days, ${storagePaths.length} file(s)).`,
+    });
+
+    // Delete the case row. CASCADE handles case_documents, case_addons,
+    // messages, and anything else pointing at cases.id via a cascading
+    // FK. Realtime fan-out keeps the admin dashboard refreshing.
+    const { error: delErr } = await admin
+      .from("cases")
+      .delete()
+      .eq("id", caseId);
+    if (delErr) throw new Error(delErr.message);
+
+    // Purge storage objects. Non-fatal: an orphaned file in a private
+    // bucket costs pennies and is easy to clean up later; a failed
+    // storage.remove must not undo the DB deletion we just logged.
+    if (storagePaths.length > 0) {
+      const { error: storageErr } = await admin.storage
+        .from(BUCKET)
+        .remove(storagePaths);
+      if (storageErr) {
+        console.error(
+          `[deleteStaleDraftCase] storage remove failed for case=${caseId}:`,
+          storageErr.message,
+        );
+      }
+    }
+
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
 // Reassign a case to a different (or first) accountant.
 // -------------------------------------------------------------------------
 export async function reassignCaseAction(

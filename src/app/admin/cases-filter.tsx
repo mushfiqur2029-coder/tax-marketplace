@@ -7,7 +7,8 @@ export type AdminCaseView =
   | "all"
   | "in_progress"
   | "completed"
-  | "pending";
+  | "pending"
+  | "stale_drafts";
 
 export type AdminCaseCounts = Record<AdminCaseView, number>;
 
@@ -16,6 +17,7 @@ const VIEWS: { key: AdminCaseView; label: string }[] = [
   { key: "in_progress", label: "In progress" },
   { key: "completed", label: "Completed" },
   { key: "pending", label: "Pending" },
+  { key: "stale_drafts", label: "Stale drafts" },
 ];
 
 // Same visual language as the accountant + client filter pills, but scoped
