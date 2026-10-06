@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { siteUrl } from "@/lib/stripe";
 
 export type AuthState = {
   error?: string;
@@ -216,8 +217,9 @@ export async function sendPasswordResetAction(
   const email = String(formData.get("email") ?? "").trim();
   if (!email) return { error: "Enter your email address." };
 
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const redirectTo = `${site.replace(/\/+$/, "")}/reset-password`;
+  // One source of truth across every email + redirect. siteUrl()
+  // handles the empty-string-on-Vercel case + VERCEL_URL fallback.
+  const redirectTo = `${siteUrl()}/reset-password`;
 
   const supabase = await createClient();
   await supabase.auth.resetPasswordForEmail(email, { redirectTo });
