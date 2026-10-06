@@ -26,6 +26,11 @@ function linkFor(n: NotificationRow, role: Role): string {
       return "/admin/profile-changes";
     case "service_enquiry":
       return "/admin/enquiries";
+    case "booking_created":
+      // Lands admin on the enquiries queue where the matching
+      // service_enquiry row is visible; from there they jump to the
+      // calendar to add the Meet link.
+      return "/admin/enquiries";
     case "withdrawal_requested":
       return "/admin/withdrawals";
     case "withdrawal_paid":
@@ -416,5 +421,7 @@ function typeLabel(t: NotificationType): string {
       return "VAT filed";
     case "service_enquiry":
       return "Enquiry";
+    case "booking_created":
+      return "Booking";
   }
 }

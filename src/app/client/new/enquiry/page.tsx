@@ -7,6 +7,7 @@ import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { getTier } from "@/lib/plans";
 import { submitServiceEnquiryAction } from "@/app/client/enquiry-actions";
 import { EnquiryForm } from "./enquiry-form";
+import { isCalendarConfigured } from "@/lib/calendar/booking";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export default async function ClientEnquiryPage({
         defaultContactName={defaultContactName}
         defaultContactEmail={defaultContactEmail}
         defaultContactPhone={defaultContactPhone}
-        bookingUrl={process.env.GOOGLE_CALENDAR_BOOKING_URL ?? null}
+        bookingEnabled={isCalendarConfigured()}
         submit={submitServiceEnquiryAction}
       />
 

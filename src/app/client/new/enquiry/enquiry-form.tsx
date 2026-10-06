@@ -9,6 +9,10 @@ import {
 } from "@/components/case/company-lookup";
 import type { ActionResult } from "@/lib/action-result";
 import type { ServiceEnquiryInput } from "@/app/client/enquiry-actions";
+import {
+  BookingPicker,
+  type BookingResult,
+} from "@/components/booking/booking-picker";
 
 type Props = {
   serviceKey: string;
@@ -19,12 +23,11 @@ type Props = {
   defaultContactName: string;
   defaultContactEmail: string;
   defaultContactPhone: string;
-  // Google Calendar Appointment Schedule link. Shown on the
-  // post-submit confirmation as a "Schedule your call" CTA that opens
-  // in a new tab. Null if the env var isn't configured — the thank-you
-  // screen falls back to the "we'll email you" line so the enquiry
-  // still looks handled.
-  bookingUrl: string | null;
+  // Whether the in-app booking picker is wired up on this env (true
+  // when the Google Calendar service account creds are configured).
+  // When false, the thank-you screen falls back to the "we'll email
+  // you" line so the enquiry still looks handled.
+  bookingEnabled: boolean;
   submit: (
     input: ServiceEnquiryInput,
   ) => Promise<ActionResult<{ id: string }>>;
@@ -36,7 +39,7 @@ export function EnquiryForm({
   defaultContactName,
   defaultContactEmail,
   defaultContactPhone,
-  bookingUrl,
+  bookingEnabled,
   submit,
 }: Props) {
   const [company, setCompany] = useState<CompanyPick | null>(null);
@@ -86,89 +89,15 @@ export function EnquiryForm({
 
   if (done) {
     return (
-      <section className="card-sl p-6 sm:p-8">
-        <div
-          className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl text-white"
-          style={{ background: "linear-gradient(135deg, var(--navy), var(--sky))" }}
-          aria-hidden="true"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </div>
-        <h2
-          className="text-xl font-semibold text-ink"
-          style={{ fontFamily: "var(--font-heading)" }}
-        >
-          Thanks. Your enquiry is in.
-        </h2>
-        <p className="mt-2 text-sm text-slate">
-          We&rsquo;ve logged your enquiry for{" "}
-          <strong className="text-ink">{serviceTitle}</strong>. Pick a time
-          for your scoping call using the button below — you&rsquo;ll get a
-          Google Meet link and a calendar invite to{" "}
-          <strong>{contactEmail}</strong> once you&rsquo;ve booked.
-        </p>
-        <p className="mt-2 text-sm text-slate">
-          Prefer not to book right now? That&rsquo;s fine. Someone from
-          Sterling Ledger will email you within one business day either way.
-        </p>
-        <p className="mt-4 text-xs text-slate">
-          Nothing is charged yet. The fee is confirmed on the call.
-        </p>
-        {bookingUrl ? (
-          <div className="mt-6">
-            {/* External Google Appointment Schedule page — opens in a new
-                tab because Google's booking pages don't always render
-                cleanly in an iframe, and the user may want to come back
-                to this confirmation afterwards. */}
-            <a
-              href={bookingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-navy-deep px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
-            >
-              Schedule your call
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </a>
-          </div>
-        ) : null}
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-          <SLLink
-            href="/client"
-            variant="primary"
-            className="w-full sm:w-auto"
-          >
-            Back to dashboard
-          </SLLink>
-          <SLLink href="/client/new" variant="ghost" className="w-full sm:w-auto">
-            Start another return
-          </SLLink>
-        </div>
-      </section>
+      <ConfirmationCard
+        serviceTitle={serviceTitle}
+        contactName={contactName}
+        contactEmail={contactEmail}
+        contactPhone={contactPhone}
+        companyName={company?.company_name ?? ""}
+        companyNumber={company?.company_number ?? ""}
+        bookingEnabled={bookingEnabled}
+      />
     );
   }
 
@@ -239,10 +168,9 @@ export function EnquiryForm({
           Schedule a call
         </h2>
         <p className="mt-2 text-sm text-slate">
-          After you submit, you&rsquo;ll see a link to book your scoping call
-          directly from our calendar — pick a time that works for you and
-          you&rsquo;ll get a Google Meet link straight away. If you prefer,
-          we&rsquo;ll also email you within one business day.
+          After you submit, you&rsquo;ll be able to pick a 15-minute slot
+          with us right here — no leaving this page. You&rsquo;ll get a
+          video call link and a calendar invite as soon as you book.
         </p>
       </section>
 
@@ -274,6 +202,161 @@ export function EnquiryForm({
         </Link>
       </div>
     </div>
+  );
+}
+
+function ConfirmationCard({
+  serviceTitle,
+  contactName,
+  contactEmail,
+  contactPhone,
+  companyName,
+  companyNumber,
+  bookingEnabled,
+}: {
+  serviceTitle: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  companyName: string;
+  companyNumber: string;
+  bookingEnabled: boolean;
+}) {
+  const [booked, setBooked] = useState<BookingResult | null>(null);
+
+  // Description sent to Google — this is what the calendar event
+  // itself shows. Keep it tight; the client already sees a nicer
+  // version on-screen.
+  const description = [
+    `Scoping call for: ${serviceTitle}`,
+    "",
+    `Client: ${contactName}`,
+    `Email: ${contactEmail}`,
+    `Phone: ${contactPhone}`,
+    `Company: ${companyName} (${companyNumber})`,
+  ].join("\n");
+
+  return (
+    <section className="card-sl p-6 sm:p-8">
+      <div
+        className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl text-white"
+        style={{ background: "linear-gradient(135deg, var(--navy), var(--sky))" }}
+        aria-hidden="true"
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </div>
+
+      {booked ? (
+        <>
+          <h2
+            className="text-xl font-semibold text-ink"
+            style={{ fontFamily: "var(--font-heading)" }}
+          >
+            You&rsquo;re booked in.
+          </h2>
+          <p className="mt-2 text-sm text-slate">
+            Your scoping call for{" "}
+            <strong className="text-ink">{serviceTitle}</strong> is confirmed
+            for <strong className="text-ink">{booked.humanLabel}</strong>.
+            We&rsquo;ll also send a confirmation email to{" "}
+            <strong>{contactEmail}</strong> shortly.
+          </p>
+          {booked.meetLink ? (
+            <div className="mt-4 rounded-lg border border-line bg-cloud/60 p-4">
+              <div
+                className="text-[11px] font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Your call link
+              </div>
+              <a
+                href={booked.meetLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 block break-all text-sm font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
+              >
+                {booked.meetLink}
+              </a>
+              <p className="mt-2 text-xs text-slate">
+                Save this link — it&rsquo;s what you&rsquo;ll use to join the
+                call at the booked time.
+              </p>
+            </div>
+          ) : null}
+          <p className="mt-4 text-xs text-slate">
+            Nothing is charged yet. The fee is confirmed on the call.
+          </p>
+        </>
+      ) : (
+        <>
+          <h2
+            className="text-xl font-semibold text-ink"
+            style={{ fontFamily: "var(--font-heading)" }}
+          >
+            Thanks. Your enquiry is in.
+          </h2>
+          <p className="mt-2 text-sm text-slate">
+            We&rsquo;ve logged your enquiry for{" "}
+            <strong className="text-ink">{serviceTitle}</strong>.{" "}
+            {bookingEnabled ? (
+              <>
+                Pick a 15-minute slot below — you&rsquo;ll see your video
+                call link right away and we&rsquo;ll follow up by email at{" "}
+                <strong>{contactEmail}</strong>.
+              </>
+            ) : (
+              <>
+                Someone from Sterling Ledger will email{" "}
+                <strong>{contactEmail}</strong> within one business day to
+                arrange a time for the scoping call.
+              </>
+            )}
+          </p>
+          {bookingEnabled ? (
+            <p className="mt-2 text-sm text-slate">
+              Prefer not to book right now? That&rsquo;s fine. Someone from
+              Sterling Ledger will email you within one business day either
+              way.
+            </p>
+          ) : null}
+          <p className="mt-4 text-xs text-slate">
+            Nothing is charged yet. The fee is confirmed on the call.
+          </p>
+          {bookingEnabled ? (
+            <div className="mt-6">
+              <BookingPicker
+                summary={`Sterling Ledger scoping call · ${serviceTitle}`}
+                description={description}
+                attendeeEmail={contactEmail}
+                attendeeName={contactName}
+                serviceLabel={serviceTitle}
+                onBooked={setBooked}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
+
+      <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+        <SLLink href="/client" variant="primary" className="w-full sm:w-auto">
+          Back to dashboard
+        </SLLink>
+        <SLLink href="/client/new" variant="ghost" className="w-full sm:w-auto">
+          Start another return
+        </SLLink>
+      </div>
+    </section>
   );
 }
 

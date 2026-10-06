@@ -19,7 +19,8 @@ export type NotificationType =
   | "vat_docs_submitted"
   | "vat_approval_ready"
   | "vat_filed"
-  | "service_enquiry";
+  | "service_enquiry"
+  | "booking_created";
 
 export type NotificationRow = {
   id: string;
@@ -439,6 +440,56 @@ export async function insertVatFiledNotification(params: {
     message: `${params.clientEmail} approved and filed VAT for ${params.periodLabel}. Next cycle is open.`,
   });
   logNotifyError({ type: "vat_filed", caseId: params.caseId }, error);
+}
+
+// Notify every admin AND the calendar owner (looked up by email so
+// the booking primer reaches whoever actually owns the Google
+// calendar, even if they aren't an admin) the moment a scoping-call
+// booking lands. This is load-bearing: the service-account path can't
+// auto-attach a Meet link, so the owner has to add one manually to
+// the newly-created event. Discovery-by-chance is the failure mode
+// this notification exists to prevent.
+export async function insertBookingCreatedNotifications(params: {
+  attendeeEmail: string;
+  attendeeName: string;
+  serviceLabel: string;
+  humanLabel: string; // e.g. "Monday 12 October 2026 at 10:30"
+  calendarOwnerEmail: string;
+  eventHtmlLink: string;
+}) {
+  const admin = createAdminClient();
+  const { data: adminUsers } = await admin
+    .from("users")
+    .select("id, email")
+    .eq("role", "admin");
+  const { data: ownerUser } = await admin
+    .from("users")
+    .select("id, email")
+    .eq("email", params.calendarOwnerEmail)
+    .maybeSingle();
+
+  const byId = new Map<string, { id: string; email: string }>();
+  for (const a of adminUsers ?? []) byId.set(a.id, a);
+  if (ownerUser) byId.set(ownerUser.id, ownerUser);
+  if (byId.size === 0) return;
+
+  const message =
+    `New scoping call booked for ${params.humanLabel}: ${params.attendeeName} ` +
+    `<${params.attendeeEmail}> · ${params.serviceLabel}. ` +
+    `Add a Google Meet link to the event and send it to the client.`;
+
+  const rows = [...byId.values()].map((u) => ({
+    recipient_id: u.id,
+    type: "booking_created" as const,
+    case_id: null,
+    message,
+  }));
+
+  const { error } = await admin.from("notifications").insert(rows);
+  logNotifyError(
+    { type: "booking_created", recipientCount: rows.length },
+    error,
+  );
 }
 
 // Notify the accountant when admin approves or rejects their application.
