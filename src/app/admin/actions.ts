@@ -18,6 +18,11 @@ import {
   updateServiceCatalogRow,
   type ServiceCatalogPatch,
 } from "@/lib/service-catalog";
+import type {
+  ClientDeletionCheck,
+  AccountantDeletionCheck,
+} from "./account-deletion-types";
+import { STALE_DRAFT_DAYS } from "./constants";
 
 export type { ActionResult };
 
@@ -276,31 +281,10 @@ export async function removeAdminAction(
 // Audit log goes in BEFORE the delete so admin_actions.target_user_id
 // is captured before the FK gets nulled.
 
-// Shape returned by the pre-check helpers. Rendered on the admin
-// detail page so the primary admin can see exactly what's attached
-// before clicking Delete.
-export type ClientDeletionCheck = {
-  blocked: boolean;
-  blockReason: string | null;
-  paidCases: number;
-  draftCases: number;
-  totalCases: number;
-  documents: number;
-  bookings: number;
-  enquiries: number;
-};
-
-export type AccountantDeletionCheck = {
-  blocked: boolean;
-  blockReason: string | null;
-  walletTransactions: number;
-  walletBalancePence: number;
-  withdrawalRequests: number;
-  addonsIssued: number;
-  vatCyclesCreated: number;
-  documentsUploaded: number;
-  assignedLiveCases: number;
-};
+// Shapes returned by the pre-check helpers below live in
+// account-deletion-types.ts — Next's "use server" directive on this
+// file forbids any non-async-function export, so `export type` here
+// would make Turbopack reject the entire module.
 
 export async function getClientDeletionCheck(
   clientId: string,
@@ -589,10 +573,8 @@ export async function deleteAccountantAccountAction(
 // partway. Same belt-and-braces as the admin removal.
 // -------------------------------------------------------------------------
 
-// Same 3-day threshold is referenced server-side (eligibility check)
-// AND client-side (filter query + display). One constant keeps them
-// in lockstep.
-export const STALE_DRAFT_DAYS = 3;
+// Threshold constant moved to ./constants so this "use server" file
+// can keep its only-async-function-exports contract.
 
 export async function deleteStaleDraftCaseAction(
   caseId: string,

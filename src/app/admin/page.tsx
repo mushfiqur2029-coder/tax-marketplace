@@ -20,10 +20,8 @@ import {
   type AdminCaseCounts,
 } from "./cases-filter";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
-import {
-  deleteStaleDraftCaseAction,
-  STALE_DRAFT_DAYS,
-} from "@/app/admin/actions";
+import { deleteStaleDraftCaseAction } from "@/app/admin/actions";
+import { STALE_DRAFT_DAYS } from "@/app/admin/constants";
 import { DeleteStaleDraftButton } from "./delete-stale-draft-button";
 
 export const dynamic = "force-dynamic";
