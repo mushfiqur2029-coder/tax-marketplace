@@ -21,7 +21,13 @@ export type InvoiceLineItem = {
 
 export type InvoiceData = {
   invoiceNumber: string;        // e.g. "SL-2026-000042"
-  clientName: string;           // "Invoice for"
+  // "Invoice for" block. billingPrimary is the big name on top
+  // (company name on a Limited Company invoice, client's full name
+  // on a Personal one). billingSecondary is a smaller muted line
+  // underneath (client name + email for LC; just email for Personal).
+  // The template never falls back to the email as the primary.
+  billingPrimary: string;
+  billingSecondary: string | null;
   // Paid date, in Europe/London. Rendered as "6 October 2026".
   paidDateLabel: string;
   // Stripe payment-intent id (or similar reference). Printed in the
@@ -140,12 +146,6 @@ export function renderInvoiceHtml(d: InvoiceData): string {
     color: #0f1e4d;
     margin-bottom: 10px;
   }
-  .org-name {
-    font-weight: 700;
-    font-size: 11.5pt;
-    color: #0f1e4d;
-    letter-spacing: 0.01em;
-  }
   .org-addr {
     font-size: 9.5pt;
     color: #4b5c89;
@@ -205,6 +205,13 @@ export function renderInvoiceHtml(d: InvoiceData): string {
     font-weight: 600;
     font-size: 12pt;
     color: #0f1e4d;
+  }
+  .meta .value-sub {
+    margin-top: 2px;
+    font-weight: 400;
+    font-size: 9.5pt;
+    color: #4b5c89;
+    letter-spacing: 0;
   }
   .meta .block.right { text-align: right; }
 
@@ -336,7 +343,6 @@ export function renderInvoiceHtml(d: InvoiceData): string {
   <header class="masthead">
     <div class="brand-left">
       ${logoBlock}
-      <div class="org-name">Sterling Ledger Advisory Ltd</div>
       <div class="org-addr">
         Office 9218, 321-323 High Road<br/>
         Romford, England, RM6 6AX
@@ -355,7 +361,8 @@ export function renderInvoiceHtml(d: InvoiceData): string {
   <section class="meta">
     <div class="block">
       <div class="label">Invoice for</div>
-      <div class="value">${esc(d.clientName)}</div>
+      <div class="value">${esc(d.billingPrimary)}</div>
+      ${d.billingSecondary ? `<div class="value-sub">${esc(d.billingSecondary)}</div>` : ""}
     </div>
     <div class="block right">
       <div class="label">Paid date</div>

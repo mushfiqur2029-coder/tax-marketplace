@@ -93,6 +93,49 @@ function capitalize(s: string): string {
   return s[0].toUpperCase() + s.slice(1);
 }
 
+// Resolve the "Invoice for" primary + secondary lines so the PDF
+// shows a real name (or company name on LC) rather than the email.
+// Mirrors the sources the engagement letter + case displays already
+// use — client_profiles.name for the person's name, and
+// cases.intake_answers.company_name (captured at engagement sign)
+// for the Limited Company. Fallback waterfall ends at the email so
+// a legacy row with no profile still gets a sensible rendering.
+async function resolveInvoiceBillingLines(
+  admin: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  clientEmail: string,
+  segment: string,
+  intakeAnswers: Record<string, string> | null,
+): Promise<{ primary: string; secondary: string | null }> {
+  const { data: profile } = await admin
+    .from("client_profiles")
+    .select("name")
+    .eq("user_id", clientId)
+    .maybeSingle<{ name: string | null }>();
+  const name = (profile?.name ?? "").trim();
+
+  if (segment === "limited_company_vat") {
+    const companyName = (intakeAnswers?.company_name ?? "").trim();
+    if (companyName) {
+      // "ACME TRADING LTD" / "Jane Smith · jane@example.com"
+      const sub = name ? `${name} · ${clientEmail}` : clientEmail;
+      return { primary: companyName, secondary: sub };
+    }
+    // Legacy LC case with no company name captured — fall back to
+    // name-on-top, email-below so the invoice is still useful.
+    return {
+      primary: name || clientEmail,
+      secondary: name ? clientEmail : null,
+    };
+  }
+
+  // Personal path (or anything unexpected).
+  return {
+    primary: name || clientEmail,
+    secondary: name ? clientEmail : null,
+  };
+}
+
 // Render an invoice PDF and return the base64 payload the email
 // layer expects. Non-fatal callers wrap this in try/catch — a
 // chromium hiccup must not block the status-update that already
@@ -210,9 +253,12 @@ export async function POST(req: NextRequest) {
               )
               .eq("id", addonId)
               .single();
+            // Fetch the parent case so the "Invoice for" block can
+            // branch on segment + pick up the LC company name
+            // captured at engagement sign.
             const { data: caseRow } = await admin
               .from("cases")
-              .select("client_id")
+              .select("client_id, segment, intake_answers")
               .eq("id", addon.case_id)
               .single();
             if (caseRow && paidAddon) {
@@ -230,10 +276,20 @@ export async function POST(req: NextRequest) {
                 const paidDateLabel = formatPaidDate(
                   paidAddon.paid_at ?? new Date().toISOString(),
                 );
+                const billing = await resolveInvoiceBillingLines(
+                  admin,
+                  caseRow.client_id,
+                  client.email,
+                  caseRow.segment,
+                  (caseRow.intake_answers ?? null) as
+                    | Record<string, string>
+                    | null,
+                );
                 const invoiceAttachment = paidAddon.invoice_number
                   ? await buildInvoiceAttachment({
                       invoiceNumber: paidAddon.invoice_number,
-                      clientName: client.email,
+                      billingPrimary: billing.primary,
+                      billingSecondary: billing.secondary,
                       paidDateLabel,
                       paymentReference: reference,
                       paymentMethod,
@@ -361,7 +417,7 @@ export async function POST(req: NextRequest) {
           const { data: row } = await admin
             .from("cases")
             .select(
-              "id, client_id, segment, tier, custom_fee_pence, urgent_fee_pence, is_urgent, invoice_number, submitted_at",
+              "id, client_id, segment, tier, custom_fee_pence, urgent_fee_pence, is_urgent, invoice_number, submitted_at, intake_answers",
             )
             .eq("id", caseId)
             .single();
@@ -404,10 +460,18 @@ export async function POST(req: NextRequest) {
                   unitPricePence: urgentFeePence,
                 });
               }
+              const billing = await resolveInvoiceBillingLines(
+                admin,
+                row.client_id,
+                client.email,
+                row.segment,
+                (row.intake_answers ?? null) as Record<string, string> | null,
+              );
               const invoiceAttachment = row.invoice_number
                 ? await buildInvoiceAttachment({
                     invoiceNumber: row.invoice_number,
-                    clientName: client.email,
+                    billingPrimary: billing.primary,
+                    billingSecondary: billing.secondary,
                     paidDateLabel,
                     paymentReference,
                     paymentMethod,
