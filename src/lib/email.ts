@@ -18,14 +18,25 @@ export type EmailResult =
   | { ok: true; skipped: true }
   | { ok: false; skipped: false; error: string };
 
+export type EmailAttachment = {
+  /** Base64-encoded bytes. */
+  base64: string;
+  /** Filename the recipient sees. */
+  filename: string;
+  /** MIME type. Defaults to application/octet-stream on the Apps Script side. */
+  mimeType?: string;
+};
+
 export type EmailParams = {
   to: string;
   subject: string;
   html: string;
-  /** Optional PDF attachment, base64-encoded. */
+  /** Optional PDF attachment, base64-encoded. Legacy single-attachment path. */
   pdfBase64?: string;
   /** Required when pdfBase64 is set — the filename the recipient sees. */
   filename?: string;
+  /** Generic attachments array. Preferred over pdfBase64 for anything non-PDF. */
+  attachments?: EmailAttachment[];
   /** For log context only, so a skipped line is traceable to a case. */
   logCaseId?: string;
 };
@@ -62,6 +73,13 @@ export async function sendEmailViaAppsScript(
         html: params.html,
         pdf_base64: params.pdfBase64 ?? null,
         filename: params.filename ?? null,
+        attachments: params.attachments
+          ? params.attachments.map((a) => ({
+              base64: a.base64,
+              filename: a.filename,
+              mime_type: a.mimeType ?? "application/octet-stream",
+            }))
+          : null,
       }),
     });
     if (!res.ok) {

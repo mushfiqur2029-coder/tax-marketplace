@@ -4,49 +4,20 @@
 // consultations, etc.) by accepting the calendar id, working hours,
 // slot duration, and timezone as optional overrides.
 //
-// Auth: service account JWT (google-auth-library handles token
-// refresh + caching). The service account must be granted "Make
-// changes to events" on the target calendar for createBooking to
-// succeed; a view-only grant is enough for listAvailableSlots.
+// Auth prefers an OAuth2 refresh token granted via the one-time admin
+// consent flow at /api/auth/google/connect — the server acts AS the
+// calendar owner, which is what unlocks `attendees` (native Google
+// calendar invite to the client) and `conferenceData.hangoutsMeet`
+// (auto-attached Meet link).
 //
-// ---------------------------------------------------------------------
-// Option B upgrade path (planned, do this once booking volume > manual
-// is painful): switch from service-account JWT to OAuth2 user-
-// impersonation. The service account path has two Google-side
-// limitations we live with today:
-//   1. `attendees` can't be added (403 forbiddenForServiceAccounts),
-//      so clients don't get a Google calendar invite — our in-app
-//      confirmation + 'booking_created' notification carry the info.
-//   2. `conferenceData` with hangoutsMeet is rejected (400 "Invalid
-//      conference type value"), so events ship without a Meet link
-//      and the calendar owner has to attach one manually. The
-//      'booking_created' notification exists specifically to make
-//      sure that step isn't missed.
-// Both are unlocked by (a) switching to an OAuth2 user flow where
-// the calendar owner (nextnoor04@gmail.com) authorizes the app once,
-// subsequent events are created AS them, or (b) moving the calendar
-// to a Google Workspace tenant and enabling Domain-Wide Delegation
-// on this service account.
-//
-// Shape of the (a) upgrade:
-//   - Add /api/auth/google/connect + /api/auth/google/callback
-//     routes that run the OAuth2 consent flow and persist the
-//     resulting refresh_token (encrypted, same approach as
-//     COMPANY_AUTH_CODE_KEY uses for CH auth codes).
-//   - Swap getAuth() below from `new JWT(...)` to
-//     `new OAuth2Client(...)` + `.setCredentials({ refresh_token })`.
-//     The rest of the file is already written against access tokens,
-//     so nothing else changes.
-//   - Add `attendees` + `conferenceData` back to the body in
-//     createBooking (both are currently blocked by the service
-//     account; they're the whole point of upgrading).
-//   - Remove the 'booking_created' notification's "add a Meet link
-//     manually" phrasing (the Meet link is auto-attached once this
-//     is live) and shift the message to a quieter "FYI, a scoping
-//     call just landed" tone.
-// ---------------------------------------------------------------------
+// Fallback is the service-account JWT. In that mode the two features
+// above are rejected by Google (see getAccessToken comment), so bookings
+// still get persisted but go out without a native invite / Meet link.
+// Fallback keeps slot listing working on a dev box or a brand-new
+// deploy where consent hasn't happened yet.
 
-import { JWT } from "google-auth-library";
+import { JWT, OAuth2Client } from "google-auth-library";
+import { getOwnerOAuthClient } from "./oauth-token";
 
 export const WORKING_HOURS_DEFAULT = { startHour: 10, endHour: 17 } as const;
 export const SLOT_MINUTES_DEFAULT = 15;
@@ -55,31 +26,79 @@ export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 
 // Env is read lazily so dev builds don't crash when the booking env
 // isn't configured (the picker just hides itself in that case).
+// Either auth path (OAuth2 owner refresh token OR service-account JWT)
+// is enough to list slots + create events — the picker should surface
+// as long as GOOGLE_CALENDAR_ID is set and at least one auth path has
+// its env vars present.
 export function isCalendarConfigured(): boolean {
-  const hasKey =
+  if (!process.env.GOOGLE_CALENDAR_ID) return false;
+  const hasServiceAccountKey =
     !!process.env.GOOGLE_CALENDAR_PRIVATE_KEY ||
     !!process.env.GOOGLE_CALENDAR_PRIVATE_KEY_BASE64;
-  return !!(
-    process.env.GOOGLE_CALENDAR_CLIENT_EMAIL &&
-    hasKey &&
-    process.env.GOOGLE_CALENDAR_ID
-  );
+  const hasServiceAccount =
+    !!process.env.GOOGLE_CALENDAR_CLIENT_EMAIL && hasServiceAccountKey;
+  const hasOAuth =
+    !!process.env.GOOGLE_OAUTH_CLIENT_ID &&
+    !!process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  return hasServiceAccount || hasOAuth;
 }
 
-let authSingleton: JWT | null = null;
-function getAuth(): JWT {
-  if (authSingleton) return authSingleton;
+// Expose which auth path is live so the API create route can choose
+// the right admin-notification wording ("add a Meet link manually" vs
+// "FYI, a booking just landed" when Google auto-attaches the Meet).
+export async function getAuthKind(): Promise<AuthContext["kind"]> {
+  const { kind } = await getAuthContext();
+  return kind;
+}
+
+let jwtSingleton: JWT | null = null;
+function getJwt(): JWT | null {
+  if (jwtSingleton) return jwtSingleton;
   const clientEmail = process.env.GOOGLE_CALENDAR_CLIENT_EMAIL;
   const privateKey = resolvePrivateKey();
-  if (!clientEmail || !privateKey) {
-    throw new Error("Google Calendar credentials are not configured.");
-  }
-  authSingleton = new JWT({
+  if (!clientEmail || !privateKey) return null;
+  jwtSingleton = new JWT({
     email: clientEmail,
     key: privateKey,
     scopes: [CALENDAR_SCOPE],
   });
-  return authSingleton;
+  return jwtSingleton;
+}
+
+export type AuthContext = {
+  // "owner" = OAuth2 client acting as the calendar owner; can invite
+  // attendees + attach Meet. "service_account" = JWT; can read FreeBusy
+  // and create bare events only.
+  kind: "owner" | "service_account";
+  // Pre-fetched access token so downstream callers don't have to care
+  // about which auth path produced it.
+  accessToken: string;
+};
+
+async function getAuthContext(): Promise<AuthContext> {
+  const oauth: OAuth2Client | null = await getOwnerOAuthClient();
+  if (oauth) {
+    const { token } = await oauth.getAccessToken();
+    if (!token) {
+      throw new Error(
+        "Could not obtain Google access token from the owner OAuth2 refresh token. Reconnect at /api/auth/google/connect.",
+      );
+    }
+    return { kind: "owner", accessToken: token };
+  }
+  const jwt = getJwt();
+  if (!jwt) {
+    throw new Error(
+      "Google Calendar isn't configured. Set up either the OAuth2 flow (preferred) or the service-account env vars.",
+    );
+  }
+  const { token } = await jwt.getAccessToken();
+  if (!token) {
+    throw new Error(
+      "Could not obtain Google access token from the service-account JWT.",
+    );
+  }
+  return { kind: "service_account", accessToken: token };
 }
 
 // Private key accepts two formats so deployment is easy on any env:
@@ -110,9 +129,8 @@ function resolvePrivateKey(): string | null {
 }
 
 async function getAccessToken(): Promise<string> {
-  const { token } = await getAuth().getAccessToken();
-  if (!token) throw new Error("Could not obtain Google Calendar access token.");
-  return token;
+  const { accessToken } = await getAuthContext();
+  return accessToken;
 }
 
 function getCalendarId(explicit?: string): string {
@@ -379,23 +397,25 @@ export async function createBooking(
     throw new Error("That slot was taken while you were booking. Pick another.");
   }
 
-  const token = await getAccessToken();
-  // Service account constraints on a personal (non-Workspace) calendar:
-  //   - `attendees`: rejected without Domain-Wide Delegation of
-  //     Authority. DWD is a Workspace-only setting, so for @gmail.com
-  //     calendars this is a hard "no". Attendee info therefore lives
-  //     in the event description + extendedProperties.
-  //   - `conferenceData` with `hangoutsMeet`: rejected ("Invalid
-  //     conference type value") because the service account itself
-  //     isn't a Meet-enabled principal. Options to unlock Meet are
-  //     (a) switch to OAuth2 user-impersonation flow, or (b) move the
-  //     calendar to a paid Workspace tenant and enable DWD.
-  //
-  // Until one of those lands we create the event WITHOUT a Meet link;
-  // meetLink comes back null and the UI handles that case. The owner
-  // can attach a Meet manually when they see the event, or we can
-  // post-process out-of-band.
-  const body = {
+  const auth = await getAuthContext();
+  const isOwner = auth.kind === "owner";
+
+  // Base body — works for both auth kinds.
+  type EventBody = {
+    summary: string;
+    description: string;
+    start: { dateTime: string; timeZone: string };
+    end: { dateTime: string; timeZone: string };
+    extendedProperties: { private: Record<string, string> };
+    attendees?: Array<{ email: string; displayName?: string }>;
+    conferenceData?: {
+      createRequest: {
+        requestId: string;
+        conferenceSolutionKey: { type: string };
+      };
+    };
+  };
+  const body: EventBody = {
     summary: input.summary,
     description: input.description,
     start: { dateTime: start.toISOString(), timeZone: timezone },
@@ -409,12 +429,43 @@ export async function createBooking(
     },
   };
 
+  // Owner path (OAuth2): attach the real attendee + a Meet conference.
+  // Google will send a native calendar invite with the Meet link.
+  //
+  // Service-account path: both of these would be rejected by Google
+  //   - `attendees` → 403 forbiddenForServiceAccounts
+  //   - `conferenceData` with hangoutsMeet → 400 "Invalid conference type value"
+  // so we omit them and the Meet link comes back null. The admin
+  // 'booking_created' notification still fires with the "attach a Meet
+  // link manually" phrasing in that mode.
+  if (isOwner) {
+    body.attendees = [
+      {
+        email: input.attendeeEmail,
+        displayName: input.attendeeName,
+      },
+    ];
+    body.conferenceData = {
+      createRequest: {
+        requestId: `sl-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    };
+  }
+
+  // conferenceDataVersion=1 is required for Google to actually create
+  // the Meet; without it the createRequest is silently ignored.
+  // sendUpdates=all tells Google to email the attendee the invite.
+  const qs = isOwner
+    ? "?conferenceDataVersion=1&sendUpdates=all"
+    : "";
+
   const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events${qs}`,
     {
       method: "POST",
       headers: {
-        authorization: `Bearer ${token}`,
+        authorization: `Bearer ${auth.accessToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify(body),

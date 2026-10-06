@@ -458,6 +458,11 @@ export async function insertBookingCreatedNotifications(params: {
   humanLabel: string; // e.g. "Monday 12 October 2026 at 10:30"
   calendarOwnerEmail: string;
   eventHtmlLink: string;
+  // True when the booking was created via the OAuth2 owner path and
+  // Google already auto-attached a Meet link + sent the native invite.
+  // False (default) when the service-account fallback is in play and
+  // the admin has to attach a Meet link manually.
+  meetAttached?: boolean;
 }) {
   const admin = createAdminClient();
   const { data: adminUsers } = await admin
@@ -475,10 +480,13 @@ export async function insertBookingCreatedNotifications(params: {
   if (ownerUser) byId.set(ownerUser.id, ownerUser);
   if (byId.size === 0) return;
 
-  const message =
-    `New scoping call booked for ${params.humanLabel}: ${params.attendeeName} ` +
-    `<${params.attendeeEmail}> · ${params.serviceLabel}. ` +
-    `Add a Google Meet link to the event and send it to the client.`;
+  const message = params.meetAttached
+    ? `New scoping call booked for ${params.humanLabel}: ${params.attendeeName} ` +
+      `<${params.attendeeEmail}> · ${params.serviceLabel}. ` +
+      `Native calendar invite + Meet link have been sent to the client.`
+    : `New scoping call booked for ${params.humanLabel}: ${params.attendeeName} ` +
+      `<${params.attendeeEmail}> · ${params.serviceLabel}. ` +
+      `Add a Google Meet link to the event and send it to the client.`;
 
   const rows = [...byId.values()].map((u) => ({
     recipient_id: u.id,

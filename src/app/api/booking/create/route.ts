@@ -4,11 +4,29 @@ import {
   createBooking,
   isCalendarConfigured,
   SLOT_MINUTES_DEFAULT,
+  getAuthKind,
 } from "@/lib/calendar/booking";
+import { buildIcsBase64 } from "@/lib/calendar/ics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { insertBookingCreatedNotifications } from "@/lib/notifications";
+import { sendEmailViaAppsScript } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
+
+// Tiny HTML/attribute escaper for the confirmation email body. No
+// external dep for one function; the inputs are already validated
+// shapes (ISO datetime, service title, Meet URL).
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+function escapeAttr(s: string): string {
+  return escapeHtml(s);
+}
 
 type Body = {
   startIso?: string;
@@ -129,11 +147,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Fan a 'booking_created' notification out to every admin AND the
-    // calendar owner. Service-account bookings can't attach a Meet
-    // link today (see src/lib/calendar/booking.ts for the Option B
-    // upgrade note), so the admin needs to do it manually on the
-    // calendar event. Best-effort — a failed notification doesn't
-    // roll back a successful booking.
+    // calendar owner. When the owner OAuth2 path is live, Google
+    // auto-attaches the Meet link + sends a native invite to the
+    // attendee, so the notification is purely informational. When we
+    // fall back to the service account, the Meet link has to be added
+    // manually and the notification message reflects that.
+    const authKind = await getAuthKind().catch(() => "service_account" as const);
     try {
       await insertBookingCreatedNotifications({
         attendeeEmail,
@@ -142,9 +161,57 @@ export async function POST(req: NextRequest) {
         humanLabel: body.humanLabel?.trim() || startIso,
         calendarOwnerEmail: process.env.GOOGLE_CALENDAR_ID ?? "",
         eventHtmlLink: result.htmlLink,
+        meetAttached: authKind === "owner",
       });
     } catch (notifyErr) {
       console.error("[booking] notify failed:", notifyErr);
+    }
+
+    // Backup confirmation email with an .ics attachment. The native
+    // Google invite (owner path) is the primary artefact; this is the
+    // belt-and-braces so the client gets an "add to your calendar"
+    // path even if the invite ever fails to send. Skipped silently
+    // when the Apps Script creds aren't configured yet.
+    try {
+      const humanLabel = body.humanLabel?.trim() || startIso;
+      const serviceLabel = body.serviceLabel?.trim() || summary;
+      const ics = buildIcsBase64({
+        uid: result.eventId,
+        summary,
+        description,
+        startIso,
+        endIso: endDate.toISOString(),
+        url: result.meetLink ?? result.htmlLink,
+        location: result.meetLink ?? undefined,
+      });
+      const emailHtml =
+        `<p>Hi ${attendeeName ?? ""},</p>` +
+        `<p>Your Sterling Ledger scoping call for <strong>${escapeHtml(
+          serviceLabel,
+        )}</strong> is confirmed for <strong>${escapeHtml(
+          humanLabel,
+        )}</strong>.</p>` +
+        (result.meetLink
+          ? `<p>Join the call: <a href="${escapeAttr(result.meetLink)}">${escapeHtml(
+              result.meetLink,
+            )}</a></p>`
+          : `<p>We'll follow up with the video call link shortly.</p>`) +
+        `<p>Add it to your calendar using the attached invite file.</p>` +
+        `<p>Sterling Ledger</p>`;
+      await sendEmailViaAppsScript({
+        to: attendeeEmail,
+        subject: `Scoping call confirmed · ${humanLabel}`,
+        html: emailHtml,
+        attachments: [
+          {
+            base64: ics,
+            filename: "sterling-ledger-call.ics",
+            mimeType: "text/calendar",
+          },
+        ],
+      });
+    } catch (mailErr) {
+      console.error("[booking] confirmation email failed:", mailErr);
     }
 
     return NextResponse.json(result);
