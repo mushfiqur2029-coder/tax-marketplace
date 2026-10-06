@@ -9,7 +9,7 @@ import {
 import { buildIcsBase64 } from "@/lib/calendar/ics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { insertBookingCreatedNotifications } from "@/lib/notifications";
-import { sendEmailViaAppsScript } from "@/lib/email";
+import { sendEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -167,11 +167,17 @@ export async function POST(req: NextRequest) {
       console.error("[booking] notify failed:", notifyErr);
     }
 
-    // Backup confirmation email with an .ics attachment. The native
-    // Google invite (owner path) is the primary artefact; this is the
-    // belt-and-braces so the client gets an "add to your calendar"
-    // path even if the invite ever fails to send. Skipped silently
-    // when the Apps Script creds aren't configured yet.
+    // Confirmation email: delivered via the Gmail API (sendEmail →
+    // sendEmailViaGmail) using the OAuth2 refresh token the connected
+    // admin granted. The native Google invite that the owner path
+    // sends is the primary artefact; this email reinforces it with
+    // the Meet link in-line and the .ics attached so Outlook / Apple
+    // Calendar users have a one-click add-to-calendar.
+    //
+    // Also sent (via BCC) to the Sterling Ledger inbox so staff see
+    // every booking land in one place, matching the brief: notify the
+    // info@ mailbox on every booking with the same Meet join link
+    // the client receives.
     try {
       const humanLabel = body.humanLabel?.trim() || startIso;
       const serviceLabel = body.serviceLabel?.trim() || summary;
@@ -198,8 +204,19 @@ export async function POST(req: NextRequest) {
           : `<p>We'll follow up with the video call link shortly.</p>`) +
         `<p>Add it to your calendar using the attached invite file.</p>` +
         `<p>Sterling Ledger</p>`;
-      await sendEmailViaAppsScript({
+      // Comma-separated list is supported in env. Falls back to the
+      // single-mailbox default so the brief ("info@sterlingledger.co.uk
+      // and/or nextnoor04@gmail.com") is honoured even without config.
+      const slNotifyRaw =
+        process.env.SL_BOOKING_NOTIFY_EMAILS ??
+        "info@sterlingledger.co.uk,nextnoor04@gmail.com";
+      const bcc = slNotifyRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s && s !== attendeeEmail);
+      const sent = await sendEmail({
         to: attendeeEmail,
+        bcc,
         subject: `Scoping call confirmed · ${humanLabel}`,
         html: emailHtml,
         attachments: [
@@ -210,6 +227,13 @@ export async function POST(req: NextRequest) {
           },
         ],
       });
+      if (!sent.ok) {
+        console.error("[booking] confirmation email send failed:", sent.error);
+      } else if (sent.skipped) {
+        console.warn(
+          "[booking] confirmation email skipped: " + sent.reason,
+        );
+      }
     } catch (mailErr) {
       console.error("[booking] confirmation email failed:", mailErr);
     }

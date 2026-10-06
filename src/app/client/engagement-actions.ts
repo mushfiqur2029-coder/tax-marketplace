@@ -9,7 +9,7 @@ import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { type ActionResult, fail } from "@/lib/action-result";
 import { renderEngagementLetterHtml } from "@/lib/engagement/letter-template";
 import { renderPdfFromHtml } from "@/lib/engagement/pdf";
-import { sendEmailViaAppsScript } from "@/lib/email";
+import { sendEmail } from "@/lib/email";
 
 // Shape of the three company identity keys we store in intake_answers.
 // company_status is retained from the Companies House pick so downstream
@@ -377,7 +377,7 @@ export async function signEngagementAction(
       <p>PDF is attached.</p>
     `;
 
-    await sendEmailViaAppsScript({
+    await sendEmail({
       to: me.email,
       subject: "Your Sterling Ledger engagement letter",
       html: clientHtml,
@@ -385,7 +385,7 @@ export async function signEngagementAction(
       filename: pdfFilename,
       logCaseId: caseId,
     });
-    await sendEmailViaAppsScript({
+    await sendEmail({
       to: "info@sterlingledger.co.uk",
       subject: `New signed engagement · ${me.email} · ${tier.title}`,
       html: internalHtml,

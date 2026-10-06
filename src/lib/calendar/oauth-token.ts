@@ -17,7 +17,19 @@ export const OAUTH_SCOPES = [
   // readable ("See and edit all your calendars").
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/calendar.events",
+  // Send-only Gmail scope. Powers the booking confirmation + inbox-
+  // notification emails via src/lib/email.ts → sendEmailViaGmail.
+  // Note: Google scopes are additive only through a fresh consent —
+  // if the stored refresh token predates this line, the connected
+  // admin must go back through /api/auth/google/connect once to
+  // grant the new scope. Existing calendar calls keep working with
+  // the old token until that happens.
+  "https://www.googleapis.com/auth/gmail.send",
 ] as const;
+
+// String the stored row's granted_scope should contain for Gmail send
+// to work. Exported so callers can gate / warn.
+export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 
 export function isOAuthConfigured(): boolean {
   return !!(
@@ -123,4 +135,14 @@ export async function getOwnerOAuthClient(): Promise<OAuth2Client | null> {
 
 export async function hasOwnerOAuth(): Promise<boolean> {
   return (await getOwnerOAuthClient()) !== null;
+}
+
+// True when the connected admin has granted gmail.send alongside the
+// calendar scopes. Caller-facing (email helper) uses this to short-
+// circuit with a clear "needs reconsent" result rather than letting
+// Google return a 403 at send time.
+export async function hasGmailSendScope(): Promise<boolean> {
+  const token = await readRefreshToken();
+  if (!token || !token.scope) return false;
+  return token.scope.split(/\s+/).includes(GMAIL_SEND_SCOPE);
 }
