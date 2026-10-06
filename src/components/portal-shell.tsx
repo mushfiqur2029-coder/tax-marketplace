@@ -220,8 +220,10 @@ function SidebarBody<K extends string>({
                 {g.items.map((item) => {
                   const active = isActive(pathname, item);
                   const count = item.countKey ? counts[item.countKey] : 0;
+                  // Two items can share an href (client Dashboard + Cases).
+                  // Key off href + label so React doesn't collide them.
                   return (
-                    <li key={item.href}>
+                    <li key={`${item.href}#${item.label}`}>
                       <Link
                         href={item.href}
                         onClick={onItemClick}
