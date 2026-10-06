@@ -11,6 +11,10 @@ import {
   BespokeCaseForm,
   BespokeCaseExistingLink,
 } from "./bespoke-case-form";
+import {
+  UpcomingCallCard,
+  type UpcomingBookingView,
+} from "@/components/booking/upcoming-call-card";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +93,45 @@ export default async function AdminEnquiriesPage() {
     (bespokeCases ?? []).map((c) => [c.service_enquiry_id, c]),
   );
 
+  // Pull every booking linked to any of these enquiries. Service-role
+  // bypasses the client-scoped RLS; admin needs to see the same
+  // meet_link the client sees so they aren't left digging through
+  // Google Calendar for the Meet URL.
+  const enquiryIds = all.map((r) => r.id);
+  const { data: bookingRows } = enquiryIds.length
+    ? await admin
+        .from("bookings")
+        .select(
+          "id, service_enquiry_id, starts_at, ends_at, duration_minutes, meet_link, service_label, status",
+        )
+        .in("service_enquiry_id", enquiryIds)
+        .order("starts_at", { ascending: true })
+    : {
+        data: [] as Array<{
+          id: string;
+          service_enquiry_id: string;
+          starts_at: string;
+          ends_at: string;
+          duration_minutes: number;
+          meet_link: string | null;
+          service_label: string | null;
+          status: string;
+        }>,
+      };
+  // Index latest confirmed booking per enquiry so repeated bookings
+  // (rebooks after a cancellation) show the current one.
+  const bookingByEnquiryId = new Map<string, UpcomingBookingView>();
+  for (const b of bookingRows ?? []) {
+    if (b.status !== "confirmed") continue;
+    const existing = bookingByEnquiryId.get(b.service_enquiry_id);
+    if (
+      !existing ||
+      new Date(b.starts_at).getTime() > new Date(existing.starts_at).getTime()
+    ) {
+      bookingByEnquiryId.set(b.service_enquiry_id, b);
+    }
+  }
+
   const groups = {
     new: all.filter((r) => r.status === "new"),
     contacted: all.filter((r) => r.status === "contacted"),
@@ -122,7 +165,13 @@ export default async function AdminEnquiriesPage() {
     <>
       <RealtimeRefresh
         channel="admin-enquiries"
-        subscriptions={[{ table: "service_enquiries" }]}
+        subscriptions={[
+          { table: "service_enquiries" },
+          // Admins need the join link to appear the moment a client
+          // completes the booking flow — matching the live-update
+          // behaviour already in place on the client dashboard.
+          { table: "bookings" },
+        ]}
       />
       <AdminPageHeader
         eyebrow="Admin console"
@@ -140,6 +189,7 @@ export default async function AdminEnquiriesPage() {
             submittedByEmail={emailById.get(r.client_id) ?? null}
             accountants={accountants}
             existingCase={caseByEnquiryId.get(r.id) ?? null}
+            booking={bookingByEnquiryId.get(r.id) ?? null}
             setStatus={setStatus}
             createCase={createCase}
           />
@@ -155,6 +205,7 @@ export default async function AdminEnquiriesPage() {
               submittedByEmail={emailById.get(r.client_id) ?? null}
               accountants={accountants}
               existingCase={caseByEnquiryId.get(r.id) ?? null}
+              booking={bookingByEnquiryId.get(r.id) ?? null}
               setStatus={setStatus}
               createCase={createCase}
             />
@@ -171,6 +222,7 @@ export default async function AdminEnquiriesPage() {
               submittedByEmail={emailById.get(r.client_id) ?? null}
               accountants={accountants}
               existingCase={caseByEnquiryId.get(r.id) ?? null}
+              booking={bookingByEnquiryId.get(r.id) ?? null}
               setStatus={setStatus}
               createCase={createCase}
             />
@@ -216,6 +268,7 @@ async function EnquiryCard({
   submittedByEmail,
   accountants,
   existingCase,
+  booking,
   setStatus,
   createCase,
 }: {
@@ -223,6 +276,7 @@ async function EnquiryCard({
   submittedByEmail: string | null;
   accountants: { id: string; name: string | null; email: string }[];
   existingCase: { id: string; custom_fee_pence: number } | null;
+  booking: UpcomingBookingView | null;
   setStatus: (
     id: string,
     status: "new" | "contacted" | "closed",
@@ -308,6 +362,21 @@ async function EnquiryCard({
             </dl>
           </div>
         </div>
+
+        {booking ? (
+          <div className="mt-4">
+            <h4
+              className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              Scoping call booked
+            </h4>
+            <UpcomingCallCard
+              booking={booking}
+              headline={`Call with ${row.contact_name}`}
+            />
+          </div>
+        ) : null}
 
         <EnquiryActions
           id={row.id}

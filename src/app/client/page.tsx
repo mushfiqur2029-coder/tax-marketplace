@@ -15,6 +15,10 @@ import { formatDate } from "@/lib/format";
 import { ClientCasesFilter, type ClientCaseCounts } from "./client-cases-filter";
 import { ClientSuspensionBanner } from "./suspension-banner";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
+import {
+  UpcomingCallCard,
+  type UpcomingBookingView,
+} from "@/components/booking/upcoming-call-card";
 
 export const dynamic = "force-dynamic";
 
@@ -295,20 +299,10 @@ export default async function ClientDashboard({
   );
 }
 
-type UpcomingBooking = {
-  id: string;
-  starts_at: string;
-  ends_at: string;
-  duration_minutes: number;
-  meet_link: string | null;
-  service_label: string | null;
-  status: string;
-};
-
 // Surfaces any confirmed, future bookings for the signed-in client.
 // Hidden entirely when the client has no upcoming calls so the dashboard
 // stays uncluttered on the typical "no scoping call booked" state.
-function UpcomingCalls({ bookings }: { bookings: UpcomingBooking[] }) {
+function UpcomingCalls({ bookings }: { bookings: UpcomingBookingView[] }) {
   if (bookings.length === 0) return null;
   return (
     <section className="mb-6">
@@ -326,88 +320,6 @@ function UpcomingCalls({ bookings }: { bookings: UpcomingBooking[] }) {
         ))}
       </ul>
     </section>
-  );
-}
-
-function UpcomingCallCard({ booking }: { booking: UpcomingBooking }) {
-  const start = new Date(booking.starts_at);
-  const dateLong = start.toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/London",
-  });
-  const time = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(start);
-  const dayNum = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
-    day: "numeric",
-  }).format(start);
-  const monthShort = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
-    month: "short",
-  }).format(start);
-  const dayShort = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
-    weekday: "short",
-  }).format(start);
-
-  return (
-    <div className="card-sl flex items-center gap-4 p-5">
-      <div
-        className="relative shrink-0 flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-xl text-white"
-        style={{
-          background: "linear-gradient(135deg, var(--navy), var(--sky))",
-        }}
-        aria-hidden="true"
-      >
-        <span
-          className="text-[10px] font-semibold uppercase tracking-widest text-white/85"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          {dayShort}
-        </span>
-        <span
-          className="text-xl font-bold leading-none"
-          style={{ fontFamily: "var(--font-heading)" }}
-        >
-          {dayNum}
-        </span>
-        <span
-          className="text-[10px] uppercase tracking-widest text-white/85"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          {monthShort}
-        </span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div
-          className="text-base font-semibold text-ink sm:text-lg"
-          style={{ fontFamily: "var(--font-heading)" }}
-        >
-          Your call is booked for {dateLong} at {time}.
-        </div>
-        <div className="mt-1 text-xs text-slate">
-          <strong className="text-ink">{booking.duration_minutes} min</strong>
-          {booking.service_label ? ` · ${booking.service_label}` : null}
-        </div>
-      </div>
-      {booking.meet_link ? (
-        <a
-          href={booking.meet_link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 rounded-full bg-navy-deep px-4 py-2 text-xs font-semibold text-white transition hover:opacity-90"
-        >
-          Join call
-        </a>
-      ) : null}
-    </div>
   );
 }
 
