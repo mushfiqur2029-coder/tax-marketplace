@@ -5,6 +5,27 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export type Role = "client" | "accountant" | "admin";
 export type AccountantApproval = "pending" | "approved" | "rejected";
 
+// The permanent primary admin. Can never be deleted, demoted, or have
+// their email changed, by anyone (including themselves). Enforced in
+// three places that MUST stay in sync:
+//   1. Server actions that touch admin accounts check isPrimaryAdmin()
+//      and refuse.
+//   2. Only this account can call removeAdminAction.
+//   3. A BEFORE UPDATE/DELETE trigger on public.users (migration 0056,
+//      public.protect_primary_admin) hardcodes the same email as a
+//      final defense against direct SQL / service-role manipulation.
+// If the email ever needs to change, update it here AND in the
+// trigger body in a single migration — one without the other opens a
+// bypass window.
+export const PRIMARY_ADMIN_EMAIL = "ritzbd.com@gmail.com";
+
+export function isPrimaryAdmin(user: {
+  email: string;
+  role: string;
+}): boolean {
+  return user.role === "admin" && user.email.toLowerCase() === PRIMARY_ADMIN_EMAIL;
+}
+
 export type CurrentUser = {
   id: string;
   email: string;

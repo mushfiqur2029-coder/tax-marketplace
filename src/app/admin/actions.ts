@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
+import { requireRole, PRIMARY_ADMIN_EMAIL } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -181,6 +181,72 @@ export async function createAdminAction(input: {
 
     revalidatePath("/admin/admins");
     return { ok: true, data: data.user.id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Permanent admin removal. Primary-admin-only. Deletes the auth user,
+// which cascades through public.users → admin_profiles + notifications
+// + pending_profile_changes; admin_actions.admin_id gets SET NULL so
+// the audit trail survives the admin leaving (migration 0056 relaxed
+// those cascades).
+//
+// Guards in order:
+//   1. Caller must be the primary admin (isPrimaryAdmin).
+//   2. Target must exist and be role=admin.
+//   3. Target must NOT be the primary admin.
+//   4. DB trigger protect_primary_admin_trg is the final defense if
+//      any of the above are bypassed.
+//
+// Belt and braces: log the admin_actions row BEFORE the delete so the
+// target_user_id captures their id before the FK gets nulled, and so
+// the log survives if something later in the function throws.
+// -------------------------------------------------------------------------
+export async function removeAdminAction(
+  targetUserId: string,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Only the primary admin can remove other admins.");
+    }
+    const admin = createAdminClient();
+
+    const { data: target, error: targetErr } = await admin
+      .from("users")
+      .select("id, email, role")
+      .eq("id", targetUserId)
+      .maybeSingle();
+    if (targetErr || !target) throw new Error("Admin not found.");
+    if (target.role !== "admin") throw new Error("User is not an admin.");
+    if (target.email.toLowerCase() === PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Primary admin cannot be removed.");
+    }
+    if (target.id === me.id) {
+      // Caller is primary admin, target is primary admin → already blocked
+      // above. This belt-and-braces path catches an attempt to self-
+      // remove via a crafted request where target != primary (which
+      // shouldn't be possible, but costs nothing to guard).
+      throw new Error("Admins cannot remove themselves.");
+    }
+
+    // Audit log BEFORE delete so the target id is captured.
+    await admin.from("admin_actions").insert({
+      target_user_id: target.id,
+      admin_id: me.id,
+      action: "admin_removed",
+      note: `Removed admin ${target.email}.`,
+    });
+
+    // Delete at the auth layer; cascades through public.users via
+    // auth.users's ON DELETE CASCADE.
+    const { error: delErr } = await admin.auth.admin.deleteUser(target.id);
+    if (delErr) throw new Error(delErr.message);
+
+    revalidatePath("/admin/admins");
+    return { ok: true };
   } catch (e) {
     return fail(e);
   }
