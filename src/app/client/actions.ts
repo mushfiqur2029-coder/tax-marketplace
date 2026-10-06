@@ -105,30 +105,27 @@ export async function createCaseAction(
       throw new Error("That service doesn't match the selected mode.");
     }
 
-    // Personal reinstates the deadline + urgent fee (same working-day rule
-    // as Limited Company's original urgent flow). Validate server-side so
-    // a crafted POST can't bypass the 5-working-day minimum. Limited
-    // Company stays a flat fee with no deadline.
-    let personalDeadline: string | null = null;
-    let personalIsUrgent = false;
-    let personalUrgentFee = 0;
-    if (segment === "personal") {
-      const deadlineRaw = String(formData.get("deadline") ?? "").trim();
-      personalIsUrgent = formData.get("is_urgent") === "true";
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineRaw)) {
-        throw new Error("Please pick a filing deadline.");
-      }
-      const check = await validateDeadline(deadlineRaw, personalIsUrgent);
-      if (!check.ok) {
-        throw new Error(
-          personalIsUrgent
-            ? `That date is too soon even for urgent. Earliest urgent date: ${check.earliest}.`
-            : `Please pick a date on or after ${check.earliest} (5 working days minimum). Tick Urgent (+£${URGENT_FEE_PENCE / 100}) to allow earlier dates.`,
-        );
-      }
-      personalDeadline = deadlineRaw;
-      personalUrgentFee = personalIsUrgent ? URGENT_FEE_PENCE : 0;
+    // Both current flat-fee segments (Personal and Limited Company)
+    // carry a client-chosen filing deadline + optional urgent upgrade.
+    // This is the client's desired completion date — separate from the
+    // accountant-set accounting period dates (period_start_date /
+    // period_end_date / vat_return_cycles) which stay as they are and
+    // aren't touched here. Validate server-side so a crafted POST
+    // can't bypass the 5-working-day minimum.
+    const deadlineRaw = String(formData.get("deadline") ?? "").trim();
+    const isUrgent = formData.get("is_urgent") === "true";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineRaw)) {
+      throw new Error("Please pick a filing deadline.");
     }
+    const check = await validateDeadline(deadlineRaw, isUrgent);
+    if (!check.ok) {
+      throw new Error(
+        isUrgent
+          ? `That date is too soon even for urgent. Earliest urgent date: ${check.earliest}.`
+          : `Please pick a date on or after ${check.earliest} (5 working days minimum). Tick Urgent (+£${URGENT_FEE_PENCE / 100}) to allow earlier dates.`,
+      );
+    }
+    const urgentFee = isUrgent ? URGENT_FEE_PENCE : 0;
 
     const supabase = await createClient();
     const { data, error } = await supabase
@@ -139,11 +136,9 @@ export async function createCaseAction(
         tier,
         status: "draft",
         stripe_payment_status: "pending",
-        // Personal carries deadline + urgent (reinstated from the pre-P1
-        // flow). Limited Company remains flat-fee with no deadline.
-        deadline: personalDeadline,
-        is_urgent: personalIsUrgent,
-        urgent_fee_pence: personalUrgentFee,
+        deadline: deadlineRaw,
+        is_urgent: isUrgent,
+        urgent_fee_pence: urgentFee,
       })
       .select("id")
       .single();

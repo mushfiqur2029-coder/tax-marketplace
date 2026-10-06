@@ -23,8 +23,8 @@ type Props = {
   // info banner above the Personal tile grid; never auto-selects.
   hint?: PersonalHint | null;
   // YYYY-MM-DD strings, computed server-side in Europe/London with UK
-  // bank holidays excluded. Used by the Personal deadline step as the
-  // picker's `min` and in helper copy. Limited Company has no deadline.
+  // bank holidays excluded. Used by the shared Step 3 deadline picker
+  // (both Personal and flat-fee LC) as the input's `min` and in copy.
   earliestStandard: string;
   earliestUrgent: string;
   urgentFeePence: number;
@@ -115,16 +115,23 @@ export function NewCaseForm({
     }
   };
 
-  const canSubmit =
-    mode === "personal"
-      ? !!tier && !!deadline
-      : mode === "company"
-        ? !!tier
-        : false;
-
   // Enquiry-only tiers (bespoke LC) don't create a case — they jump
-  // straight to the enquiry form at /client/new/enquiry.
+  // straight to the enquiry form at /client/new/enquiry. They also skip
+  // the deadline step because there's no fixed fee or filing date yet.
   const isEnquiryTier = !!selectedTier?.requiresEnquiry;
+
+  // Deadline step applies to any flat-fee pick — Personal always
+  // (no enquiry tiers exist on that side) and Company once a non-
+  // enquiry tier is selected.
+  const showDeadlineStep =
+    mode === "personal" || (mode === "company" && !!tier && !isEnquiryTier);
+
+  const canSubmit =
+    isEnquiryTier
+      ? !!tier
+      : showDeadlineStep
+        ? !!tier && !!deadline
+        : false;
 
   // Resolve the segment server-side from the tier; the form only
   // needs to send mode + tier.
@@ -172,122 +179,47 @@ export function NewCaseForm({
         </div>
       </section>
 
-      {/* Personal flow: 9-tile picker, then a deadline step with the
-          urgent upgrade (+£{urgentFeeGbp}). Mirrors the LC flow in
-          intent but is Personal-only because LC's fee includes the
-          whole engagement without a filing-urgency axis. */}
+      {/* Step 2: tier picker, per mode. Enquiry tiles sit in the LC
+          grid and route to /client/new/enquiry instead of continuing
+          into Step 3. */}
       {mode === "personal" ? (
-        <>
-          <section>
-            <SectionHeading
-              eyebrow="Step 2"
-              title="Which best describes your situation?"
-            />
-            {hint && HINT_COPY[hint] ? (
-              <p
-                className="mt-4 rounded-xl border border-sky/30 bg-sky/5 p-4 text-sm text-ink"
-                role="note"
+        <section>
+          <SectionHeading
+            eyebrow="Step 2"
+            title="Which best describes your situation?"
+          />
+          {hint && HINT_COPY[hint] ? (
+            <p
+              className="mt-4 rounded-xl border border-sky/30 bg-sky/5 p-4 text-sm text-ink"
+              role="note"
+            >
+              <span
+                className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-sky"
+                style={{ fontFamily: "var(--font-mono)" }}
               >
-                <span
-                  className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-sky"
-                  style={{ fontFamily: "var(--font-mono)" }}
-                >
-                  Suggestion
-                </span>
-                {HINT_COPY[hint]}
-              </p>
-            ) : null}
-            <p className="mt-4 max-w-xl text-sm text-slate">
-              Each service is a one-off flat fee. You&apos;ll sign a short
-              engagement letter next, pick a filing deadline, then pay.
-              Once we have both, we upload your documents and get started.
+                Suggestion
+              </span>
+              {HINT_COPY[hint]}
             </p>
-            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {PERSONAL_TIERS.map((t) => (
-                <TierButton
-                  key={t.id}
-                  tier={t}
-                  active={tier === t.id}
-                  onClick={() => setTier(t.id)}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <SectionHeading
-              eyebrow="Step 3"
-              title="When do you need it filed by?"
-            />
-            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-              <div className="space-y-4">
-                <label className="block max-w-xs">
-                  <span
-                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate"
-                    style={{ fontFamily: "var(--font-mono)" }}
-                  >
-                    Filing deadline
-                  </span>
-                  <input
-                    type="date"
-                    required
-                    className="input-sl"
-                    value={deadline}
-                    onChange={(e) => setDeadline(e.target.value)}
-                    min={minDate}
-                  />
-                </label>
-                <p className="text-xs text-slate">
-                  Earliest standard date:{" "}
-                  <span className="font-semibold text-ink">
-                    {formatDay(earliestStandard)}
-                  </span>
-                  . Need it sooner? Tick{" "}
-                  <span className="font-semibold">Urgent</span>.
-                </p>
-                <label
-                  className="flex items-start gap-3 rounded-xl border border-line bg-paper p-3 cursor-pointer transition hover:border-sky/50"
-                  style={
-                    isUrgent
-                      ? {
-                          background: "rgba(25,156,217,0.06)",
-                          borderColor: "rgba(25,156,217,0.55)",
-                        }
-                      : undefined
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={isUrgent}
-                    onChange={(e) => onToggleUrgent(e.target.checked)}
-                    className="mt-1 h-4 w-4 shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-ink">
-                      Urgent filing (+£{urgentFeeGbp})
-                    </div>
-                    <div className="mt-0.5 text-xs text-slate">
-                      Any date from the next working day.{" "}
-                      {isUrgent
-                        ? `Earliest urgent date: ${formatDay(earliestUrgent)}.`
-                        : "Ticking this widens the picker above."}
-                    </div>
-                  </div>
-                </label>
-              </div>
-              <OrderSummary
-                selectedTier={selectedTier}
-                isUrgent={isUrgent}
-                urgentFeeGbp={urgentFeeGbp}
-                emptyHint="Pick a service above to see the total."
+          ) : null}
+          <p className="mt-4 max-w-xl text-sm text-slate">
+            Each service is a one-off flat fee. You&apos;ll sign a short
+            engagement letter next, pick a filing deadline, then pay.
+            Once we have both, we upload your documents and get started.
+          </p>
+          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {PERSONAL_TIERS.map((t) => (
+              <TierButton
+                key={t.id}
+                tier={t}
+                active={tier === t.id}
+                onClick={() => setTier(t.id)}
               />
-            </div>
-          </section>
-        </>
+            ))}
+          </div>
+        </section>
       ) : null}
 
-      {/* Limited company flow: three flat-fee service cards + one
-          bespoke enquiry tile, no deadline. */}
       {mode === "company" ? (
         <section>
           <SectionHeading
@@ -309,11 +241,91 @@ export function NewCaseForm({
               />
             ))}
           </div>
+          {/* Enquiry tiles have no fee + no deadline; show a short
+              summary so the user knows the next step is the enquiry
+              form, not Stripe. */}
+          {isEnquiryTier && selectedTier ? (
+            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+              <div />
+              <OrderSummary
+                selectedTier={selectedTier}
+                emptyHint="Pick a service above to see the fee."
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {/* Step 3: shared deadline picker + urgent fee (+£{urgentFeeGbp})
+          + order summary. Renders for Personal (always) and LC when a
+          flat-fee tier is picked. Enquiry picks skip this entirely. */}
+      {showDeadlineStep ? (
+        <section>
+          <SectionHeading
+            eyebrow="Step 3"
+            title="When do you need it filed by?"
+          />
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-            <div />
+            <div className="space-y-4">
+              <label className="block max-w-xs">
+                <span
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate"
+                  style={{ fontFamily: "var(--font-mono)" }}
+                >
+                  Filing deadline
+                </span>
+                <input
+                  type="date"
+                  required
+                  className="input-sl"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  min={minDate}
+                />
+              </label>
+              <p className="text-xs text-slate">
+                Earliest standard date:{" "}
+                <span className="font-semibold text-ink">
+                  {formatDay(earliestStandard)}
+                </span>
+                . Need it sooner? Tick{" "}
+                <span className="font-semibold">Urgent</span>.
+              </p>
+              <label
+                className="flex items-start gap-3 rounded-xl border border-line bg-paper p-3 cursor-pointer transition hover:border-sky/50"
+                style={
+                  isUrgent
+                    ? {
+                        background: "rgba(25,156,217,0.06)",
+                        borderColor: "rgba(25,156,217,0.55)",
+                      }
+                    : undefined
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={isUrgent}
+                  onChange={(e) => onToggleUrgent(e.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0"
+                />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-ink">
+                    Urgent filing (+£{urgentFeeGbp})
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate">
+                    Any date from the next working day.{" "}
+                    {isUrgent
+                      ? `Earliest urgent date: ${formatDay(earliestUrgent)}.`
+                      : "Ticking this widens the picker above."}
+                  </div>
+                </div>
+              </label>
+            </div>
             <OrderSummary
               selectedTier={selectedTier}
-              emptyHint="Pick a service above to see the fee."
+              isUrgent={isUrgent}
+              urgentFeeGbp={urgentFeeGbp}
+              emptyHint="Pick a service above to see the total."
             />
           </div>
         </section>
