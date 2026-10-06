@@ -3,11 +3,16 @@ import { NextResponse, type NextRequest } from "next/server";
 import type Stripe from "stripe";
 import { stripe, stripeWebhookSecret, siteUrl } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { insertAddonPaidNotification } from "@/lib/notifications";
+import {
+  insertAddonPaidNotification,
+  insertCasePaymentStalledNotification,
+  insertAddonPaymentStalledNotification,
+} from "@/lib/notifications";
 import { sendEmail } from "@/lib/email";
 import { getTier } from "@/lib/service-catalog";
 import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { renderInvoicePdf, type InvoiceData } from "@/lib/invoice/pdf";
+import { STALE_DRAFT_DAYS } from "@/app/admin/constants";
 
 // Tiny HTML escaper for values embedded in email bodies. Same shape
 // as the booking route's — inputs here are already-validated DB
@@ -543,16 +548,167 @@ export async function POST(req: NextRequest) {
       const session = event.data.object as Stripe.Checkout.Session;
       const addonId = session.metadata?.addon_id;
       const caseId = session.metadata?.case_id;
+      const reason: "expired" | "failed" =
+        event.type === "checkout.session.expired" ? "expired" : "failed";
 
-      // Add-on session failures: leave the row at pending_payment so the
-      // client can retry. Nothing to write.
-      if (addonId) break;
+      // ---- Add-on branch ----
+      // Don't flip the row — keep it at pending_payment so the client
+      // can retry from the same Pay button. Stale-draft deletion does
+      // NOT sweep add-ons, so there's no deletion threat to warn
+      // about either, which means no client email. Admin gets an
+      // in-app notification so a stall is visible rather than
+      // silently lost.
+      if (addonId) {
+        try {
+          const { data: addonRow } = await admin
+            .from("case_addons")
+            .select(
+              "id, case_id, amount_pence, description, status",
+            )
+            .eq("id", addonId)
+            .maybeSingle();
+          if (addonRow && addonRow.status === "pending_payment") {
+            const { data: caseRow } = await admin
+              .from("cases")
+              .select("client_id")
+              .eq("id", addonRow.case_id)
+              .single();
+            if (caseRow) {
+              const { data: client } = await admin
+                .from("users")
+                .select("email")
+                .eq("id", caseRow.client_id)
+                .single();
+              const { data: profile } = await admin
+                .from("client_profiles")
+                .select("name")
+                .eq("user_id", caseRow.client_id)
+                .maybeSingle<{ name: string | null }>();
+              const clientName = (profile?.name ?? "").trim();
+              if (client?.email) {
+                await insertAddonPaymentStalledNotification({
+                  caseId: addonRow.case_id,
+                  addonDescription: addonRow.description,
+                  amountPence: addonRow.amount_pence,
+                  clientName: clientName || client.email,
+                  clientEmail: client.email,
+                  reason,
+                });
+              }
+            }
+          }
+        } catch (notifyErr) {
+          console.error(
+            "[webhook] addon-stall notification failed:",
+            notifyErr,
+          );
+        }
+        break;
+      }
 
+      // ---- Case branch ----
+      // Idempotency: scope the UPDATE so retries of the same event
+      // (Stripe redelivery) don't re-flip the row and don't double-
+      // send the client email + admin notification. .select("id")
+      // returns [] when nothing was affected = "already processed".
       if (!caseId) break;
-      await admin
+      const { data: flippedFailed } = await admin
         .from("cases")
         .update({ stripe_payment_status: "failed" })
-        .eq("id", caseId);
+        .eq("id", caseId)
+        .neq("stripe_payment_status", "failed")
+        .neq("stripe_payment_status", "succeeded")
+        .select("id");
+      if (!flippedFailed || flippedFailed.length === 0) break;
+
+      try {
+        const { data: row } = await admin
+          .from("cases")
+          .select("id, client_id, segment, tier")
+          .eq("id", caseId)
+          .single();
+        if (!row) break;
+        const { data: client } = await admin
+          .from("users")
+          .select("email")
+          .eq("id", row.client_id)
+          .single();
+        const { data: profile } = await admin
+          .from("client_profiles")
+          .select("name")
+          .eq("user_id", row.client_id)
+          .maybeSingle<{ name: string | null }>();
+        const clientName = (profile?.name ?? "").trim();
+        const tier = await getTier(row.tier);
+        const serviceLabel = tier?.title ?? row.tier;
+        const caseUrl = `${siteUrl().replace(/\/$/, "")}/client/cases/${caseId}/checkout`;
+
+        // Admin visibility — fire regardless of email outcome so
+        // staff see the stall even if the client email bounces.
+        try {
+          await insertCasePaymentStalledNotification({
+            caseId,
+            clientName: clientName || client?.email || "unknown",
+            clientEmail: client?.email ?? "unknown",
+            serviceLabel,
+            reason,
+          });
+        } catch (notifyErr) {
+          console.error(
+            "[webhook] case-stall notification failed:",
+            notifyErr,
+          );
+        }
+
+        // Client email. References STALE_DRAFT_DAYS (same constant
+        // the sweeper uses) so the "deleted in N days" number stays
+        // in lockstep with the real policy. Non-fatal: a failed
+        // send must not 500 the webhook or Stripe would retry and
+        // double-notify admin.
+        if (client?.email) {
+          const headline =
+            reason === "expired"
+              ? "Your checkout session expired before payment completed"
+              : "Your payment didn't go through";
+          // "deleted in N days" references STALE_DRAFT_DAYS directly
+          // so the number can't drift away from what the sweeper
+          // actually enforces.
+          const html =
+            `<p>Hi,</p>` +
+            `<p>${headline}. Your case for <strong>${escapeHtml(
+              serviceLabel,
+            )}</strong> is still a <strong>draft</strong> — nothing has been charged to your card.</p>` +
+            `<p>You can retry payment any time at ` +
+            `<a href="${caseUrl}">${caseUrl}</a>.</p>` +
+            `<p><strong>Heads up:</strong> if payment isn't completed within ` +
+            `<strong>${STALE_DRAFT_DAYS} days</strong> of the case being created, ` +
+            `we'll remove the draft automatically.</p>` +
+            `<p>If anything's wrong or you need a hand, reply to this email.</p>` +
+            `<p>Sterling Ledger</p>`;
+          const sent = await sendEmail({
+            to: client.email,
+            bcc: slNotifyBcc(),
+            subject:
+              reason === "expired"
+                ? `Checkout expired — your ${serviceLabel} case is still draft`
+                : `Payment didn't go through — your ${serviceLabel} case is still draft`,
+            html,
+            logCaseId: caseId,
+          });
+          if (!sent.ok) {
+            console.error(
+              "[webhook] case-stall email send failed:",
+              sent.error,
+            );
+          } else if (sent.skipped) {
+            console.warn(
+              `[webhook] case-stall email skipped: ${sent.reason}`,
+            );
+          }
+        }
+      } catch (mailErr) {
+        console.error("[webhook] case-stall handler threw:", mailErr);
+      }
       break;
     }
     default:

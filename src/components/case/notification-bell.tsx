@@ -40,6 +40,12 @@ function linkFor(n: NotificationRow, role: Role): string {
       // Client-facing. Lands on the new bespoke case where the client
       // signs the engagement letter and pays the quoted fee.
       return n.case_id ? `/client/cases/${n.case_id}` : "/client";
+    case "case_payment_stalled":
+    case "addon_payment_stalled":
+      // Admin-facing. Case page carries both the case + add-on
+      // state; admin can see what's attached and reach the client
+      // from there.
+      return n.case_id ? `/admin/cases/${n.case_id}` : "/admin";
     case "withdrawal_requested":
       return "/admin/withdrawals";
     case "withdrawal_paid":
@@ -437,5 +443,8 @@ function typeLabel(t: NotificationType): string {
       return "Enquiry";
     case "enquiry_quoted":
       return "Quote";
+    case "case_payment_stalled":
+    case "addon_payment_stalled":
+      return "Payment stall";
   }
 }

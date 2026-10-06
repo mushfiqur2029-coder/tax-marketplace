@@ -23,7 +23,9 @@ export type NotificationType =
   | "booking_created"
   | "enquiry_contacted"
   | "enquiry_closed"
-  | "enquiry_quoted";
+  | "enquiry_quoted"
+  | "case_payment_stalled"
+  | "addon_payment_stalled";
 
 export type NotificationRow = {
   id: string;
@@ -581,4 +583,98 @@ export async function insertAccountantApprovalNotification(params: {
     message,
   });
   logNotifyError({ type: "accountant_approval_decision" }, error);
+}
+
+// Admin fan-out when a Stripe Checkout session for a case either
+// expires (abandoned) or fails async. The client-facing email is
+// sent separately from the webhook; this notification gives staff
+// visibility so someone can nudge the client manually if the
+// automated "we'll delete it in 3 days" nudge isn't enough.
+export async function insertCasePaymentStalledNotification(params: {
+  caseId: string;
+  clientName: string;
+  clientEmail: string;
+  serviceLabel: string;
+  reason: "expired" | "failed";
+}) {
+  const admin = createAdminClient();
+  const { data: admins } = await admin
+    .from("users")
+    .select("id")
+    .eq("role", "admin");
+  if (!admins?.length) return;
+  const verb =
+    params.reason === "expired"
+      ? "abandoned checkout"
+      : "declined payment";
+  const message =
+    `Payment stalled — ${params.clientName} <${params.clientEmail}> ` +
+    `${verb} on ${params.serviceLabel}. Case is still draft; will be ` +
+    `swept by the stale-draft deletion if no retry.`;
+  const { error } = await admin.from("notifications").insert(
+    admins.map((a) => ({
+      recipient_id: a.id,
+      type: "case_payment_stalled" as const,
+      case_id: params.caseId,
+      message,
+    })),
+  );
+  logNotifyError(
+    {
+      type: "case_payment_stalled",
+      caseId: params.caseId,
+      recipientCount: admins.length,
+    },
+    error,
+  );
+}
+
+// Admin fan-out when a Stripe Checkout session for an add-on either
+// expires or fails. Deliberately NO client email here — add-ons
+// aren't swept by the stale-draft job so there's no deletion
+// threat to warn about, and the client already sees the pending
+// status on their case page. This is admin visibility only, so
+// someone can reach out manually if a stall persists.
+export async function insertAddonPaymentStalledNotification(params: {
+  caseId: string;
+  addonDescription: string;
+  amountPence: number;
+  clientName: string;
+  clientEmail: string;
+  reason: "expired" | "failed";
+}) {
+  const admin = createAdminClient();
+  const { data: admins } = await admin
+    .from("users")
+    .select("id")
+    .eq("role", "admin");
+  if (!admins?.length) return;
+  const verb =
+    params.reason === "expired"
+      ? "abandoned checkout"
+      : "declined payment";
+  const money = `£${(params.amountPence / 100).toFixed(2)}`;
+  const short =
+    params.addonDescription.length > 60
+      ? params.addonDescription.slice(0, 57) + "..."
+      : params.addonDescription;
+  const message =
+    `Add-on payment stalled — ${params.clientName} ` +
+    `<${params.clientEmail}> ${verb} on ${money} ${short}.`;
+  const { error } = await admin.from("notifications").insert(
+    admins.map((a) => ({
+      recipient_id: a.id,
+      type: "addon_payment_stalled" as const,
+      case_id: params.caseId,
+      message,
+    })),
+  );
+  logNotifyError(
+    {
+      type: "addon_payment_stalled",
+      caseId: params.caseId,
+      recipientCount: admins.length,
+    },
+    error,
+  );
 }
