@@ -9,6 +9,10 @@ import { StatsBand } from "@/components/marketing/stats-band";
 import { HowItWorks } from "@/components/marketing/how-it-works";
 import { AppShowcase } from "@/components/marketing/app-showcase";
 import { PricingSection } from "@/components/marketing/pricing-section";
+import {
+  getPersonalTiers,
+  getCompanyTiers,
+} from "@/lib/service-catalog";
 import { ForAccountants } from "@/components/marketing/for-accountants";
 import { FaqAccordion } from "@/components/marketing/faq-accordion-inline";
 import { SiteFooter } from "@/components/marketing/site-footer";
@@ -17,6 +21,11 @@ import { MobileCta } from "@/components/marketing/mobile-cta";
 export default async function Home() {
   const me = await getCurrentUser();
   if (me) redirect(`/${me.role}`);
+
+  const [personalTiers, companyTiers] = await Promise.all([
+    getPersonalTiers(),
+    getCompanyTiers(),
+  ]);
 
   return (
     <div className="relative min-h-full flex flex-col">
@@ -29,7 +38,10 @@ export default async function Home() {
         <StatsBand />
         <HowItWorks />
         <AppShowcase />
-        <PricingSection />
+        <PricingSection
+          personalTiers={personalTiers}
+          companyTiers={companyTiers}
+        />
         <ForAccountants />
         <FaqAccordion />
         <SiteFooter />

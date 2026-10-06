@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getTier } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
@@ -56,7 +56,7 @@ export default async function EngagementPage({
     redirect(`/client/cases/${id}/checkout`);
   }
 
-  const tier = getTier(caseRow.tier);
+  const tier = await getTier(caseRow.tier);
   if (!tier) notFound();
   const isCompany = caseRow.segment === "limited_company_vat";
   if (isCompany && tier.group !== "company") notFound();

@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
-import { getTier } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import { insertEnquiryStatusNotification } from "@/lib/notifications";
 
 // Shape mirrors the CompanyLookup widget's CompanyPick + the three
@@ -32,7 +32,7 @@ export async function submitServiceEnquiryAction(
   try {
     const me = await requireRole("client");
 
-    const tier = getTier(input.serviceKey);
+    const tier = await getTier(input.serviceKey);
     if (!tier || !tier.requiresEnquiry) {
       throw new Error(
         "Unknown service. This enquiry form only accepts bespoke tiers.",
@@ -136,7 +136,7 @@ export async function setServiceEnquiryStatusAction(
       prev.status !== status &&
       (status === "contacted" || status === "closed")
     ) {
-      const tier = getTier(prev.service_key);
+      const tier = await getTier(prev.service_key);
       await insertEnquiryStatusNotification({
         clientId: prev.client_id,
         status,

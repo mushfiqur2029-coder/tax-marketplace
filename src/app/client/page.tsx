@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
+import { getAllTiers } from "@/lib/service-catalog";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -42,7 +43,7 @@ export default async function ClientDashboard({
     supabase
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, is_urgent, intake_answers",
+        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, is_urgent, intake_answers, custom_fee_pence",
       )
       .eq("client_id", me.id)
       .order("created_at", { ascending: false }),
@@ -71,6 +72,12 @@ export default async function ClientDashboard({
     completed: all.filter((c) => c.status === "complete").length,
     pending: all.filter((c) => c.status === "draft").length,
   };
+
+  const tierMap = new Map(
+    (
+      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
+    ).map((t) => [t.id as string, t]),
+  );
 
   return (
     <>
@@ -124,7 +131,7 @@ export default async function ClientDashboard({
         <ul className="grid gap-3">
           {filtered.map((c) => {
             const seg = getSegment(c.segment);
-            const tier = getTier(c.tier);
+            const tier = tierMap.get(c.tier) ?? null;
             const companyName = companyNameFromAnswers(
               c.intake_answers,
               c.segment,
@@ -168,7 +175,7 @@ export default async function ClientDashboard({
                       </span>
                       <span className="text-xs text-slate">·</span>
                       <span className="text-xs text-slate">
-                        {tier?.title ?? c.tier} · £{tier?.priceGbp ?? "."}
+                        {tier?.title ?? c.tier} · {formatFeeGbp(effectiveFeePence(c, tier))}
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-slate">

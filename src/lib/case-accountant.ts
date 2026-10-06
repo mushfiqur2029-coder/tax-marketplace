@@ -3,7 +3,8 @@ import { requireApprovedAccountant, type Role } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment, type Segment } from "@/lib/segments";
-import { getTier, type PlanTier } from "@/lib/plans";
+import { type PlanTier } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import type { CaseRow, CaseDoc } from "@/lib/case";
 import type { ChatMessage } from "@/components/case/multi-thread-chat";
 
@@ -62,7 +63,7 @@ export async function loadAccountantCase(
   if (error || !row) notFound();
 
   const segment = getSegment(row.segment);
-  const tier = getTier(row.tier);
+  const tier = await getTier(row.tier);
   if (!segment || !tier) notFound();
 
   const isMine = row.accountant_id === me.id;

@@ -5,7 +5,8 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
-import { getTier, type TierId } from "@/lib/plans";
+import { type TierId } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import { insertPeriodDocsSubmittedNotification } from "@/lib/notifications";
 import {
   periodDocsApplyToTier,
@@ -35,7 +36,7 @@ async function assertCaseInPeriodUpload(caseId: string) {
   if (caseRow.segment !== "limited_company_vat") {
     throw new Error("Period documents only apply to limited-company cases.");
   }
-  const tier = getTier(caseRow.tier) as unknown as { id: TierId } | null;
+  const tier = await getTier(caseRow.tier) as unknown as { id: TierId } | null;
   if (!tier || !periodDocsApplyToTier(tier.id)) {
     throw new Error("Your service doesn't have a period-docs step.");
   }

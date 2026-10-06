@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
+import { getAllTiers } from "@/lib/service-catalog";
 import { effectiveFeePence } from "@/lib/case/pricing";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -25,8 +25,14 @@ export default async function ClientPaymentsPage() {
     .eq("stripe_payment_status", "succeeded")
     .order("submitted_at", { ascending: false });
 
+  const tierMap = new Map(
+    (
+      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
+    ).map((t) => [t.id as string, t]),
+  );
+
   const totalPence = (cases ?? []).reduce((sum, c) => {
-    const t = getTier(c.tier);
+    const t = tierMap.get(c.tier) ?? null;
     return sum + effectiveFeePence(c, t) + (c.urgent_fee_pence ?? 0);
   }, 0);
 
@@ -59,7 +65,7 @@ export default async function ClientPaymentsPage() {
         <ul className="grid gap-3">
           {cases.map((c) => {
             const seg = getSegment(c.segment);
-            const tier = getTier(c.tier);
+            const tier = tierMap.get(c.tier) ?? null;
             return (
               <li key={c.id} className="card-sl p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">

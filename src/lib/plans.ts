@@ -1,4 +1,16 @@
-import type { SegmentId } from "./segments";
+// NOTE: as of migration 0057, the display + price fields on these
+// tiers are editable by admin via the public.service_catalog table
+// (admin UI at /admin/service-catalog). Runtime reads of a tier
+// should go through `getTier(id)` from `@/lib/service-catalog`, NOT
+// through this file's static PLAN_TIERS — reading from here means
+// admin edits don't propagate.
+//
+// This file remains the source of truth for:
+//   - the TierId union (adding a new tier is a code change)
+//   - the business-logic flags (requires_enquiry, admin_create_only)
+//   - the static fallback shape used when the DB is unseeded or the
+//     fetch fails
+// so the type system still enforces the known tier set.
 
 export type TierId =
   // Personal — new 9-up flat-fee catalogue (migration 0045). Each tier
@@ -75,6 +87,12 @@ export type PlanTier = {
   // a scoping call. createCaseAction also refuses to insert tiers
   // flagged this way.
   adminCreateOnly?: boolean;
+  // Only populated by the DB-reading path (getAllTiers with
+  // includeInactive: true). getAllTiers hides inactive rows by
+  // default, so general consumers never see this field flip to
+  // false. The admin service-catalog UI reads it to drive the
+  // activate / deactivate toggle.
+  active?: boolean;
 };
 
 // ---------- Personal (9 flat-fee services) ----------
@@ -315,24 +333,16 @@ export const PLAN_TIERS: PlanTier[] = [
   },
 ];
 
-export function getTier(id: string | null | undefined): PlanTier | null {
+// Static fallback lookup. Prefer `getTier` from `@/lib/service-catalog`
+// in server code — it reads from the DB (with this list as fallback)
+// so admin edits propagate. This function is used only by the fallback
+// path and by non-server contexts where sync access is unavoidable.
+export function getTierStatic(id: string | null | undefined): PlanTier | null {
   if (!id) return null;
   return PLAN_TIERS.find((t) => t.id === id) ?? null;
 }
-
-export const PERSONAL_TIERS: PlanTier[] = PLAN_TIERS.filter(
-  (t) => t.group === "personal" && !t.adminCreateOnly,
-);
-export const COMPANY_TIERS: PlanTier[] = PLAN_TIERS.filter(
-  (t) => t.group === "company" && !t.adminCreateOnly,
-);
 
 // Retired personal tiers. The old wizard offered these on top of a
 // segment; neither is sold anymore. Kept here so legacy references
 // still resolve to *something* if an admin opens an archived case.
 export const RETIRED_PERSONAL_TIER_IDS = ["basic", "standard", "premium"] as const;
-
-export function tiersForSegment(segmentId: SegmentId | null | undefined): PlanTier[] {
-  if (segmentId === "limited_company_vat") return COMPANY_TIERS;
-  return PERSONAL_TIERS;
-}

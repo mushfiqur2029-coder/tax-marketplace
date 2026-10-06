@@ -2,11 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import {
-  COMPANY_TIERS,
-  PERSONAL_TIERS,
-  type PlanTier,
-} from "@/lib/plans";
+import { type PlanTier } from "@/lib/plans";
 
 // Marketing pricing block. Personal shows all nine flat-fee services
 // (migration 0045) in a compact 3x3 grid — each card routes into the
@@ -14,10 +10,14 @@ import {
 // shows the three limited-company flat-fee services (Dormant, Non-VAT
 // Registered, VAT Registered); the deeper breakdown lives on
 // /limited-company-tax-returns via CompanyServicesPricing.
-const BUSINESS: PlanTier[] = COMPANY_TIERS;
-const PERSONAL: PlanTier[] = PERSONAL_TIERS;
 
-export function PricingSection() {
+export function PricingSection({
+  personalTiers,
+  companyTiers,
+}: {
+  personalTiers: PlanTier[];
+  companyTiers: PlanTier[];
+}) {
   const [mode, setMode] = useState<"personal" | "business">("personal");
 
   return (
@@ -60,10 +60,10 @@ export function PricingSection() {
         </div>
 
         {mode === "personal" ? (
-          <PersonalGrid tiers={PERSONAL} />
+          <PersonalGrid tiers={personalTiers} />
         ) : (
           <div className="pricing-grid">
-            {BUSINESS.map((t) => (
+            {companyTiers.map((t) => (
               <BusinessCard key={t.id} tier={t} />
             ))}
           </div>

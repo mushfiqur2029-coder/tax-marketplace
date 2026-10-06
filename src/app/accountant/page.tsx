@@ -2,7 +2,9 @@ import Link from "next/link";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
+import { getAllTiers } from "@/lib/service-catalog";
+import type { PlanTier } from "@/lib/plans";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -36,6 +38,7 @@ type Row = {
   is_urgent: boolean;
   onboarding_submitted_at: string | null;
   intake_answers: Record<string, string> | null;
+  custom_fee_pence: number | null;
 };
 
 // "Live" = cases actively being worked on right now.
@@ -87,7 +90,7 @@ export default async function AccountantDashboard({
     supabase
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at, intake_answers",
+        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at, intake_answers, custom_fee_pence",
       )
       .eq("status", "submitted")
       .eq("stripe_payment_status", "succeeded")
@@ -96,7 +99,7 @@ export default async function AccountantDashboard({
     supabase
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at, intake_answers",
+        "id, segment, tier, status, stripe_payment_status, submitted_at, created_at, accountant_id, deadline, is_urgent, onboarding_submitted_at, intake_answers, custom_fee_pence",
       )
       .eq("accountant_id", me.id)
       .order("created_at", { ascending: false }),
@@ -104,6 +107,15 @@ export default async function AccountantDashboard({
 
   const queue = (queueRes.data ?? []) as Row[];
   const mine = (mineRes.data ?? []) as Row[];
+
+  // Pre-fetch every tier (including retired/admin-only/inactive) into
+  // a Map so the sync filter + render callbacks below can look prices +
+  // titles up without introducing per-row await.
+  const tierMap = new Map(
+    (
+      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
+    ).map((t) => [t.id as string, t]),
+  );
 
   const live = mine.filter((c) => LIVE_STATUSES.has(c.status));
   const completed = mine.filter((c) => c.status === "complete");
@@ -129,15 +141,17 @@ export default async function AccountantDashboard({
 
   const filtered = pool.filter((c) => {
     if (fee !== "all") {
-      // Resolve to a GBP price via the plan catalogue. Tiers we no
-      // longer sell (vat_basic / vat_standard / vat_accounts, or
-      // retired basic/standard/premium) return null here — those cases
-      // bucket as unknown and are hidden under any specific fee filter.
-      const price = getTier(c.tier)?.priceGbp ?? null;
-      if (price == null) return false;
-      if (fee === "under_300" && price >= 300) return false;
-      if (fee === "300_to_600" && (price < 300 || price > 600)) return false;
-      if (fee === "over_600" && price <= 600) return false;
+      // Resolve to the actual quoted £ fee (prefers the per-case
+      // custom_fee_pence snapshot over the catalogue list price so
+      // bespoke engagements bucket correctly). Tiers that resolve to
+      // 0 (unknown id, or truly 0-priced placeholder) are excluded
+      // from every specific fee filter.
+      const pricePence = effectiveFeePence(c, tierMap.get(c.tier) ?? null);
+      if (pricePence <= 0) return false;
+      const priceGbp = pricePence / 100;
+      if (fee === "under_300" && priceGbp >= 300) return false;
+      if (fee === "300_to_600" && (priceGbp < 300 || priceGbp > 600)) return false;
+      if (fee === "over_600" && priceGbp <= 600) return false;
     }
     if (urgency !== "all") {
       if (!c.deadline) return false;
@@ -213,7 +227,7 @@ export default async function AccountantDashboard({
       ) : (
         <ul className="grid gap-3">
           {filtered.map((c) => (
-            <li key={c.id}>{renderCard(c)}</li>
+            <li key={c.id}>{renderCard(c, tierMap.get(c.tier) ?? null)}</li>
           ))}
         </ul>
       )}
@@ -221,9 +235,8 @@ export default async function AccountantDashboard({
   );
 }
 
-function renderCard(c: Row) {
+function renderCard(c: Row, tier: PlanTier | null) {
   const seg = getSegment(c.segment);
-  const tier = getTier(c.tier);
   const isMine = !!c.accountant_id;
   const companyName = companyNameFromAnswers(c.intake_answers, c.segment);
   // Cases hit the queue the moment payment lands, not after the client
@@ -271,7 +284,7 @@ function renderCard(c: Row) {
           </span>
           <span className="text-xs text-slate">.</span>
           <span className="text-xs text-slate">
-            {tier?.title ?? c.tier}. £{tier?.priceGbp ?? "."}
+            {tier?.title ?? c.tier}. {formatFeeGbp(effectiveFeePence(c, tier))}
           </span>
         </div>
         <div className="mt-1 text-xs text-slate">

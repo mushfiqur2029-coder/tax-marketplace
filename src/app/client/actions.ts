@@ -6,8 +6,8 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment, type SegmentId } from "@/lib/segments";
+import { getTier } from "@/lib/service-catalog";
 import {
-  getTier,
   RETIRED_PERSONAL_TIER_IDS,
   type TierId,
 } from "@/lib/plans";
@@ -76,7 +76,7 @@ export async function createCaseAction(
     }
     if (!getSegment(segment)) throw new Error("Please pick a service.");
 
-    const tierDef = getTier(tier);
+    const tierDef = await getTier(tier);
     if (!tierDef) throw new Error("Please pick a service.");
 
     // Retired personal tiers (basic / standard / premium). The TypeScript
@@ -135,6 +135,12 @@ export async function createCaseAction(
     }
     const urgentFee = isUrgent ? URGENT_FEE_PENCE : 0;
 
+    // Snapshot the quoted fee onto the case at creation. Future admin
+     // edits of service_catalog.price_gbp must not retroactively change
+     // what this client was quoted — custom_fee_pence is read by
+     // effectiveFeePence everywhere a case price is displayed or charged.
+    const quotedFeePence = tierDef.priceGbp * 100;
+
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("cases")
@@ -147,6 +153,7 @@ export async function createCaseAction(
         deadline: deadlineRaw,
         is_urgent: isUrgent,
         urgent_fee_pence: urgentFee,
+        custom_fee_pence: quotedFeePence,
       })
       .select("id")
       .single();
@@ -174,7 +181,7 @@ export async function startCheckoutAction(
     if (caseRow.status !== "draft") throw new Error("Case already submitted.");
 
     const seg = getSegment(caseRow.segment);
-    const tier = getTier(caseRow.tier);
+    const tier = await getTier(caseRow.tier);
     if (!seg || !tier) throw new Error("Case is missing segment or tier.");
 
     const isCompany = seg.id === "limited_company_vat";

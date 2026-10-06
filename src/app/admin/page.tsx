@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
+import { getAllTiers } from "@/lib/service-catalog";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { EmptyState } from "@/components/empty-state";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
@@ -54,7 +55,7 @@ export default async function AdminDashboard({
     admin
       .from("cases")
       .select(
-        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, client_id, accountant_id, is_urgent, intake_answers",
+        "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, client_id, accountant_id, is_urgent, intake_answers, custom_fee_pence",
       )
       .order("created_at", { ascending: false }),
     admin.from("users").select("id", { count: "exact", head: true }).eq("role", "client"),
@@ -83,6 +84,12 @@ export default async function AdminDashboard({
     completed: allCases.filter((c) => c.status === "complete").length,
     pending: allCases.filter((c) => c.status === "draft").length,
   };
+
+  const tierMap = new Map(
+    (
+      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
+    ).map((t) => [t.id as string, t]),
+  );
 
   const filteredCases = allCases.filter((c) => {
     if (view === "all") return true;
@@ -227,7 +234,7 @@ export default async function AdminDashboard({
           <ul className="grid gap-3">
             {filteredCases.map((c) => {
               const seg = getSegment(c.segment);
-              const tier = getTier(c.tier);
+              const tier = tierMap.get(c.tier) ?? null;
               const companyName = companyNameFromAnswers(
                 c.intake_answers,
                 c.segment,
@@ -270,7 +277,7 @@ export default async function AdminDashboard({
                         </span>
                         <span className="text-xs text-slate">·</span>
                         <span className="text-xs text-slate">
-                          {tier?.title ?? c.tier} · £{tier?.priceGbp ?? "."}
+                          {tier?.title ?? c.tier} · {formatFeeGbp(effectiveFeePence(c, tier))}
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-slate">

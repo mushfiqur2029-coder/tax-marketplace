@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
+import { getAllTiers } from "@/lib/service-catalog";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Avatar } from "@/components/avatar";
@@ -72,6 +72,12 @@ export default async function AdminAccountantDetail({
     ? await admin.from("users").select("id, email").in("id", clientIds)
     : { data: [] as { id: string; email: string }[] };
   const clientEmail = new Map((clients ?? []).map((c) => [c.id, c.email]));
+
+  const tierMap = new Map(
+    (
+      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
+    ).map((t) => [t.id as string, t]),
+  );
 
   return (
     <>
@@ -151,7 +157,7 @@ export default async function AdminAccountantDetail({
               <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
                 {cases.map((c) => {
                   const seg = getSegment(c.segment);
-                  const tier = getTier(c.tier);
+                  const tier = tierMap.get(c.tier) ?? null;
                   const companyName = companyNameFromAnswers(
                     c.intake_answers,
                     c.segment,

@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { getTier } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import { submitServiceEnquiryAction } from "@/app/client/enquiry-actions";
 import { EnquiryForm } from "./enquiry-form";
 import { isCalendarConfigured } from "@/lib/calendar/booking";
@@ -23,7 +23,7 @@ export default async function ClientEnquiryPage({
   // back to /client/new where the normal picker runs — avoids the
   // enquiry form becoming an alternative entry point for flat-fee
   // tiers (and the server action would reject the submit anyway).
-  const tier = getTier(service ?? null);
+  const tier = await getTier(service ?? null);
   if (!tier || !tier.requiresEnquiry) {
     redirect("/client/new");
   }

@@ -5,7 +5,8 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
-import { getTier, type TierId } from "@/lib/plans";
+import { type TierId } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import {
   CHECKLIST_FIELDS,
   ENCRYPTED_FIELD_ID,
@@ -55,7 +56,7 @@ async function assertCaseInOnboarding(caseId: string) {
   if (caseRow.onboarding_submitted_at) {
     throw new Error("You've already submitted your onboarding.");
   }
-  const tier = getTier(caseRow.tier) as unknown as { id: TierId; group: string };
+  const tier = await getTier(caseRow.tier) as unknown as { id: TierId; group: string };
   if (!tier) throw new Error("Case has no service selected.");
   if (tier.group !== "company" && tier.group !== "personal") {
     throw new Error("Case has no onboarding-eligible service selected.");

@@ -9,7 +9,9 @@ import {
 } from "@/lib/case/company-label";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { getTier, type TierId } from "@/lib/plans";
+import { type TierId } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import {
   sectionsForTier,
   fieldsForTier,
@@ -40,7 +42,7 @@ export default async function OnboardingPage({
   const { data: caseRow } = await supabase
     .from("cases")
     .select(
-      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at, intake_answers",
+      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at, intake_answers, custom_fee_pence",
     )
     .eq("id", id)
     .single();
@@ -52,7 +54,7 @@ export default async function OnboardingPage({
     notFound();
   }
 
-  const tier = getTier(caseRow.tier);
+  const tier = await getTier(caseRow.tier);
   if (!tier) notFound();
   const isCompany = caseRow.segment === "limited_company_vat";
   if (isCompany && tier.group !== "company") notFound();
@@ -139,7 +141,7 @@ export default async function OnboardingPage({
       <PortalPageHeader
         eyebrow={caseEyebrow({
           segmentTitle: tier.title,
-          tierTitle: `£${tier.priceGbp}`,
+          tierTitle: formatFeeGbp(effectiveFeePence(caseRow, tier)),
           companyName: companyNameFromAnswers(answers, caseRow.segment),
         })}
         title="Your onboarding checklist"

@@ -2,12 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  PERSONAL_TIERS,
-  COMPANY_TIERS,
-  type PlanTier,
-  type TierId,
-} from "@/lib/plans";
+import { type PlanTier, type TierId } from "@/lib/plans";
 import { SLButton } from "@/components/sl-button";
 import type { ActionResult } from "@/lib/action-result";
 
@@ -28,6 +23,12 @@ type Props = {
   earliestStandard: string;
   earliestUrgent: string;
   urgentFeePence: number;
+  // Server-fetched tier catalogue (reads service_catalog, falls back
+  // to static PLAN_TIERS). Passed in so admin edits reflect without
+  // a code change. Already filtered down by group — personalTiers =
+  // Personal picker list; companyTiers = Limited Company picker list.
+  personalTiers: PlanTier[];
+  companyTiers: PlanTier[];
 };
 
 type Mode = "personal" | "company";
@@ -77,6 +78,8 @@ export function NewCaseForm({
   earliestStandard,
   earliestUrgent,
   urgentFeePence,
+  personalTiers,
+  companyTiers,
 }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode | null>(initialMode);
@@ -91,9 +94,9 @@ export function NewCaseForm({
 
   const selectedTier = useMemo<PlanTier | null>(() => {
     if (!tier) return null;
-    const pool = mode === "company" ? COMPANY_TIERS : PERSONAL_TIERS;
+    const pool = mode === "company" ? companyTiers : personalTiers;
     return pool.find((t) => t.id === tier) ?? null;
-  }, [mode, tier]);
+  }, [mode, tier, personalTiers, companyTiers]);
 
   // When the user flips the top-level mode, clear the tier + deadline
   // so the wrong-side state can't leak into the form submission.
@@ -208,7 +211,7 @@ export function NewCaseForm({
             Once we have both, we upload your documents and get started.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {PERSONAL_TIERS.map((t) => (
+            {personalTiers.map((t) => (
               <TierButton
                 key={t.id}
                 tier={t}
@@ -232,7 +235,7 @@ export function NewCaseForm({
             (bespoke) go through a short enquiry form instead.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {COMPANY_TIERS.map((t) => (
+            {companyTiers.map((t) => (
               <TierButton
                 key={t.id}
                 tier={t}

@@ -62,6 +62,11 @@ const GROUPS: ReadonlyArray<PortalNavGroup<AdminCountKey>> = [
         label: "Add-on catalog",
         activePrefix: "/admin/addon-catalog",
       },
+      {
+        href: "/admin/service-catalog",
+        label: "Service catalog",
+        activePrefix: "/admin/service-catalog",
+      },
     ],
   },
   {

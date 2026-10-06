@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getTier } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { type ActionResult, fail } from "@/lib/action-result";
 import { renderEngagementLetterHtml } from "@/lib/engagement/letter-template";
@@ -227,7 +227,7 @@ export async function signEngagementAction(
       throw new Error("You've already signed this engagement letter.");
     }
 
-    const tier = getTier(caseRow.tier);
+    const tier = await getTier(caseRow.tier);
     if (!tier) throw new Error("Case has no service selected.");
     const isCompany = caseRow.segment === "limited_company_vat";
     if (isCompany && tier.group !== "company") {

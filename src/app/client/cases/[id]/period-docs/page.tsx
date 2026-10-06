@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { getTier, type TierId } from "@/lib/plans";
+import { type TierId } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import {
   periodDocsApplyToTier,
   periodDocFieldsForCase,
@@ -49,14 +51,14 @@ export default async function PeriodDocsPage({
   const { data: caseRow } = await supabase
     .from("cases")
     .select(
-      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at, intake_answers",
+      "id, client_id, segment, tier, stripe_payment_status, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at, intake_answers, custom_fee_pence",
     )
     .eq("id", id)
     .single();
   if (!caseRow || caseRow.client_id !== me.id) notFound();
   if (caseRow.segment !== "limited_company_vat") notFound();
 
-  const tier = getTier(caseRow.tier);
+  const tier = await getTier(caseRow.tier);
   if (!tier || !periodDocsApplyToTier(tier.id as TierId)) notFound();
 
   // Flow guards: must be past onboarding, must have the period dates set
@@ -139,7 +141,7 @@ export default async function PeriodDocsPage({
   return (
     <>
       <PortalPageHeader
-        eyebrow={`${tier.title} · £${tier.priceGbp}`}
+        eyebrow={`${tier.title} · ${formatFeeGbp(effectiveFeePence(caseRow, tier))}`}
         title="Documents for your accounting period"
         description={`Period: ${formatYmd(caseRow.period_start_date)} to ${formatYmd(
           caseRow.period_end_date,

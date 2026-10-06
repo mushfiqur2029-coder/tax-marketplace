@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import {
   caseEyebrow,
   companyNameFromAnswers,
@@ -76,7 +76,7 @@ export default async function AdminCasePage({
   if (!row) notFound();
 
   const seg = getSegment(row.segment);
-  const tier = getTier(row.tier);
+  const tier = await getTier(row.tier);
   if (!seg || !tier) notFound();
 
   const [{ data: client }, { data: acc }, { data: allAccs }, { data: docs }, { data: msgs }, { data: actions }, { data: addons }] =

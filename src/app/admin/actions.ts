@@ -13,7 +13,11 @@ import {
   insertEnquiryQuotedNotification,
 } from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
-import { getTier } from "@/lib/plans";
+import {
+  getTier,
+  updateServiceCatalogRow,
+  type ServiceCatalogPatch,
+} from "@/lib/service-catalog";
 
 export type { ActionResult };
 
@@ -726,7 +730,7 @@ export async function createBespokeCaseFromEnquiryAction(
       }`,
     });
 
-    const tier = getTier("vat_plus_accounts_bespoke");
+    const tier = await getTier("vat_plus_accounts_bespoke");
     await insertEnquiryQuotedNotification({
       clientId: enquiry.client_id,
       caseId,
@@ -742,6 +746,68 @@ export async function createBespokeCaseFromEnquiryAction(
     revalidatePath("/admin");
 
     return { ok: true, data: { caseId } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// Service catalog edit. Admin-only. The patch shape is intentionally
+// narrow — only the display + price fields are editable, never id /
+// group / requires_enquiry / admin_create_only (those are code-level
+// decisions driven by the TierId union + wizard routing).
+export async function updateServiceCatalogAction(
+  id: string,
+  patch: ServiceCatalogPatch,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    // Belt-and-braces: silently drop any fields the client sends that
+    // are outside the admin surface.
+    const safe: ServiceCatalogPatch = {};
+    const copy = <K extends keyof ServiceCatalogPatch>(k: K) => {
+      if (patch[k] !== undefined) safe[k] = patch[k];
+    };
+    copy("title");
+    copy("tagline");
+    copy("description");
+    copy("features");
+    copy("footer_line");
+    copy("hero_line");
+    copy("price_gbp");
+    copy("original_gbp");
+    copy("save_gbp");
+    copy("price_display");
+    copy("price_gbp_subtitle");
+    copy("price_suffix");
+    copy("price_per");
+    copy("featured");
+    copy("active");
+    copy("display_order");
+
+    if (safe.price_gbp !== undefined) {
+      if (
+        !Number.isFinite(safe.price_gbp) ||
+        safe.price_gbp < 0 ||
+        !Number.isInteger(safe.price_gbp)
+      ) {
+        throw new Error("Price must be a whole number of pounds (0 or more).");
+      }
+    }
+    if (safe.title !== undefined && !safe.title.trim()) {
+      throw new Error("Title cannot be empty.");
+    }
+
+    const res = await updateServiceCatalogRow(id, safe, me.id);
+    if (!res.ok) throw new Error(res.error);
+
+    // Admin surfaces that read service_catalog.
+    revalidatePath("/admin/service-catalog");
+    // Marketing + client pages that pull tiers from the catalog.
+    revalidatePath("/");
+    revalidatePath("/client/new");
+    revalidatePath("/limited-company-tax-returns");
+
+    return { ok: true };
   } catch (e) {
     return fail(e);
   }

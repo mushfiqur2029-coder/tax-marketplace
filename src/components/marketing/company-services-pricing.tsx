@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { COMPANY_TIERS } from "@/lib/plans";
+import { getCompanyTiers } from "@/lib/service-catalog";
 
 // /limited-company-tax-returns renders this. Shows the three flat-fee
 // services the limited-company flow sells (Dormant, Non-VAT Registered,
-// VAT Registered), pulled from the shared PLAN_TIERS source so prices
-// stay in lockstep with the client wizard.
-export function CompanyServicesPricing() {
+// VAT Registered), reading from service_catalog so admin edits
+// propagate without a redeploy.
+export async function CompanyServicesPricing() {
+  const companyTiers = await getCompanyTiers();
   return (
     <section id="company-pricing" className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -20,7 +21,7 @@ export function CompanyServicesPricing() {
         </div>
 
         <div className="pricing-grid">
-          {COMPANY_TIERS.map((t) => (
+          {companyTiers.map((t) => (
             <div
               key={t.id}
               className={"price-card" + (t.featured ? " featured" : "")}

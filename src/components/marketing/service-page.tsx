@@ -8,6 +8,10 @@ import { Reveal } from "@/components/marketing/reveal";
 import { HowItWorks } from "@/components/marketing/how-it-works";
 import { PricingSection } from "@/components/marketing/pricing-section";
 import { FaqAccordion, type Faq } from "@/components/marketing/faq-accordion-inline";
+import {
+  getPersonalTiers,
+  getCompanyTiers,
+} from "@/lib/service-catalog";
 
 export type WhoCard = {
   numeral: "①" | "②" | "③" | "④";
@@ -42,9 +46,16 @@ export type ServicePageData = {
   primaryCta?: { href: string; label?: string };
 };
 
-export function ServicePage({ data }: { data: ServicePageData }) {
+export async function ServicePage({ data }: { data: ServicePageData }) {
   const showPricing = data.showPricing !== false;
   const showConsult = data.showConsult !== false;
+
+  // Pricing block hits the DB when it renders. Fetching here keeps the
+  // page component async-only without poking every /services/<slug>
+  // leaf page.
+  const [personalTiers, companyTiers] = showPricing
+    ? await Promise.all([getPersonalTiers(), getCompanyTiers()])
+    : [[], []];
 
   return (
     <div className="relative min-h-full flex flex-col">
@@ -176,7 +187,12 @@ export function ServicePage({ data }: { data: ServicePageData }) {
         )}
 
         {/* Pricing. shared, hidden for tax-advice */}
-        {showPricing ? <PricingSection /> : null}
+        {showPricing ? (
+          <PricingSection
+            personalTiers={personalTiers}
+            companyTiers={companyTiers}
+          />
+        ) : null}
 
         {data.extraAfterPricing}
 

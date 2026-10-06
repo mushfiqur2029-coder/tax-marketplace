@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { requireRole, type Role } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSegment, type Segment } from "@/lib/segments";
-import { getTier, type PlanTier, type TierId } from "@/lib/plans";
+import { type PlanTier, type TierId } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import { periodDocsApplyToTier } from "@/lib/engagement/period-docs";
 
 export type CaseRow = {
@@ -129,7 +130,7 @@ export async function loadClientCase(caseId: string): Promise<CaseData> {
   if (caseRow.client_id !== me.id) notFound();
 
   const segment = getSegment(caseRow.segment);
-  const tier = getTier(caseRow.tier);
+  const tier = await getTier(caseRow.tier);
   if (!segment || !tier) notFound();
 
   const { data: docs } = await supabase

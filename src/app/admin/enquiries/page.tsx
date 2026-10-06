@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
-import { getTier } from "@/lib/plans";
+import { getTier } from "@/lib/service-catalog";
 import { setServiceEnquiryStatusAction } from "@/app/client/enquiry-actions";
 import { createBespokeCaseFromEnquiryAction } from "@/app/admin/actions";
 import { EnquiryActions } from "./enquiry-actions";
@@ -211,7 +211,7 @@ function Section({
   );
 }
 
-function EnquiryCard({
+async function EnquiryCard({
   row,
   submittedByEmail,
   accountants,
@@ -235,7 +235,7 @@ function EnquiryCard({
     note: string | null,
   ) => Promise<import("@/lib/action-result").ActionResult<{ caseId: string }>>;
 }) {
-  const tier = getTier(row.service_key);
+  const tier = await getTier(row.service_key);
   const serviceLabel = tier?.title ?? row.service_key;
   // Only the bespoke tier gets the "create case" form. Other enquiry
   // tiers (there is only this one today, but the catalogue could grow)

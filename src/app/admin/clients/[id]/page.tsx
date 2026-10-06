@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
-import { getTier } from "@/lib/plans";
+import { getAllTiers } from "@/lib/service-catalog";
+import { effectiveFeePence } from "@/lib/case/pricing";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { setClientStatusAction } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
@@ -49,16 +50,22 @@ export default async function AdminClientDetail({
   const { data: cases } = await admin
     .from("cases")
     .select(
-      "id, segment, tier, status, stripe_payment_status, stripe_payment_id, deadline, created_at, submitted_at, accountant_id, is_urgent, urgent_fee_pence, intake_answers",
+      "id, segment, tier, status, stripe_payment_status, stripe_payment_id, deadline, created_at, submitted_at, accountant_id, is_urgent, urgent_fee_pence, custom_fee_pence, intake_answers",
     )
     .eq("client_id", id)
     .order("created_at", { ascending: false });
 
   const rows = cases ?? [];
   const paid = rows.filter((c) => c.stripe_payment_status === "succeeded");
+
+  const tierMap = new Map(
+    (
+      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
+    ).map((t) => [t.id as string, t]),
+  );
+
   const totalPaidPence = paid.reduce((sum, c) => {
-    const t = getTier(c.tier);
-    return sum + (t?.priceGbp ?? 0) * 100;
+    return sum + effectiveFeePence(c, tierMap.get(c.tier) ?? null);
   }, 0);
 
   // Assigned accountant emails so the case rows can show them.
@@ -154,7 +161,7 @@ export default async function AdminClientDetail({
               <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
                 {rows.map((c) => {
                   const seg = getSegment(c.segment);
-                  const tier = getTier(c.tier);
+                  const tier = tierMap.get(c.tier) ?? null;
                   const companyName = companyNameFromAnswers(
                     c.intake_answers,
                     c.segment,
@@ -220,12 +227,12 @@ export default async function AdminClientDetail({
               <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-paper">
                 {paid.map((c) => {
                   const seg = getSegment(c.segment);
-                  const tier = getTier(c.tier);
+                  const tier = tierMap.get(c.tier) ?? null;
                   return (
                     <li key={c.id} className="grid grid-cols-1 gap-1 px-4 py-3 text-sm sm:grid-cols-[1fr_auto]">
                       <div>
                         <div className="font-semibold text-ink">
-                          {money((tier?.priceGbp ?? 0) * 100)} · {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
+                          {money(effectiveFeePence(c, tier))} · {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
                         </div>
                         <div className="text-xs text-slate">
                           Submitted{" "}
