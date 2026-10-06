@@ -7,6 +7,7 @@ import { insertAddonPaidNotification } from "@/lib/notifications";
 import { sendEmail } from "@/lib/email";
 import { getTier } from "@/lib/service-catalog";
 import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
+import { renderInvoicePdf, type InvoiceData } from "@/lib/invoice/pdf";
 
 // Tiny HTML escaper for values embedded in email bodies. Same shape
 // as the booking route's — inputs here are already-validated DB
@@ -31,6 +32,88 @@ function slNotifyBcc(): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+// Pretty-print an ISO timestamp as "6 October 2026" in Europe/London.
+// Used for the "Paid date" row on the invoice.
+function formatPaidDate(iso: string): string {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/London",
+  }).format(d);
+}
+
+// Resolve a human-readable payment-method label from the Stripe
+// Checkout session: "Card (Visa .. 4242)" when we have the brand +
+// last4, otherwise "Card" / "" / falls back to a sensible default.
+// Everything we need is on the session already by the time the
+// webhook fires; no extra API call.
+async function resolvePaymentMethodLabel(
+  session: Stripe.Checkout.Session,
+): Promise<string> {
+  // Session carries payment_method_types ("card", "bacs_debit", …)
+  // but not the brand/last4. Those live on the PaymentIntent's
+  // payment_method object. We expand on demand to keep the webhook
+  // snappy — a card is by far the most common case.
+  try {
+    const pmTypes = session.payment_method_types ?? [];
+    const kind = pmTypes[0] ?? "card";
+    if (kind !== "card") return capitalize(kind.replace(/_/g, " "));
+    const piId =
+      typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : (session.payment_intent?.id ?? null);
+    if (!piId) return "Card";
+    const pi = await stripe().paymentIntents.retrieve(piId, {
+      expand: ["payment_method"],
+    });
+    const pm =
+      typeof pi.payment_method === "string" ? null : pi.payment_method;
+    if (pm && pm.card) {
+      const brand = pm.card.brand
+        ? capitalize(pm.card.brand)
+        : "Card";
+      const last4 = pm.card.last4 ? ` ·· ${pm.card.last4}` : "";
+      return `${brand}${last4}`;
+    }
+    return "Card";
+  } catch (err) {
+    console.error(
+      "[webhook] payment-method lookup failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return "Card";
+  }
+}
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s[0].toUpperCase() + s.slice(1);
+}
+
+// Render an invoice PDF and return the base64 payload the email
+// layer expects. Non-fatal callers wrap this in try/catch — a
+// chromium hiccup must not block the status-update that already
+// landed in the DB.
+async function buildInvoiceAttachment(
+  data: InvoiceData,
+): Promise<{ base64: string; filename: string } | null> {
+  try {
+    const bytes = await renderInvoicePdf(data);
+    const base64 = Buffer.from(bytes).toString("base64");
+    return {
+      base64,
+      filename: `${data.invoiceNumber}.pdf`,
+    };
+  } catch (err) {
+    console.error(
+      "[webhook] invoice PDF render failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  }
 }
 
 export const dynamic = "force-dynamic";
@@ -117,29 +200,68 @@ export async function POST(req: NextRequest) {
           // send can't 500 the webhook (Stripe would retry and we'd
           // have already flipped the row).
           try {
+            // Re-select the add-on so the invoice_number assigned
+            // by the DB trigger (migration 0061) is in hand before
+            // we build the PDF.
+            const { data: paidAddon } = await admin
+              .from("case_addons")
+              .select(
+                "id, case_id, amount_pence, description, invoice_number, paid_at",
+              )
+              .eq("id", addonId)
+              .single();
             const { data: caseRow } = await admin
               .from("cases")
               .select("client_id")
               .eq("id", addon.case_id)
               .single();
-            if (caseRow) {
+            if (caseRow && paidAddon) {
               const { data: client } = await admin
                 .from("users")
                 .select("email")
                 .eq("id", caseRow.client_id)
                 .single();
               if (client?.email) {
-                const chargeLabel = formatFeeGbp(addon.amount_pence);
+                const chargeLabel = formatFeeGbp(paidAddon.amount_pence);
                 const caseUrl = `${siteUrl().replace(/\/$/, "")}/client/cases/${addon.case_id}`;
+                const reference = paymentIntentId ?? paidAddon.id;
+                const paymentMethod =
+                  await resolvePaymentMethodLabel(session);
+                const paidDateLabel = formatPaidDate(
+                  paidAddon.paid_at ?? new Date().toISOString(),
+                );
+                const invoiceAttachment = paidAddon.invoice_number
+                  ? await buildInvoiceAttachment({
+                      invoiceNumber: paidAddon.invoice_number,
+                      clientName: client.email,
+                      paidDateLabel,
+                      paymentReference: reference,
+                      paymentMethod,
+                      items: [
+                        {
+                          description: paidAddon.description,
+                          unitPricePence: paidAddon.amount_pence,
+                        },
+                      ],
+                    })
+                  : null;
+                if (!paidAddon.invoice_number) {
+                  console.error(
+                    `[webhook] addon ${paidAddon.id} has no invoice_number after paid flip; skipping attachment.`,
+                  );
+                }
+
                 const html =
                   `<p>Hi,</p>` +
                   `<p>Thanks — your Sterling Ledger add-on payment of ` +
                   `<strong>${escapeHtml(chargeLabel)}</strong> has been received.</p>` +
                   `<ul>` +
+                  `<li>Invoice no: ${escapeHtml(paidAddon.invoice_number ?? "(unavailable)")}</li>` +
                   `<li>Charge: ${escapeHtml(chargeLabel)}</li>` +
-                  `<li>What for: ${escapeHtml(addon.description)}</li>` +
-                  `<li>Reference: ${escapeHtml(addon.id)}</li>` +
+                  `<li>What for: ${escapeHtml(paidAddon.description)}</li>` +
+                  `<li>Reference: ${escapeHtml(reference)}</li>` +
                   `</ul>` +
+                  `<p>Your invoice is attached as a PDF for your records.</p>` +
                   `<p>Your accountant has been notified and will carry on with the work.</p>` +
                   `<p>You can see this on your case at ` +
                   `<a href="${caseUrl}">${caseUrl}</a>.</p>` +
@@ -147,8 +269,17 @@ export async function POST(req: NextRequest) {
                 const sent = await sendEmail({
                   to: client.email,
                   bcc: slNotifyBcc(),
-                  subject: `Add-on payment received · ${chargeLabel}`,
+                  subject: `Add-on payment received · ${paidAddon.invoice_number ?? chargeLabel}`,
                   html,
+                  attachments: invoiceAttachment
+                    ? [
+                        {
+                          base64: invoiceAttachment.base64,
+                          filename: invoiceAttachment.filename,
+                          mimeType: "application/pdf",
+                        },
+                      ]
+                    : undefined,
                   logCaseId: addon.case_id,
                 });
                 if (!sent.ok) {
@@ -222,10 +353,15 @@ export async function POST(req: NextRequest) {
       // potentially send twice).
       if (paid && flipped && flipped.length > 0) {
         try {
+          // Pull the row AFTER the update so the DB trigger has
+          // populated invoice_number. Trigger lives in migration
+          // 0061: fires when stripe_payment_status transitions to
+          // 'succeeded' and assigns `invoice_number` via the
+          // sl_invoice_seq sequence inside the same transaction.
           const { data: row } = await admin
             .from("cases")
             .select(
-              "id, client_id, segment, tier, custom_fee_pence, urgent_fee_pence, is_urgent",
+              "id, client_id, segment, tier, custom_fee_pence, urgent_fee_pence, is_urgent, invoice_number, submitted_at",
             )
             .eq("id", caseId)
             .single();
@@ -238,32 +374,86 @@ export async function POST(req: NextRequest) {
             if (client?.email) {
               const tier = await getTier(row.tier);
               const feePence = effectiveFeePence(row, tier);
-              const urgent = row.urgent_fee_pence ?? 0;
-              const totalLabel = formatFeeGbp(feePence + urgent);
+              const urgentFeePence = row.urgent_fee_pence ?? 0;
+              const totalPence = feePence + urgentFeePence;
+              const totalLabel = formatFeeGbp(totalPence);
               const caseUrl = `${siteUrl().replace(/\/$/, "")}/client/cases/${caseId}`;
+
+              // Build the invoice PDF. Line items mirror the user's
+              // spec: the service name as the first line, then an
+              // explicit "Urgent filing" line only when the case
+              // was actually urgent — no empty "Adjustments" row.
+              const paymentReference =
+                typeof session.payment_intent === "string"
+                  ? session.payment_intent
+                  : (session.payment_intent?.id ?? session.id);
+              const paymentMethod =
+                await resolvePaymentMethodLabel(session);
+              const paidDateLabel = formatPaidDate(
+                row.submitted_at ?? new Date().toISOString(),
+              );
+              const items = [
+                {
+                  description: tier?.title ?? row.tier,
+                  unitPricePence: feePence,
+                },
+              ];
+              if (row.is_urgent && urgentFeePence > 0) {
+                items.push({
+                  description: "Urgent filing",
+                  unitPricePence: urgentFeePence,
+                });
+              }
+              const invoiceAttachment = row.invoice_number
+                ? await buildInvoiceAttachment({
+                    invoiceNumber: row.invoice_number,
+                    clientName: client.email,
+                    paidDateLabel,
+                    paymentReference,
+                    paymentMethod,
+                    items,
+                  })
+                : null;
+              if (!row.invoice_number) {
+                console.error(
+                  `[webhook] case ${caseId} has no invoice_number after paid flip; skipping attachment.`,
+                );
+              }
+
               const html =
                 `<p>Hi,</p>` +
                 `<p>Thanks — your Sterling Ledger payment for <strong>${escapeHtml(
                   tier?.title ?? row.tier,
                 )}</strong> has been received, and your case is now <strong>submitted</strong>.</p>` +
                 `<ul>` +
+                `<li>Invoice no: ${escapeHtml(row.invoice_number ?? "(unavailable)")}</li>` +
                 `<li>Service: ${escapeHtml(tier?.title ?? row.tier)}</li>` +
                 `<li>Total paid: ${escapeHtml(totalLabel)}` +
-                (row.is_urgent && urgent > 0
-                  ? ` (includes urgent fee ${escapeHtml(formatFeeGbp(urgent))})`
+                (row.is_urgent && urgentFeePence > 0
+                  ? ` (includes urgent fee ${escapeHtml(formatFeeGbp(urgentFeePence))})`
                   : "") +
                 `</li>` +
-                `<li>Reference: ${escapeHtml(caseId)}</li>` +
+                `<li>Reference: ${escapeHtml(paymentReference)}</li>` +
                 `</ul>` +
-                `<p>Our accountants will pick it up and reach out with the next step — usually a short list of documents to upload.</p>` +
+                `<p>Your invoice is attached as a PDF for your records.</p>` +
+                `<p>Our accountants will pick up the case and reach out with the next step — usually a short list of documents to upload.</p>` +
                 `<p>You can track status any time at ` +
                 `<a href="${caseUrl}">${caseUrl}</a>.</p>` +
                 `<p>Sterling Ledger</p>`;
               const sent = await sendEmail({
                 to: client.email,
                 bcc: slNotifyBcc(),
-                subject: `Payment received · your case is submitted`,
+                subject: `Payment received · ${row.invoice_number ?? "your case"} · your case is submitted`,
                 html,
+                attachments: invoiceAttachment
+                  ? [
+                      {
+                        base64: invoiceAttachment.base64,
+                        filename: invoiceAttachment.filename,
+                        mimeType: "application/pdf",
+                      },
+                    ]
+                  : undefined,
                 logCaseId: caseId,
               });
               if (!sent.ok) {
