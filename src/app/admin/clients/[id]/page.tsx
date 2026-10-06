@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireRole } from "@/lib/auth";
+import { requireRole, isPrimaryAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getAllTiers } from "@/lib/service-catalog";
 import { effectiveFeePence } from "@/lib/case/pricing";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
-import { setClientStatusAction } from "@/app/admin/actions";
+import {
+  setClientStatusAction,
+  getClientDeletionCheck,
+  deleteClientAccountAction,
+} from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Avatar } from "@/components/avatar";
 import { StatusPill } from "@/components/case/status-pill";
@@ -14,6 +18,7 @@ import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
 import { formatDateTime } from "@/lib/format";
 import { SuspendActions } from "./suspend-actions";
+import { DeleteAccountCard } from "@/components/admin/delete-account-card";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +30,8 @@ export default async function AdminClientDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  await requireRole("admin");
+  const me = await requireRole("admin");
+  const callerIsPrimary = isPrimaryAdmin(me);
   const admin = createAdminClient();
 
   const [{ data: user }, { data: profile }] = await Promise.all([
@@ -86,6 +92,17 @@ export default async function AdminClientDetail({
     return setClientStatusAction(clientId, status, note);
   };
 
+  // Pre-check runs on the server so the "cannot delete" panel renders
+  // immediately with the real counts. The server action re-checks on
+  // submit so a stale page can't bypass the block.
+  const deletionCheck = callerIsPrimary
+    ? await getClientDeletionCheck(user.id)
+    : null;
+  const deleteAccount = async (targetUserId: string) => {
+    "use server";
+    return deleteClientAccountAction(targetUserId);
+  };
+
   return (
     <>
       <AdminPageHeader
@@ -134,6 +151,24 @@ export default async function AdminClientDetail({
               can&apos;t submit new cases, take payments, or approve filings
               until reinstated.
             </p>
+            {callerIsPrimary && deletionCheck ? (
+              <DeleteAccountCard
+                targetUserId={user.id}
+                targetEmail={user.email}
+                roleLabel="client"
+                summary={[
+                  { label: "Cases (total)", value: deletionCheck.totalCases },
+                  { label: "Paid cases", value: deletionCheck.paidCases },
+                  { label: "Draft cases", value: deletionCheck.draftCases },
+                  { label: "Documents", value: deletionCheck.documents },
+                  { label: "Bookings", value: deletionCheck.bookings },
+                  { label: "Enquiries", value: deletionCheck.enquiries },
+                ]}
+                blockReason={deletionCheck.blockReason}
+                cascadeNote="All cases, documents, bookings, enquiries and messages this client created will be removed. Uploaded files are purged from storage."
+                deleteAccount={deleteAccount}
+              />
+            ) : null}
           </div>
         </aside>
 

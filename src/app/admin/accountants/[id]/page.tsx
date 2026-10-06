@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireRole } from "@/lib/auth";
+import { requireRole, isPrimaryAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getAllTiers } from "@/lib/service-catalog";
@@ -11,8 +11,13 @@ import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
 import { formatDateTime } from "@/lib/format";
-import { setAccountantStatusAction } from "@/app/admin/actions";
+import {
+  setAccountantStatusAction,
+  getAccountantDeletionCheck,
+  deleteAccountantAccountAction,
+} from "@/app/admin/actions";
 import { SuspendActions } from "./suspend-actions";
+import { DeleteAccountCard } from "@/components/admin/delete-account-card";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +29,8 @@ export default async function AdminAccountantDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  await requireRole("admin");
+  const me = await requireRole("admin");
+  const callerIsPrimary = isPrimaryAdmin(me);
   const admin = createAdminClient();
 
   const [{ data: user }, { data: profile }] = await Promise.all([
@@ -72,6 +78,17 @@ export default async function AdminAccountantDetail({
     ? await admin.from("users").select("id, email").in("id", clientIds)
     : { data: [] as { id: string; email: string }[] };
   const clientEmail = new Map((clients ?? []).map((c) => [c.id, c.email]));
+
+  // Pre-check for the primary-admin "delete account" control. Only
+  // fetched when the current admin is primary so a vanilla admin
+  // doesn't trigger the DB round-trip for nothing.
+  const deletionCheck = callerIsPrimary
+    ? await getAccountantDeletionCheck(user.id)
+    : null;
+  const deleteAccount = async (targetUserId: string) => {
+    "use server";
+    return deleteAccountantAccountAction(targetUserId);
+  };
 
   const tierMap = new Map(
     (
@@ -129,6 +146,46 @@ export default async function AdminAccountantDetail({
               to their assigned cases. They can&apos;t take new cases from
               the queue or advance case status until reinstated.
             </p>
+            {callerIsPrimary && deletionCheck ? (
+              <DeleteAccountCard
+                targetUserId={user.id}
+                targetEmail={user.email}
+                roleLabel="accountant"
+                summary={[
+                  {
+                    label: "Live cases assigned",
+                    value: deletionCheck.assignedLiveCases,
+                  },
+                  {
+                    label: "Wallet transactions",
+                    value: deletionCheck.walletTransactions,
+                  },
+                  {
+                    label: "Wallet total",
+                    value: money(deletionCheck.walletBalancePence),
+                  },
+                  {
+                    label: "Withdrawal requests",
+                    value: deletionCheck.withdrawalRequests,
+                  },
+                  {
+                    label: "Add-ons issued",
+                    value: deletionCheck.addonsIssued,
+                  },
+                  {
+                    label: "VAT cycles created",
+                    value: deletionCheck.vatCyclesCreated,
+                  },
+                  {
+                    label: "Documents uploaded",
+                    value: deletionCheck.documentsUploaded,
+                  },
+                ]}
+                blockReason={deletionCheck.blockReason}
+                cascadeNote="Live case assignments become unassigned (the cases themselves live on, free for another accountant to pick up from the queue). Documents this accountant uploaded stay attached to their cases."
+                deleteAccount={deleteAccount}
+              />
+            ) : null}
           </div>
         </aside>
 

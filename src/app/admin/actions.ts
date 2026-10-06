@@ -257,6 +257,316 @@ export async function removeAdminAction(
 }
 
 // -------------------------------------------------------------------------
+// Permanent account deletion (client or accountant). Primary-admin only.
+//
+// Hard-blocked when the account has any financial / audit significance.
+// For a client: any case with stripe_payment_status='succeeded'.
+// For an accountant: any wallet_transactions row, withdrawal_requests
+// row, case_addons row they issued, or vat_return_cycles row they
+// created. The soft "warn and allow anyway" path is intentionally
+// NOT available — once the row count on the ledger is non-zero,
+// admin is directed to Suspend instead (which keeps every row intact
+// and immediately blocks the user from acting).
+//
+// Case documents the user uploaded (either as client-on-own-case or
+// accountant-on-assigned-case) are kept by the uploaded_by SET NULL
+// path from migration 0060 when the case survives (accountant delete
+// paths). When the case cascade-deletes (client path), the storage
+// files are explicitly removed before auth.admin.deleteUser fires.
+// Audit log goes in BEFORE the delete so admin_actions.target_user_id
+// is captured before the FK gets nulled.
+
+// Shape returned by the pre-check helpers. Rendered on the admin
+// detail page so the primary admin can see exactly what's attached
+// before clicking Delete.
+export type ClientDeletionCheck = {
+  blocked: boolean;
+  blockReason: string | null;
+  paidCases: number;
+  draftCases: number;
+  totalCases: number;
+  documents: number;
+  bookings: number;
+  enquiries: number;
+};
+
+export type AccountantDeletionCheck = {
+  blocked: boolean;
+  blockReason: string | null;
+  walletTransactions: number;
+  walletBalancePence: number;
+  withdrawalRequests: number;
+  addonsIssued: number;
+  vatCyclesCreated: number;
+  documentsUploaded: number;
+  assignedLiveCases: number;
+};
+
+export async function getClientDeletionCheck(
+  clientId: string,
+): Promise<ClientDeletionCheck> {
+  const admin = createAdminClient();
+  const [cases, docs, bookings, enquiries] = await Promise.all([
+    admin
+      .from("cases")
+      .select("id, stripe_payment_status", { count: "exact" })
+      .eq("client_id", clientId),
+    admin
+      .from("case_documents")
+      .select("id", { count: "exact", head: true })
+      .eq("uploaded_by", clientId),
+    admin
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", clientId),
+    admin
+      .from("service_enquiries")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", clientId),
+  ]);
+  const rows = cases.data ?? [];
+  const paidCases = rows.filter(
+    (c) => c.stripe_payment_status === "succeeded",
+  ).length;
+  const draftCases = rows.filter(
+    (c) => c.stripe_payment_status !== "succeeded",
+  ).length;
+  const blocked = paidCases > 0;
+  return {
+    blocked,
+    blockReason: blocked
+      ? `This client has ${paidCases} paid case${paidCases === 1 ? "" : "s"} on record. Suspend the account instead; permanent deletion would erase that payment history.`
+      : null,
+    paidCases,
+    draftCases,
+    totalCases: rows.length,
+    documents: docs.count ?? 0,
+    bookings: bookings.count ?? 0,
+    enquiries: enquiries.count ?? 0,
+  };
+}
+
+export async function getAccountantDeletionCheck(
+  accountantId: string,
+): Promise<AccountantDeletionCheck> {
+  const admin = createAdminClient();
+  const [
+    walletTx,
+    withdrawals,
+    addons,
+    vatCycles,
+    docs,
+    liveCases,
+  ] = await Promise.all([
+    admin
+      .from("wallet_transactions")
+      .select("amount_pence", { count: "exact" })
+      .eq("accountant_id", accountantId),
+    admin
+      .from("withdrawal_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("accountant_id", accountantId),
+    admin
+      .from("case_addons")
+      .select("id", { count: "exact", head: true })
+      .eq("accountant_id", accountantId),
+    admin
+      .from("vat_return_cycles")
+      .select("id", { count: "exact", head: true })
+      .eq("created_by", accountantId),
+    admin
+      .from("case_documents")
+      .select("id", { count: "exact", head: true })
+      .eq("uploaded_by", accountantId),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("accountant_id", accountantId)
+      .neq("status", "complete"),
+  ]);
+  const txRows = walletTx.data ?? [];
+  const walletBalancePence = txRows.reduce(
+    (sum, r) => sum + (r.amount_pence ?? 0),
+    0,
+  );
+  const blockers: string[] = [];
+  if ((walletTx.count ?? 0) > 0) {
+    blockers.push(
+      `${walletTx.count} wallet transaction${walletTx.count === 1 ? "" : "s"}`,
+    );
+  }
+  if ((withdrawals.count ?? 0) > 0) {
+    blockers.push(
+      `${withdrawals.count} withdrawal request${withdrawals.count === 1 ? "" : "s"}`,
+    );
+  }
+  if ((addons.count ?? 0) > 0) {
+    blockers.push(
+      `${addons.count} add-on${addons.count === 1 ? "" : "s"} issued`,
+    );
+  }
+  if ((vatCycles.count ?? 0) > 0) {
+    blockers.push(
+      `${vatCycles.count} VAT cycle${vatCycles.count === 1 ? "" : "s"} created`,
+    );
+  }
+  const blocked = blockers.length > 0;
+  return {
+    blocked,
+    blockReason: blocked
+      ? `This accountant has ${blockers.join(", ")} on record. Suspend the account instead; permanent deletion would erase that financial / audit history.`
+      : null,
+    walletTransactions: walletTx.count ?? 0,
+    walletBalancePence,
+    withdrawalRequests: withdrawals.count ?? 0,
+    addonsIssued: addons.count ?? 0,
+    vatCyclesCreated: vatCycles.count ?? 0,
+    documentsUploaded: docs.count ?? 0,
+    assignedLiveCases: liveCases.count ?? 0,
+  };
+}
+
+export async function deleteClientAccountAction(
+  targetUserId: string,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error(
+        "Only the primary admin can permanently delete accounts.",
+      );
+    }
+    const admin = createAdminClient();
+
+    const { data: target, error: targetErr } = await admin
+      .from("users")
+      .select("id, email, role")
+      .eq("id", targetUserId)
+      .maybeSingle();
+    if (targetErr || !target) throw new Error("User not found.");
+    if (target.role !== "client") {
+      throw new Error("That user is not a client.");
+    }
+    if (target.id === me.id) {
+      throw new Error("Cannot delete yourself.");
+    }
+
+    // Re-run the pre-check on the server. The UI gates by the same
+    // call but a crafted request could reach here directly.
+    const check = await getClientDeletionCheck(targetUserId);
+    if (check.blocked) {
+      throw new Error(check.blockReason ?? "Deletion is blocked.");
+    }
+
+    // Collect every storage path the client's cases carry. The case
+    // row cascade will drop case_documents + case_addons + messages
+    // + notifications, but Supabase storage files are not FK-linked
+    // and need an explicit remove. Non-fatal on failure.
+    const { data: caseRows } = await admin
+      .from("cases")
+      .select("id")
+      .eq("client_id", targetUserId);
+    const caseIds = (caseRows ?? []).map((c) => c.id);
+    const { data: docRows } =
+      caseIds.length > 0
+        ? await admin
+            .from("case_documents")
+            .select("file_url")
+            .in("case_id", caseIds)
+        : { data: [] as { file_url: string }[] };
+    const storagePaths = (docRows ?? [])
+      .map((d) => d.file_url)
+      .filter((p): p is string => !!p);
+
+    // Audit BEFORE delete. target_user_id survives because of the
+    // SET NULL relaxation migration 0056 put in place.
+    await admin.from("admin_actions").insert({
+      target_user_id: target.id,
+      admin_id: me.id,
+      action: "account_deleted",
+      note: `Deleted client ${target.email} (${caseIds.length} case(s), ${check.draftCases} draft, ${check.documents} documents, ${check.bookings} booking(s), ${check.enquiries} enquiry(ies)).`,
+    });
+
+    // Auth-layer delete cascades through public.users → everything.
+    const { error: delErr } = await admin.auth.admin.deleteUser(target.id);
+    if (delErr) throw new Error(delErr.message);
+
+    if (storagePaths.length > 0) {
+      const { error: storageErr } = await admin.storage
+        .from(BUCKET)
+        .remove(storagePaths);
+      if (storageErr) {
+        console.error(
+          `[deleteClientAccount] storage remove failed for user=${target.id}:`,
+          storageErr.message,
+        );
+      }
+    }
+
+    revalidatePath("/admin/clients");
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function deleteAccountantAccountAction(
+  targetUserId: string,
+): Promise<ActionResult> {
+  try {
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error(
+        "Only the primary admin can permanently delete accounts.",
+      );
+    }
+    const admin = createAdminClient();
+
+    const { data: target, error: targetErr } = await admin
+      .from("users")
+      .select("id, email, role")
+      .eq("id", targetUserId)
+      .maybeSingle();
+    if (targetErr || !target) throw new Error("User not found.");
+    if (target.role !== "accountant") {
+      throw new Error("That user is not an accountant.");
+    }
+    if (target.id === me.id) {
+      throw new Error("Cannot delete yourself.");
+    }
+
+    const check = await getAccountantDeletionCheck(targetUserId);
+    if (check.blocked) {
+      throw new Error(check.blockReason ?? "Deletion is blocked.");
+    }
+
+    // Case documents the accountant uploaded survive via SET NULL
+    // (migration 0060) — the DB row stays with uploaded_by=null,
+    // the storage file is preserved. No storage cleanup needed on
+    // this path. cases.accountant_id SET NULL leaves the cases
+    // themselves intact and unassigned; the UI's unassigned-queue
+    // picks them back up.
+
+    await admin.from("admin_actions").insert({
+      target_user_id: target.id,
+      admin_id: me.id,
+      action: "account_deleted",
+      note: `Deleted accountant ${target.email} (${check.assignedLiveCases} assigned case(s) will become unassigned, ${check.documentsUploaded} uploaded document(s) preserved).`,
+    });
+
+    const { error: delErr } = await admin.auth.admin.deleteUser(target.id);
+    if (delErr) throw new Error(delErr.message);
+
+    revalidatePath("/admin/accountants");
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
 // Delete a stale, unpaid draft case. Primary-admin only.
 //
 // Eligibility (server-enforced, not just UI-filtered):
