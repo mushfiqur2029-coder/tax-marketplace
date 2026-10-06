@@ -22,6 +22,18 @@ import type { TierId } from "@/lib/plans";
 
 export type ChecklistSection = "A" | "B" | "C" | "D" | "P";
 
+// Admin-created bespoke LC engagements reuse the vat_reg checklist
+// shape verbatim (Sections A/B/C/D, same required/optional split,
+// same period-docs). Rather than threading the new tier id through
+// every `requiredFor` array in CHECKLIST_FIELDS below, we map it to
+// vat_reg at the entry point of every exported function. One touch,
+// no risk of a field being added later for vat_reg but forgetting
+// to add it to the bespoke tier.
+function aliasChecklistTier(tier: TierId): TierId {
+  if (tier === "vat_plus_accounts_bespoke") return "vat_reg";
+  return tier;
+}
+
 // Tier id groupings. Keeping these local to checklist.ts because
 // PLAN_TIERS imports would be circular — the lists live on paper here
 // instead of being generated from plans.ts. If plans.ts ever adds a
@@ -496,8 +508,9 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
 export const ENCRYPTED_FIELD_ID = "company_auth_code";
 
 export function sectionsForTier(tier: TierId): ChecklistSectionDef[] {
+  const t = aliasChecklistTier(tier);
   return CHECKLIST_SECTIONS.filter(
-    (s) => !s.showForTiers || s.showForTiers.includes(tier),
+    (s) => !s.showForTiers || s.showForTiers.includes(t),
   );
 }
 
@@ -513,7 +526,8 @@ export function fieldsForTier(tier: TierId): ChecklistField[] {
 // never counts as missing. See `requiredFieldsForTierGiven` for the
 // visibility-aware version.
 export function requiredFieldsForTier(tier: TierId): ChecklistField[] {
-  return fieldsForTier(tier).filter((f) => f.requiredFor.includes(tier));
+  const t = aliasChecklistTier(tier);
+  return fieldsForTier(tier).filter((f) => f.requiredFor.includes(t));
 }
 
 // Visibility gate on a single field for a given set of answers.
@@ -547,8 +561,9 @@ export function requiredFieldsForTierGiven(
   tier: TierId,
   answers: Record<string, string> | null | undefined,
 ): ChecklistField[] {
+  const t = aliasChecklistTier(tier);
   return visibleFieldsForTier(tier, answers).filter((f) =>
-    f.requiredFor.includes(tier),
+    f.requiredFor.includes(t),
   );
 }
 

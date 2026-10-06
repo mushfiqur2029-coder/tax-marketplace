@@ -5,7 +5,12 @@ import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 import { getTier } from "@/lib/plans";
 import { setServiceEnquiryStatusAction } from "@/app/client/enquiry-actions";
+import { createBespokeCaseFromEnquiryAction } from "@/app/admin/actions";
 import { EnquiryActions } from "./enquiry-actions";
+import {
+  BespokeCaseForm,
+  BespokeCaseExistingLink,
+} from "./bespoke-case-form";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +51,44 @@ export default async function AdminEnquiriesPage() {
     : { data: [] as { id: string; email: string }[] };
   const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
 
+  // Approved accountants for the "create case" dropdown. Join names from
+  // accountant_profiles so the admin picks by human name rather than email.
+  const { data: approvedAccs } = await admin
+    .from("accountant_profiles")
+    .select("user_id, name")
+    .eq("approval_status", "approved");
+  const accIds = (approvedAccs ?? []).map((a) => a.user_id);
+  const { data: accUsers } = accIds.length
+    ? await admin.from("users").select("id, email").in("id", accIds)
+    : { data: [] as { id: string; email: string }[] };
+  const accEmailById = new Map((accUsers ?? []).map((u) => [u.id, u.email]));
+  const accountants = (approvedAccs ?? [])
+    .map((a) => ({
+      id: a.user_id as string,
+      name: a.name as string | null,
+      email: accEmailById.get(a.user_id as string) ?? "",
+    }))
+    .filter((a) => !!a.email)
+    .sort((a, b) =>
+      (a.name?.trim() || a.email).localeCompare(b.name?.trim() || b.email),
+    );
+
+  // Existing bespoke-case links so we hide the create form on
+  // enquiries that have already been quoted. Query only on enquiries
+  // that are the bespoke tier — others never become cases.
+  const bespokeEnquiryIds = all
+    .filter((r) => r.service_key === "vat_plus_accounts_200k")
+    .map((r) => r.id);
+  const { data: bespokeCases } = bespokeEnquiryIds.length
+    ? await admin
+        .from("cases")
+        .select("id, service_enquiry_id, custom_fee_pence")
+        .in("service_enquiry_id", bespokeEnquiryIds)
+    : { data: [] as { id: string; service_enquiry_id: string; custom_fee_pence: number }[] };
+  const caseByEnquiryId = new Map(
+    (bespokeCases ?? []).map((c) => [c.service_enquiry_id, c]),
+  );
+
   const groups = {
     new: all.filter((r) => r.status === "new"),
     contacted: all.filter((r) => r.status === "contacted"),
@@ -59,6 +102,20 @@ export default async function AdminEnquiriesPage() {
   ) => {
     "use server";
     return setServiceEnquiryStatusAction(id, status, notes);
+  };
+  const createCase = async (
+    enquiryId: string,
+    feeGbp: number,
+    accountantId: string,
+    note: string | null,
+  ) => {
+    "use server";
+    return createBespokeCaseFromEnquiryAction(
+      enquiryId,
+      feeGbp,
+      accountantId,
+      note,
+    );
   };
 
   return (
@@ -81,7 +138,10 @@ export default async function AdminEnquiriesPage() {
             key={r.id}
             row={r}
             submittedByEmail={emailById.get(r.client_id) ?? null}
+            accountants={accountants}
+            existingCase={caseByEnquiryId.get(r.id) ?? null}
             setStatus={setStatus}
+            createCase={createCase}
           />
         ))}
       </Section>
@@ -93,7 +153,10 @@ export default async function AdminEnquiriesPage() {
               key={r.id}
               row={r}
               submittedByEmail={emailById.get(r.client_id) ?? null}
+              accountants={accountants}
+              existingCase={caseByEnquiryId.get(r.id) ?? null}
               setStatus={setStatus}
+              createCase={createCase}
             />
           ))}
         </Section>
@@ -106,7 +169,10 @@ export default async function AdminEnquiriesPage() {
               key={r.id}
               row={r}
               submittedByEmail={emailById.get(r.client_id) ?? null}
+              accountants={accountants}
+              existingCase={caseByEnquiryId.get(r.id) ?? null}
               setStatus={setStatus}
+              createCase={createCase}
             />
           ))}
         </Section>
@@ -148,18 +214,33 @@ function Section({
 function EnquiryCard({
   row,
   submittedByEmail,
+  accountants,
+  existingCase,
   setStatus,
+  createCase,
 }: {
   row: Row;
   submittedByEmail: string | null;
+  accountants: { id: string; name: string | null; email: string }[];
+  existingCase: { id: string; custom_fee_pence: number } | null;
   setStatus: (
     id: string,
     status: "new" | "contacted" | "closed",
     notes: string | null,
   ) => Promise<import("@/lib/action-result").ActionResult>;
+  createCase: (
+    enquiryId: string,
+    feeGbp: number,
+    accountantId: string,
+    note: string | null,
+  ) => Promise<import("@/lib/action-result").ActionResult<{ caseId: string }>>;
 }) {
   const tier = getTier(row.service_key);
   const serviceLabel = tier?.title ?? row.service_key;
+  // Only the bespoke tier gets the "create case" form. Other enquiry
+  // tiers (there is only this one today, but the catalogue could grow)
+  // use the status actions only.
+  const supportsBespoke = row.service_key === "vat_plus_accounts_200k";
   return (
     <li>
       <div className="card-sl p-5">
@@ -234,6 +315,21 @@ function EnquiryCard({
           initialNotes={row.admin_notes ?? ""}
           setStatus={setStatus}
         />
+
+        {supportsBespoke ? (
+          existingCase ? (
+            <BespokeCaseExistingLink
+              caseId={existingCase.id}
+              feePence={existingCase.custom_fee_pence}
+            />
+          ) : (
+            <BespokeCaseForm
+              enquiryId={row.id}
+              accountants={accountants}
+              createCase={createCase}
+            />
+          )
+        ) : null}
       </div>
     </li>
   );

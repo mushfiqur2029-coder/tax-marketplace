@@ -7,6 +7,7 @@ import {
 } from "@/lib/case/company-label";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
 import { PayButton } from "./pay-button";
@@ -41,6 +42,10 @@ export default async function CheckoutPage({
     "use server";
     return startCheckoutAction(id);
   };
+
+  const planPence = effectiveFeePence(data.row, data.tier);
+  const urgentPence = data.row.urgent_fee_pence ?? 0;
+  const totalPence = planPence + urgentPence;
 
   return (
     <>
@@ -89,13 +94,13 @@ export default async function CheckoutPage({
           <dl className="mt-4 space-y-2.5 text-sm">
             <div className="flex items-baseline justify-between">
               <dt className="text-ink">{data.tier.title}</dt>
-              <dd className="font-semibold text-ink">£{data.tier.priceGbp}</dd>
+              <dd className="font-semibold text-ink">{formatFeeGbp(planPence)}</dd>
             </div>
             {data.row.is_urgent ? (
               <div className="flex items-baseline justify-between">
                 <dt className="text-ink">Urgent processing</dt>
                 <dd className="font-semibold text-ink">
-                  +£{(data.row.urgent_fee_pence ?? 0) / 100}
+                  +{formatFeeGbp(urgentPence)}
                 </dd>
               </div>
             ) : null}
@@ -110,7 +115,7 @@ export default async function CheckoutPage({
                 className="text-2xl font-bold text-ink"
                 style={{ fontFamily: "var(--font-heading)" }}
               >
-                £{data.tier.priceGbp + (data.row.urgent_fee_pence ?? 0) / 100}
+                {formatFeeGbp(totalPence)}
               </dd>
             </div>
           </dl>
@@ -119,7 +124,7 @@ export default async function CheckoutPage({
             {data.tier.priceGbpSubtitle ? ` · ${data.tier.priceGbpSubtitle}` : ""}
           </p>
           <PayButton
-            amountLabel={`£${data.tier.priceGbp + (data.row.urgent_fee_pence ?? 0) / 100}`}
+            amountLabel={formatFeeGbp(totalPence)}
             start={bound}
           />
           <p className="mt-3 text-[11px] text-slate">

@@ -36,6 +36,10 @@ function linkFor(n: NotificationRow, role: Role): string {
       // Client-facing. Lands on the dashboard where the "Upcoming calls"
       // card surfaces the booking + enquiry status together.
       return "/client";
+    case "enquiry_quoted":
+      // Client-facing. Lands on the new bespoke case where the client
+      // signs the engagement letter and pays the quoted fee.
+      return n.case_id ? `/client/cases/${n.case_id}` : "/client";
     case "withdrawal_requested":
       return "/admin/withdrawals";
     case "withdrawal_paid":
@@ -431,5 +435,7 @@ function typeLabel(t: NotificationType): string {
     case "enquiry_contacted":
     case "enquiry_closed":
       return "Enquiry";
+    case "enquiry_quoted":
+      return "Quote";
   }
 }

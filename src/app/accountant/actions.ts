@@ -710,7 +710,11 @@ async function assertVatReadyForAccountant(caseId: string) {
   if (caseRow.accountant_id !== me.id) {
     throw new Error("You haven't taken this case.");
   }
-  if (caseRow.segment !== "limited_company_vat" || caseRow.tier !== "vat_reg") {
+  if (
+    caseRow.segment !== "limited_company_vat" ||
+    (caseRow.tier !== "vat_reg" &&
+      caseRow.tier !== "vat_plus_accounts_bespoke")
+  ) {
     throw new Error("VAT cycles only apply to VAT Registered cases.");
   }
   if (!caseRow.onboarding_submitted_at) {

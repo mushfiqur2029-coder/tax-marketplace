@@ -27,6 +27,14 @@ export type CaseRow = {
   deadline: string | null;
   is_urgent: boolean;
   urgent_fee_pence: number;
+  // Admin-created bespoke engagement override. When set, every price
+  // surface (Stripe, engagement letter, checkout display, payments
+  // history, wallet commission) reads custom_fee_pence instead of
+  // the tier catalogue priceGbp.
+  custom_fee_pence: number | null;
+  // Audit trail link back to the originating enquiry row, if the case
+  // was created from one. Null on self-serve wizard cases.
+  service_enquiry_id: string | null;
   // Limited-company engagement letter: null on personal cases, set
   // after the client signs on a limited-company case.
   engagement_signed_at: string | null;
@@ -112,7 +120,7 @@ export async function loadClientCase(caseId: string): Promise<CaseData> {
   const { data: caseRow, error } = await supabase
     .from("cases")
     .select(
-      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, engagement_signed_at, engagement_pdf_path, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at, approval_payload",
+      "id, client_id, accountant_id, segment, tier, status, stripe_payment_status, stripe_checkout_session_id, intake_answers, submitted_at, created_at, deadline, is_urgent, urgent_fee_pence, custom_fee_pence, service_enquiry_id, engagement_signed_at, engagement_pdf_path, onboarding_submitted_at, period_start_date, period_end_date, payroll_registered, period_docs_submitted_at, approval_payload",
     )
     .eq("id", caseId)
     .single();

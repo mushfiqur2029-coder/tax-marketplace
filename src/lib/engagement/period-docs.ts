@@ -83,8 +83,14 @@ export const ACCOUNTANT_CT600_KEY = "accountant_ct600";
 
 // Dormant short-circuits the entire period-docs flow — the spec is
 // explicit about "no further client-facing step" after Sections A/B/C.
+// Admin-created bespoke engagements file annual accounts + VAT just
+// like vat_reg, so they're in-scope too.
 export function periodDocsApplyToTier(tier: TierId): boolean {
-  return tier === "non_vat_reg" || tier === "vat_reg";
+  return (
+    tier === "non_vat_reg" ||
+    tier === "vat_reg" ||
+    tier === "vat_plus_accounts_bespoke"
+  );
 }
 
 // Returns the field list for a specific case. Rules around PAYE
@@ -123,8 +129,18 @@ export function periodDocFieldsForCase(opts: {
     if (payeHardExcluded) return [];
     if (!payeInScope) return [f];
     // Shallow-clone with an overridden requiredFor so the submit guard
-    // sees it as required for both applicable tiers.
-    return [{ ...f, requiredFor: ["non_vat_reg", "vat_reg"] as TierId[] }];
+    // sees it as required for every applicable tier (including the
+    // admin-created bespoke engagement, which inherits vat_reg's shape).
+    return [
+      {
+        ...f,
+        requiredFor: [
+          "non_vat_reg",
+          "vat_reg",
+          "vat_plus_accounts_bespoke",
+        ] as TierId[],
+      },
+    ];
   });
 }
 
@@ -134,9 +150,11 @@ export function requiredPeriodDocFieldsForCase(opts: {
   payeCertificateUploadedInSectionA: boolean;
   needsPayeRegistration: "Yes" | "No" | null;
 }): ChecklistField[] {
-  return periodDocFieldsForCase(opts).filter((f) =>
-    f.requiredFor.includes(opts.tier),
-  );
+  // The bespoke tier shares vat_reg's required-field split verbatim;
+  // alias at the lookup so we don't repeat the id in every field entry.
+  const t: TierId =
+    opts.tier === "vat_plus_accounts_bespoke" ? "vat_reg" : opts.tier;
+  return periodDocFieldsForCase(opts).filter((f) => f.requiredFor.includes(t));
 }
 
 /** Narrow the raw Section C answer to the "Yes" | "No" | null shape. */

@@ -10,8 +10,10 @@ import {
   insertAccountantApprovalNotification,
   insertAddonReadyToPayNotification,
   insertAddonReviewDecisionNotification,
+  insertEnquiryQuotedNotification,
 } from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
+import { getTier } from "@/lib/plans";
 
 export type { ActionResult };
 
@@ -546,6 +548,134 @@ export async function updateAddonCatalogAction(
 
     revalidatePath("/admin/addon-catalog");
     return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Create a bespoke-priced case from an existing service_enquiry row. The
+// client lands in the normal engagement letter → pay → onboarding flow
+// — the only differences are:
+//   • cases.tier = vat_plus_accounts_bespoke (new enum value; the client
+//     wizard filters it out, createCaseAction rejects it, so admin is
+//     the only path in)
+//   • cases.custom_fee_pence drives every price surface
+//   • cases.accountant_id is pre-assigned, so the case never surfaces in
+//     the open queue (filter at /accountant uses .is("accountant_id",
+//     null) — already excludes assigned cases, no new filter needed)
+//   • cases.service_enquiry_id links back to the originating enquiry for
+//     audit trail
+//   • enquiry is auto-closed on quote creation
+// -------------------------------------------------------------------------
+export async function createBespokeCaseFromEnquiryAction(
+  enquiryId: string,
+  feeGbp: number,
+  accountantId: string,
+  note: string | null,
+): Promise<ActionResult<{ caseId: string }>> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
+
+    // Whole-£ input per the admin-UI constraint; integer only.
+    if (!Number.isInteger(feeGbp) || feeGbp <= 0) {
+      throw new Error("Fee must be a positive whole-£ amount.");
+    }
+    const feePence = feeGbp * 100;
+
+    const { data: enquiry, error: enquiryErr } = await admin
+      .from("service_enquiries")
+      .select("id, client_id, service_key, company_name, company_number")
+      .eq("id", enquiryId)
+      .maybeSingle();
+    if (enquiryErr || !enquiry) throw new Error("Enquiry not found.");
+
+    // Only the bespoke tier currently flows through this action. If a
+    // future surface needs a different enquiry → case shape, add its
+    // own action rather than overloading this one.
+    if (enquiry.service_key !== "vat_plus_accounts_200k") {
+      throw new Error(
+        "Case creation from enquiry is only supported for the VAT Registered + Accounts (over £200k) tier.",
+      );
+    }
+
+    // Belt-and-braces: confirm the accountant exists and is approved
+    // (same gate as the queue uses).
+    const { data: accountant } = await admin
+      .from("accountant_profiles")
+      .select("user_id, approval_status")
+      .eq("user_id", accountantId)
+      .maybeSingle();
+    if (!accountant || accountant.approval_status !== "approved") {
+      throw new Error("Pick an approved accountant.");
+    }
+
+    // Pre-fill intake_answers with the company identity from the
+    // enquiry so the engagement letter and Section A onboarding have
+    // the right company name + number without the client having to
+    // re-enter them.
+    const intakeAnswers: Record<string, string> = {
+      company_name: enquiry.company_name,
+      company_number: enquiry.company_number,
+    };
+
+    const { data: inserted, error: insertErr } = await admin
+      .from("cases")
+      .insert({
+        client_id: enquiry.client_id,
+        segment: "limited_company_vat",
+        tier: "vat_plus_accounts_bespoke",
+        custom_fee_pence: feePence,
+        accountant_id: accountantId,
+        service_enquiry_id: enquiry.id,
+        status: "draft",
+        stripe_payment_status: "pending",
+        intake_answers: intakeAnswers,
+      })
+      .select("id")
+      .single();
+    if (insertErr || !inserted) {
+      throw new Error(insertErr?.message ?? "Could not create case.");
+    }
+    const caseId = inserted.id as string;
+
+    // Auto-close the enquiry — the quote replaces the "awaiting admin"
+    // state. Note is appended to admin_notes if provided.
+    const closedNote = note?.trim()
+      ? `[Quote £${feeGbp}] ${note.trim()}`
+      : `[Quote £${feeGbp}] Case created.`;
+    await admin
+      .from("service_enquiries")
+      .update({ status: "closed", admin_notes: closedNote })
+      .eq("id", enquiryId);
+
+    // Log the admin action for audit.
+    await admin.from("admin_actions").insert({
+      target_user_id: enquiry.client_id,
+      admin_id: me.id,
+      action: "warning", // reusing existing enum value; no bespoke-case enum yet
+      note: `Bespoke case ${caseId} created for £${feeGbp} assigned to accountant ${accountantId}.${
+        note?.trim() ? ` Note: ${note.trim()}` : ""
+      }`,
+    });
+
+    const tier = getTier("vat_plus_accounts_bespoke");
+    await insertEnquiryQuotedNotification({
+      clientId: enquiry.client_id,
+      caseId,
+      feeGbp,
+      serviceLabel: tier?.title ?? "bespoke engagement",
+      note,
+    }).catch((err) =>
+      console.error("[bespoke case notification] failed:", err),
+    );
+
+    revalidatePath("/admin/enquiries");
+    revalidatePath(`/admin/cases/${caseId}`);
+    revalidatePath("/admin");
+
+    return { ok: true, data: { caseId } };
   } catch (e) {
     return fail(e);
   }

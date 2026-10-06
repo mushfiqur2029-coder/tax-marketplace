@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/plans";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { loadClientCase } from "@/lib/case";
@@ -36,7 +37,7 @@ export default async function EngagementPage({
   const { data: caseRow } = await supabase
     .from("cases")
     .select(
-      "id, client_id, segment, tier, status, engagement_signed_at, intake_answers",
+      "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence",
     )
     .eq("id", id)
     .single();
@@ -95,6 +96,12 @@ export default async function EngagementPage({
     timeZone: "Europe/London",
   });
 
+  const feeLabel = formatFeeGbp(
+    effectiveFeePence(
+      caseRow as unknown as { custom_fee_pence: number | null },
+      tier,
+    ),
+  );
   const previewHtml = renderEngagementLetterHtml({
     effectiveDate: todayLong,
     variant: isCompany ? "limited_company" : "personal",
@@ -104,7 +111,7 @@ export default async function EngagementPage({
     clientEmail: me.email,
     clientPhone: clientPhone || "—",
     serviceName: tier.title,
-    totalFee: `£${tier.priceGbp}`,
+    totalFee: feeLabel,
     signatureDataUrl: null,
     signDate: null,
   });
@@ -141,7 +148,7 @@ export default async function EngagementPage({
       <PortalPageHeader
         eyebrow={caseEyebrow({
           segmentTitle: tier.title,
-          tierTitle: `£${tier.priceGbp}`,
+          tierTitle: feeLabel,
           companyName: companyNameFromAnswers(answers, caseRow.segment),
         })}
         title="Review and sign your engagement letter"
@@ -235,7 +242,7 @@ export default async function EngagementPage({
             Your signature is embedded in the PDF. We send a signed copy
             to <strong>{me.email}</strong> and a second copy to Sterling
             Ledger&rsquo;s records. After signing you&apos;ll go straight
-            to the £{tier.priceGbp} checkout.
+            to the {feeLabel} checkout.
           </p>
           {signDisabled ? (
             <div
@@ -253,7 +260,7 @@ export default async function EngagementPage({
           <div className="mt-5">
             <EngagementSignForm
               sign={sign}
-              fee={`£${tier.priceGbp}`}
+              fee={feeLabel}
               disabled={signDisabled}
             />
           </div>

@@ -29,7 +29,13 @@ export type TierId =
   // Limited company — bespoke enquiry tier. Does NOT map to a cases.tier
   // enum value; picking it diverts to the enquiry form. The server guard
   // in createCaseAction refuses to insert this id into cases.tier.
-  | "vat_plus_accounts_200k";
+  | "vat_plus_accounts_200k"
+  // Admin-created bespoke engagement. After the scoping call for a
+  // vat_plus_accounts_200k enquiry, admin creates a case with this
+  // tier id + a custom fee stored on cases.custom_fee_pence. Client
+  // self-serve wizard filters this out (adminCreateOnly: true below)
+  // and createCaseAction refuses it.
+  | "vat_plus_accounts_bespoke";
 
 // Legacy limited-company tier IDs that are no longer sold. Kept as Postgres
 // enum values (vat_basic / vat_standard / vat_accounts) because dropping an
@@ -63,6 +69,12 @@ export type PlanTier = {
   // creation. The server also refuses to open a case on a tier
   // marked this way — single source of truth is checked twice.
   requiresEnquiry?: boolean;
+  // Hides the tier from the client-facing wizard. Used for admin-
+  // created bespoke engagements where the client is never choosing
+  // this tier themselves — admin creates it on their behalf after
+  // a scoping call. createCaseAction also refuses to insert tiers
+  // flagged this way.
+  adminCreateOnly?: boolean;
 };
 
 // ---------- Personal (9 flat-fee services) ----------
@@ -287,6 +299,20 @@ export const PLAN_TIERS: PlanTier[] = [
     description:
       "For VAT-registered companies with annual turnover over £200k. We quote per engagement after a short call.",
   },
+  {
+    // Admin-created bespoke engagement — never appears in the client
+    // wizard (adminCreateOnly), never has a flat fee (priceGbp: 0
+    // placeholder; cases.custom_fee_pence drives every display and
+    // the Stripe amount). Reuses the vat_reg onboarding checklist via
+    // the aliasTier helper in checklist.ts.
+    id: "vat_plus_accounts_bespoke",
+    group: "company",
+    title: "VAT Registered + Accounts (bespoke)",
+    tagline:
+      "Bespoke engagement priced on a scoping call. Full accounts, CT, and every VAT return.",
+    priceGbp: 0,
+    adminCreateOnly: true,
+  },
 ];
 
 export function getTier(id: string | null | undefined): PlanTier | null {
@@ -295,10 +321,10 @@ export function getTier(id: string | null | undefined): PlanTier | null {
 }
 
 export const PERSONAL_TIERS: PlanTier[] = PLAN_TIERS.filter(
-  (t) => t.group === "personal",
+  (t) => t.group === "personal" && !t.adminCreateOnly,
 );
 export const COMPANY_TIERS: PlanTier[] = PLAN_TIERS.filter(
-  (t) => t.group === "company",
+  (t) => t.group === "company" && !t.adminCreateOnly,
 );
 
 // Retired personal tiers. The old wizard offered these on top of a

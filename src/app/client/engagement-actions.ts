@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/plans";
+import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
 import { type ActionResult, fail } from "@/lib/action-result";
 import { renderEngagementLetterHtml } from "@/lib/engagement/letter-template";
 import { renderPdfFromHtml } from "@/lib/engagement/pdf";
@@ -207,7 +208,7 @@ export async function signEngagementAction(
     const { data: caseRow, error: caseErr } = await supabase
       .from("cases")
       .select(
-        "id, client_id, segment, tier, status, engagement_signed_at, intake_answers",
+        "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence",
       )
       .eq("id", caseId)
       .single();
@@ -282,6 +283,12 @@ export async function signEngagementAction(
     // Build the HTML, render the PDF. Render failure is surfaced as a
     // clean error rather than storing a partial file.
     let pdfBytes: Uint8Array;
+    const feeLabel = formatFeeGbp(
+      effectiveFeePence(
+        caseRow as unknown as { custom_fee_pence: number | null },
+        tier,
+      ),
+    );
     const letterHtml = renderEngagementLetterHtml({
       effectiveDate: signDate,
       variant: isCompany ? "limited_company" : "personal",
@@ -291,7 +298,7 @@ export async function signEngagementAction(
       clientEmail: me.email,
       clientPhone: clientPhone || "—",
       serviceName: tier.title,
-      totalFee: `£${tier.priceGbp}`,
+      totalFee: feeLabel,
       signatureDataUrl,
       signDate,
     });
@@ -356,7 +363,7 @@ export async function signEngagementAction(
       <p>Thanks for signing the engagement letter for your <strong>${escapeHtml(
         tier.title,
       )}</strong> service. A copy is attached for your records.</p>
-      <p>Next step: payment of <strong>£${tier.priceGbp}</strong>. You can complete this now from your case page.</p>
+      <p>Next step: payment of <strong>${feeLabel}</strong>. You can complete this now from your case page.</p>
       <p>Sterling Ledger</p>
     `;
     const internalHtml = `
@@ -364,7 +371,7 @@ export async function signEngagementAction(
       <ul>
         <li>Client: ${escapeHtml(clientName)} (${escapeHtml(me.email)})</li>
         <li>Service: ${escapeHtml(tier.title)}</li>
-        <li>Fee: £${tier.priceGbp}</li>
+        <li>Fee: ${feeLabel}</li>
         <li>Case ID: ${escapeHtml(caseId)}</li>
       </ul>
       <p>PDF is attached.</p>

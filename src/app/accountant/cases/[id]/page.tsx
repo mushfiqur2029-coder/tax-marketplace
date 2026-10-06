@@ -257,7 +257,7 @@ export default async function AccountantCaseDetailPage({
   // end date, and the server action persists it back.
   const showVatSection =
     isCompany &&
-    data.tier.id === "vat_reg" &&
+    (data.tier.id === "vat_reg" || data.tier.id === "vat_plus_accounts_bespoke") &&
     data.isMine &&
     !!data.row.onboarding_submitted_at;
   let vatCycles: VatCycleRow[] = [];

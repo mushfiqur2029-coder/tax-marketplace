@@ -11,6 +11,7 @@ import {
   RETIRED_PERSONAL_TIER_IDS,
   type TierId,
 } from "@/lib/plans";
+import { effectiveFeePence } from "@/lib/case/pricing";
 import type Stripe from "stripe";
 import { stripe, siteUrl } from "@/lib/stripe";
 import { type ActionResult, fail } from "@/lib/action-result";
@@ -29,7 +30,7 @@ async function assertCaseOwner(caseId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("cases")
-    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status, deadline, is_urgent, urgent_fee_pence, engagement_signed_at")
+    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status, deadline, is_urgent, urgent_fee_pence, custom_fee_pence, engagement_signed_at")
     .eq("id", caseId)
     .single();
   if (error || !data) throw new Error("Case not found.");
@@ -93,6 +94,13 @@ export async function createCaseAction(
     if (tierDef.requiresEnquiry) {
       throw new Error(
         "This service is bespoke. Use the enquiry form instead of starting a case.",
+      );
+    }
+    // Admin-only tiers (vat_plus_accounts_bespoke) must be created by
+    // admin via the enquiry → case flow, not by the client self-serving.
+    if (tierDef.adminCreateOnly) {
+      throw new Error(
+        "This service can only be opened by Sterling Ledger admins following a scoping call.",
       );
     }
 
@@ -207,12 +215,13 @@ export async function startCheckoutAction(
     // Build Stripe line items. Plan always; urgent as a separate line so
     // the receipt reads clearly.
     const isUrgent = !!caseRow.is_urgent;
+    const planPence = effectiveFeePence(caseRow, tier);
     const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
       {
         quantity: 1,
         price_data: {
           currency: "gbp",
-          unit_amount: tier.priceGbp * 100,
+          unit_amount: planPence,
           product_data: {
             // The tier title already names the service for both Personal
             // (e.g. "Sole trader / self-employed") and Limited Company

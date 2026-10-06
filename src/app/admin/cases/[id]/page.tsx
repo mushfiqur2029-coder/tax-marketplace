@@ -210,7 +210,8 @@ export default async function AdminCasePage({
   // Admin VAT visibility: all cycles on vat_reg cases + Section D
   // frequency + VAT number for context.
   const showVatSection =
-    isCompany && tier.id === "vat_reg";
+    isCompany &&
+    (tier.id === "vat_reg" || tier.id === "vat_plus_accounts_bespoke");
   const vatFrequency = showVatSection
     ? getVatFrequency(answers)
     : null;

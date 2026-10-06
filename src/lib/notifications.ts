@@ -22,7 +22,8 @@ export type NotificationType =
   | "service_enquiry"
   | "booking_created"
   | "enquiry_contacted"
-  | "enquiry_closed";
+  | "enquiry_closed"
+  | "enquiry_quoted";
 
 export type NotificationRow = {
   id: string;
@@ -533,6 +534,31 @@ export async function insertEnquiryStatusNotification(params: {
     },
     error,
   );
+}
+
+// Client-facing notification fired when admin turns a bespoke enquiry
+// into a priced case. Lands the client on the new case page where they
+// sign the engagement letter and pay the quoted fee.
+export async function insertEnquiryQuotedNotification(params: {
+  clientId: string;
+  caseId: string;
+  feeGbp: number;
+  serviceLabel: string;
+  note: string | null;
+}) {
+  const admin = createAdminClient();
+  const noteSuffix = params.note?.trim() ? ` Note: ${params.note.trim()}` : "";
+  const message =
+    `Sterling Ledger has prepared a bespoke quote of £${params.feeGbp} for your ${params.serviceLabel} enquiry. ` +
+    `Review and sign the engagement letter to continue.` +
+    noteSuffix;
+  const { error } = await admin.from("notifications").insert({
+    recipient_id: params.clientId,
+    type: "enquiry_quoted" as const,
+    case_id: params.caseId,
+    message,
+  });
+  logNotifyError({ type: "enquiry_quoted", caseId: params.caseId }, error);
 }
 
 // Notify the accountant when admin approves or rejects their application.
