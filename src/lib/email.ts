@@ -287,6 +287,18 @@ export async function sendEmailViaGmail(
     });
   }
 
+  // Resolve the From address. token.email is "unknown" when the
+  // OAuth callback couldn't look it up (userinfo.email scope isn't
+  // requested; tokeninfo often returns no email without it). Fall
+  // back to GOOGLE_CALENDAR_ID — that env var already holds the
+  // connected admin's Gmail address (used by the calendar booking
+  // code for the same reason). Final fallback is "me", which Gmail
+  // interprets as the authenticated sender.
+  const fromAddress =
+    token.email && token.email !== "unknown"
+      ? token.email
+      : process.env.GOOGLE_CALENDAR_ID ?? "me";
+
   // Drop any BCC entry that matches the From address (self-BCC noise)
   // or the To address (Gmail dedupes anyway, but keeping the header
   // clean saves the recipient confusion when they view headers).
@@ -294,13 +306,13 @@ export async function sendEmailViaGmail(
     const a = addr.trim().toLowerCase();
     return (
       a &&
-      a !== token.email.trim().toLowerCase() &&
+      a !== fromAddress.trim().toLowerCase() &&
       a !== params.to.trim().toLowerCase()
     );
   });
 
   const raw = buildRawMime({
-    from: token.email,
+    from: fromAddress,
     to: params.to,
     bcc: bcc.length > 0 ? bcc : undefined,
     subject: params.subject,
