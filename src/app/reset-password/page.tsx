@@ -31,7 +31,7 @@ export default async function ResetPasswordPage() {
           </h1>
           <p className="mt-2 text-sm text-slate">
             You&apos;re signed in temporarily from the reset link. Pick a
-            new password — you&apos;ll be sent back to the login page after.
+            new password. You&apos;ll be sent back to the login page after.
           </p>
           <div className="mt-6">
             <ResetPasswordForm />

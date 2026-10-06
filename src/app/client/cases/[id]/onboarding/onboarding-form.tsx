@@ -183,7 +183,7 @@ export function OnboardingForm({
             >
               {section.key === "P"
                 ? section.title
-                : `Section ${section.key} — ${section.title}`}
+                : `Section ${section.key}: ${section.title}`}
             </h2>
           </div>
           <div className="space-y-5">
@@ -416,7 +416,7 @@ function CompanyIdentityReadonly({
           </div>
           <p className="mt-3 text-[11px] text-slate">
             Captured when you signed the engagement letter. Contact support
-            if either value is wrong — the engagement letter would need to
+            if either value is wrong, the engagement letter would need to
             be re-issued.
           </p>
         </>
@@ -719,8 +719,8 @@ function LegacyDrivingLicenceBlock({
       </div>
       <p className="mt-1 text-xs text-slate">
         You uploaded this before we split the Driving licence slot into
-        front and back. It won&apos;t count toward the new requirements
-        — please re-upload the front and back above if that&apos;s the
+        front and back. It won&apos;t count toward the new requirements.
+        Please re-upload the front and back above if that&apos;s the
         ID you&apos;re providing. Remove it here when you&apos;re done.
       </p>
       <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-white">

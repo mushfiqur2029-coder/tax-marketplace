@@ -165,7 +165,7 @@ export async function saveChecklistAnswersAction(
       if (rpcErr) throw new Error(rpcErr.message);
       if ((rows ?? 0) === 0) {
         throw new Error(
-          "Save didn't take — the database refused the write. Reload the page and try again.",
+          "Save didn't take. The database refused the write. Reload the page and try again.",
         );
       }
     }
@@ -411,7 +411,7 @@ export async function submitChecklistAction(
     if (updErr) throw new Error(updErr.message);
     if (!updData || updData.length === 0) {
       throw new Error(
-        "Submit didn't take — the database refused the write. Reload the page and try again.",
+        "Submit didn't take. The database refused the write. Reload the page and try again.",
       );
     }
 

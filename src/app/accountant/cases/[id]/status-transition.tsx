@@ -91,7 +91,7 @@ export function StatusTransition({
           {current === "complete"
             ? "Case complete. Nice."
             : current === "client_approval"
-              ? "Waiting on the client to approve and file. You can't move this forward from your side — this is by design so nothing gets filed without their explicit sign-off."
+              ? "Waiting on the client to approve and file. You can't move this forward from your side; this is by design so nothing gets filed without their explicit sign-off."
               : "No further transitions from here."}
         </p>
       )}

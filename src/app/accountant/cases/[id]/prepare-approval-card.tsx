@@ -88,7 +88,7 @@ export function PrepareApprovalCard({
     <div className="space-y-6">
       <AccountantUploadSlot
         label="Annual Accounts"
-        hint="PDF only — client sees this on their approval screen."
+        hint="PDF only. Client sees this on their approval screen."
         requirementKey={annualAccountsKey}
         docs={annualAccounts}
         onUploaded={(d) => setAnnualAccounts((prev) => [...prev, d])}
@@ -100,7 +100,7 @@ export function PrepareApprovalCard({
       />
       <AccountantUploadSlot
         label="CT600"
-        hint="PDF only — HMRC Corporation Tax return."
+        hint="PDF only. HMRC Corporation Tax return."
         requirementKey={ct600Key}
         docs={ct600}
         onUploaded={(d) => setCt600((prev) => [...prev, d])}

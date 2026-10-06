@@ -44,7 +44,7 @@ export const SEGMENTS: Segment[] = [
     // checklist (handled downstream) carry the scoping.
     id: "personal",
     title: "Personal",
-    tagline: "Self Assessment for individuals — flat-fee services by situation.",
+    tagline: "Self Assessment for individuals. Flat-fee services by situation.",
     numeral: "①",
     intake: [],
     suggestedDocs: [],

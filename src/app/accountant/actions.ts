@@ -174,7 +174,7 @@ export async function requestPresetAddonAction(
       throw new Error("You haven't taken this case.");
     }
     if (caseRow.status === "complete") {
-      throw new Error("Case is already complete — no more add-ons.");
+      throw new Error("Case is already complete. No more add-ons.");
     }
 
     // Read the price from the DB — never trust a client-supplied amount.
@@ -188,7 +188,7 @@ export async function requestPresetAddonAction(
       throw new Error("That add-on is currently unavailable.");
     }
 
-    const snapshotDescription = `${preset.name} — ${preset.description}`;
+    const snapshotDescription = `${preset.name}: ${preset.description}`;
     const { error: insertErr } = await supabase.from("case_addons").insert({
       case_id: caseId,
       accountant_id: me.id,
@@ -259,7 +259,7 @@ export async function requestCustomAddonAction(input: {
       throw new Error("You haven't taken this case.");
     }
     if (caseRow.status === "complete") {
-      throw new Error("Case is already complete — no more add-ons.");
+      throw new Error("Case is already complete. No more add-ons.");
     }
 
     const { error: insertErr } = await supabase.from("case_addons").insert({
@@ -396,7 +396,7 @@ export async function clearCasePeriodAction(
       .single();
     if (fresh?.period_docs_submitted_at) {
       throw new Error(
-        "Period docs are already in — contact support to re-open the period.",
+        "Period docs are already in. Contact support to re-open the period.",
       );
     }
 
@@ -599,7 +599,7 @@ export async function prepareApprovalAction(
     // bank data.
     if (periodDocsApplyToTier(tierId) && !fresh.period_docs_submitted_at) {
       throw new Error(
-        "Client hasn't uploaded their period documents yet — can't send for approval.",
+        "Client hasn't uploaded their period documents yet. Can't send for approval.",
       );
     }
 
@@ -715,7 +715,7 @@ async function assertVatReadyForAccountant(caseId: string) {
   }
   if (!caseRow.onboarding_submitted_at) {
     throw new Error(
-      "Client hasn't completed onboarding yet — can't open VAT cycles.",
+      "Client hasn't completed onboarding yet. Can't open VAT cycles.",
     );
   }
   // Frequency can legitimately be null here — the client may have
@@ -749,7 +749,7 @@ export async function openFirstVatCycleAction(
     const frequency: VatFrequency | null = storedFreq ?? input.frequency ?? null;
     if (!frequency) {
       throw new Error(
-        "VAT return frequency is missing — pick Monthly, Quarterly, or Annually to open the first cycle.",
+        "VAT return frequency is missing. Pick Monthly, Quarterly, or Annually to open the first cycle.",
       );
     }
 
@@ -856,7 +856,7 @@ export async function editVatCycleDatesAction(
       .single();
     if (cycErr || !cycle) throw new Error("VAT cycle not found.");
     if (cycle.status === "filed") {
-      throw new Error("Cycle is filed — dates are locked.");
+      throw new Error("Cycle is filed. Dates are locked.");
     }
 
     const { me, caseRow, frequency } = await assertVatReadyForAccountant(
@@ -871,7 +871,7 @@ export async function editVatCycleDatesAction(
       // Guard here is defense in depth so a bad intake_answers edit
       // can't leave the label math unable to run.
       throw new Error(
-        "VAT return frequency isn't set on this case — open the first cycle first.",
+        "VAT return frequency isn't set on this case. Open the first cycle first.",
       );
     }
 
@@ -921,7 +921,7 @@ export async function uploadVatReturnDocAction(
       .single();
     if (cycErr || !cycle) throw new Error("VAT cycle not found.");
     if (cycle.status === "filed") {
-      throw new Error("Cycle is filed — uploads are locked.");
+      throw new Error("Cycle is filed. Uploads are locked.");
     }
 
     const { me, supabase, caseRow } = await assertVatReadyForAccountant(
@@ -1001,7 +1001,7 @@ export async function removeVatReturnDocAction(
       .single();
     if (cycErr || !cycle) throw new Error("VAT cycle not found.");
     if (cycle.status === "filed") {
-      throw new Error("Cycle is filed — uploads are locked.");
+      throw new Error("Cycle is filed. Uploads are locked.");
     }
 
     const { me, supabase } = await assertVatReadyForAccountant(cycle.case_id);

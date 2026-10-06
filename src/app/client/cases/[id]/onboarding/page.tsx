@@ -143,7 +143,7 @@ export default async function OnboardingPage({
         companyName: companyNameFromAnswers(answers, caseRow.segment),
       })}
       title="Your onboarding checklist"
-      description="Fill in each required item below. You can save progress as you go — nothing is sent to an accountant until you click Submit at the bottom."
+      description="Fill in each required item below. You can save progress as you go. Nothing is sent to an accountant until you click Submit at the bottom."
       name={me.name}
       email={me.email}
       role={me.role}

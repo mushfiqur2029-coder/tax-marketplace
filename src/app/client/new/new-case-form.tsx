@@ -47,7 +47,7 @@ const HINT_COPY: Record<PersonalHint, string> = {
   "high-earners":
     "Higher-rate income from multiple sources? Freelancer / consultant fits most of these. If foreign residence or treaty questions apply, Complex foreign / international is the right pick.",
   "cis-construction":
-    "CIS subcontractor filing? Pick CIS subcontractors — most workers are owed a refund and we reconcile every deduction.",
+    "CIS subcontractor filing? Pick CIS subcontractors. Most workers are owed a refund and we reconcile every deduction.",
 };
 
 export function NewCaseForm({ action, initialMode = null, hint = null }: Props) {
@@ -110,7 +110,7 @@ export function NewCaseForm({ action, initialMode = null, hint = null }: Props) 
             active={mode === "personal"}
             onClick={() => onPickMode("personal")}
             title="Personal"
-            tagline="Self Assessment for individuals — nine flat-fee services by situation."
+            tagline="Self Assessment for individuals. Nine flat-fee services by situation."
           />
           <ModeCard
             active={mode === "company"}
@@ -144,7 +144,7 @@ export function NewCaseForm({ action, initialMode = null, hint = null }: Props) 
           ) : null}
           <p className="mt-4 max-w-xl text-sm text-slate">
             Each service is a one-off flat fee. You&apos;ll sign a short
-            engagement letter next, then pay — once we have both, we upload
+            engagement letter next, then pay. Once we have both, we upload
             your documents and get started.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

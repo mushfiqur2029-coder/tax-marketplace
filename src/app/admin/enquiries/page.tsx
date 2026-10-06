@@ -65,7 +65,7 @@ export default async function AdminEnquiriesPage() {
       <AdminPageHeader
         eyebrow="Admin console"
         title="Service enquiries"
-        description="Pre-sales leads from the Limited Company bespoke tier. Follow up quickly — real potential clients waiting on a human reply."
+        description="Pre-sales leads from the Limited Company bespoke tier. Follow up quickly. Real potential clients waiting on a human reply."
       />
       <Section
         title={`New (${groups.new.length})`}

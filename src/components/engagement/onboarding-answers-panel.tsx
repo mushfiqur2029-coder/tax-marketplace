@@ -95,7 +95,7 @@ export function OnboardingAnswersPanel({
             >
               {section.key === "P"
                 ? section.title
-                : `Section ${section.key} — ${section.title}`}
+                : `Section ${section.key}: ${section.title}`}
             </h4>
             <dl className="divide-y divide-line">
               {fieldsHere.map((field) => (
@@ -251,7 +251,7 @@ function FieldValue({
       return (
         <span>
           {v}
-          {other ? <> — {other}</> : null}
+          {other ? <>: {other}</> : null}
         </span>
       );
     }

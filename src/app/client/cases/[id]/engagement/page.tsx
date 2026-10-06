@@ -168,8 +168,8 @@ export default async function EngagementPage({
           }}
         >
           Your profile doesn&rsquo;t have a contact number yet. You can
-          still sign — the letter will show &ldquo;—&rdquo; for the number
-          — but we&apos;d recommend adding one on your{" "}
+          still sign; the letter will show &ldquo;—&rdquo; for the number.
+          We&apos;d recommend adding one on your{" "}
           <Link
             href="/client/profile"
             className="font-semibold underline underline-offset-4"

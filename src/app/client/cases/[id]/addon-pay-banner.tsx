@@ -46,7 +46,7 @@ export function AddonPayBanner({
         </div>
         <p className="mt-1 text-xs text-slate">
           Your accountant added this on top of the base plan. Payment goes
-          through Stripe — you&apos;ll come back here when it&apos;s done.
+          through Stripe. You&apos;ll come back here when it&apos;s done.
         </p>
         {error ? (
           <p className="mt-2 text-xs font-medium text-red-700" role="alert">

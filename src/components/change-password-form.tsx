@@ -55,7 +55,7 @@ export function ChangePasswordForm({ change }: Props) {
       className="space-y-5 card-sl p-6 sm:p-8 max-w-2xl"
     >
       <p className="text-sm text-slate">
-        Password changes take effect immediately — no admin approval required.
+        Password changes take effect immediately. No admin approval required.
         Enter your current password to confirm it&apos;s you.
       </p>
 

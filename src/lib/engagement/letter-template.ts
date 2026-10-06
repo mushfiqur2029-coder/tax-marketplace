@@ -111,7 +111,7 @@ export function renderEngagementLetterHtml(
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Engagement Letter — Sterling Ledger</title>
+<title>Engagement Letter · Sterling Ledger</title>
 <style>
   @page { size: A4 portrait; margin: 20mm; }
   html, body {

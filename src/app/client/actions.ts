@@ -92,7 +92,7 @@ export async function createCaseAction(
     // priceGbp=0 and no engagement path.
     if (tierDef.requiresEnquiry) {
       throw new Error(
-        "This service is bespoke — use the enquiry form instead of starting a case.",
+        "This service is bespoke. Use the enquiry form instead of starting a case.",
       );
     }
 

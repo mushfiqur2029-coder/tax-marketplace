@@ -61,7 +61,7 @@ export function VatFirstCycleForm({ frequency, openFirstCycle }: Props) {
             <>
               Set the end date of the first VAT period. The next period,
               HMRC due date, and label are calculated from the
-              client&apos;s Section D frequency ({frequency}) — set once,
+              client&apos;s Section D frequency ({frequency}). Set once;
               cycles continue automatically.
             </>
           )}

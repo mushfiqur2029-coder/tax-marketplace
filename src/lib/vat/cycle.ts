@@ -178,13 +178,13 @@ export function computePeriodLabel(
       s.d === 1 &&
       e.d === daysInMonth(e.y, e.m);
     if (wholeMonth) return `${MONTH_LONG[s.m - 1]} ${s.y}`;
-    return `${s.d}–${e.d} ${MONTH_NAMES[s.m - 1]} ${s.y}`;
+    return `${s.d} to ${e.d} ${MONTH_NAMES[s.m - 1]} ${s.y}`;
   }
   if (f === "Quarterly") {
     const sameYear = s.y === e.y;
     return sameYear
-      ? `${MONTH_NAMES[s.m - 1]}–${MONTH_NAMES[e.m - 1]} ${s.y}`
-      : `${MONTH_NAMES[s.m - 1]} ${s.y}–${MONTH_NAMES[e.m - 1]} ${e.y}`;
+      ? `${MONTH_NAMES[s.m - 1]} to ${MONTH_NAMES[e.m - 1]} ${s.y}`
+      : `${MONTH_NAMES[s.m - 1]} ${s.y} to ${MONTH_NAMES[e.m - 1]} ${e.y}`;
   }
   // Annually: "Year ending 31 Dec 2026".
   return `Year ending ${e.d} ${MONTH_NAMES[e.m - 1]} ${e.y}`;
@@ -220,7 +220,7 @@ export const VAT_CYCLE_UPLOAD_FIELDS: ChecklistField[] = [
     id: "vat_sales_invoices",
     section: "A",
     label: "Sales invoices / platform statements",
-    hint: "Includes platform earnings statements (e.g. Uber, Deliveroo). Required — output VAT is calculated from these.",
+    hint: "Includes platform earnings statements (e.g. Uber, Deliveroo). Required. Output VAT is calculated from these.",
     kind: "upload",
     requiredFor: [],
     multi: true,

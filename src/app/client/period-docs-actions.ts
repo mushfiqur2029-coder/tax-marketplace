@@ -276,7 +276,7 @@ export async function submitPeriodDocsAction(
     if (updateErr) throw new Error(updateErr.message);
     if (!updData || updData.length === 0) {
       throw new Error(
-        "Submit didn't take — the database refused the write. Reload the page and try again.",
+        "Submit didn't take. The database refused the write. Reload the page and try again.",
       );
     }
 

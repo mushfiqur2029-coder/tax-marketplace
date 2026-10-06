@@ -219,7 +219,7 @@ export async function submitVatCycleDocsAction(
       .select("id");
     if (updErr) throw new Error(updErr.message);
     if (!updated || updated.length === 0) {
-      throw new Error("Couldn't submit — the cycle may have moved on.");
+      throw new Error("Couldn't submit. The cycle may have moved on.");
     }
 
     if (caseRow.accountant_id) {
@@ -264,7 +264,7 @@ export async function approveAndFileVatCycleAction(
     );
     if (!frequency) {
       throw new Error(
-        "VAT return frequency is missing from onboarding — can't open the next cycle.",
+        "VAT return frequency is missing from onboarding. Can't open the next cycle.",
       );
     }
 

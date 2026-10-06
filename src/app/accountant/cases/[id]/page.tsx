@@ -544,7 +544,7 @@ export default async function AccountantCaseDetailPage({
                     color: "#B57E12",
                   }}
                 >
-                  Onboarding is still in progress — the client hasn&apos;t
+                  Onboarding is still in progress. The client hasn&apos;t
                   submitted the checklist yet. What you see below is
                   partial. Reach out via chat if they look stuck.
                 </p>
@@ -870,8 +870,8 @@ export default async function AccountantCaseDetailPage({
                   }
                   disabledReason={
                     data.me.status === "suspended"
-                      ? "Your account is suspended — add-on requests are locked until reinstated."
-                      : "Case is complete — no more add-ons."
+                      ? "Your account is suspended. Add-on requests are locked until reinstated."
+                      : "Case is complete. No more add-ons."
                   }
                 />
               </div>
@@ -891,7 +891,7 @@ export default async function AccountantCaseDetailPage({
               </h3>
               {data.me.status === "suspended" ? (
                 <p className="text-sm text-slate">
-                  Account suspended — status advances are locked until an
+                  Account suspended. Status advances are locked until an
                   admin reinstates you.
                 </p>
               ) : (

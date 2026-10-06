@@ -106,7 +106,7 @@ export const PLAN_TIERS: PlanTier[] = [
     id: "sole_trader",
     group: "personal",
     title: "Sole trader / self-employed",
-    tagline: "Sole traders and freelancers — all your allowable expenses captured.",
+    tagline: "Sole traders and freelancers. All your allowable expenses captured.",
     priceGbp: 199,
     priceGbpSubtitle: "one-off",
     features: [
@@ -136,7 +136,7 @@ export const PLAN_TIERS: PlanTier[] = [
     id: "non_resident_landlord",
     group: "personal",
     title: "Non-resident landlord",
-    tagline: "Living abroad with UK property — NRLS treatment under current rules.",
+    tagline: "Living abroad with UK property. NRLS treatment under current rules.",
     priceGbp: 399,
     priceGbpSubtitle: "one-off",
     features: [
@@ -151,7 +151,7 @@ export const PLAN_TIERS: PlanTier[] = [
     id: "gig_worker",
     group: "personal",
     title: "Delivery / gig workers",
-    tagline: "Deliveroo, Uber Eats, Amazon Flex, Just Eat — gig income done right.",
+    tagline: "Deliveroo, Uber Eats, Amazon Flex, Just Eat. Gig income done right.",
     priceGbp: 199,
     priceGbpSubtitle: "one-off",
     features: [
@@ -181,7 +181,7 @@ export const PLAN_TIERS: PlanTier[] = [
     id: "landlord_multi",
     group: "personal",
     title: "Landlord (multiple properties)",
-    tagline: "Portfolio landlords — property-by-property and overall position.",
+    tagline: "Portfolio landlords. Property-by-property and overall position.",
     priceGbp: 599,
     priceGbpSubtitle: "one-off",
     features: [
@@ -275,7 +275,7 @@ export const PLAN_TIERS: PlanTier[] = [
     group: "company",
     title: "VAT Registered + Accounts (over £200k turnover)",
     tagline:
-      "Larger-company engagement — we scope and price around your business.",
+      "Larger-company engagement. We scope and price around your business.",
     priceGbp: 0,
     priceDisplay: "Bespoke",
     requiresEnquiry: true,

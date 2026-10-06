@@ -33,7 +33,7 @@ export async function submitServiceEnquiryAction(
     const tier = getTier(input.serviceKey);
     if (!tier || !tier.requiresEnquiry) {
       throw new Error(
-        "Unknown service — this enquiry form only accepts bespoke tiers.",
+        "Unknown service. This enquiry form only accepts bespoke tiers.",
       );
     }
 

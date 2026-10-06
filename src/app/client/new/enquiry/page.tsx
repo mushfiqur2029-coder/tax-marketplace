@@ -47,7 +47,7 @@ export default async function ClientEnquiryPage({
     <DashboardShell
       eyebrow="Limited Company"
       title={tier.title}
-      description="Bespoke engagement — tell us about your company and we'll book a scoping call."
+      description="Bespoke engagement. Tell us about your company and we'll book a scoping call."
       name={me.name}
       email={me.email}
       role={me.role}

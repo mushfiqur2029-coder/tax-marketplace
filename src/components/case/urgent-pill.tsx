@@ -13,7 +13,7 @@ export function UrgentPill({ size = "md" }: { size?: "sm" | "md" }) {
         background: "linear-gradient(135deg, #B91C1C, #F97316)",
         fontFamily: "var(--font-mono)",
       }}
-      title="Urgent case — fast-tracked past the standard 5-working-day rule"
+      title="Urgent case. Fast-tracked past the standard 5-working-day rule"
     >
       <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />

@@ -100,7 +100,7 @@ export async function setCompanyIdentityAction(
     }
     if (caseRow.engagement_signed_at) {
       throw new Error(
-        "The engagement letter is already signed — contact support to correct the company details.",
+        "The engagement letter is already signed. Contact support to correct the company details.",
       );
     }
     if (caseRow.status !== "draft") {
@@ -131,7 +131,7 @@ export async function setCompanyIdentityAction(
     if (rpcErr) throw new Error(rpcErr.message);
     if ((rows ?? 0) === 0) {
       throw new Error(
-        "Save didn't take — the database refused the write. Reload the page and try again.",
+        "Save didn't take. The database refused the write. Reload the page and try again.",
       );
     }
 
@@ -165,7 +165,7 @@ export async function clearCompanyIdentityAction(
     if (caseRow.client_id !== me.id) throw new Error("Not your case.");
     if (caseRow.engagement_signed_at) {
       throw new Error(
-        "The engagement letter is already signed — contact support to correct the company details.",
+        "The engagement letter is already signed. Contact support to correct the company details.",
       );
     }
     if (caseRow.status !== "draft") {
@@ -186,7 +186,7 @@ export async function clearCompanyIdentityAction(
     if (rpcErr) throw new Error(rpcErr.message);
     if ((rows ?? 0) === 0) {
       throw new Error(
-        "Clear didn't take — the database refused the write. Reload and try again.",
+        "Clear didn't take. The database refused the write. Reload and try again.",
       );
     }
     revalidatePath(`/client/cases/${caseId}/engagement`);
@@ -308,7 +308,7 @@ export async function signEngagementAction(
       // Only surface "contact support" if a retry is unlikely to help —
       // for now, every error here is transient enough to retry.
       throw new Error(
-        "We couldn't generate your engagement PDF just now. Please click Sign and continue again — your signature and tick are kept. If it keeps failing, contact support.",
+        "We couldn't generate your engagement PDF just now. Please click Sign and continue again. Your signature and tick are kept. If it keeps failing, contact support.",
       );
     }
 
@@ -357,7 +357,7 @@ export async function signEngagementAction(
         tier.title,
       )}</strong> service. A copy is attached for your records.</p>
       <p>Next step: payment of <strong>£${tier.priceGbp}</strong>. You can complete this now from your case page.</p>
-      <p>— Sterling Ledger</p>
+      <p>Sterling Ledger</p>
     `;
     const internalHtml = `
       <p>New signed engagement letter.</p>
@@ -380,7 +380,7 @@ export async function signEngagementAction(
     });
     await sendEmailViaAppsScript({
       to: "info@sterlingledger.co.uk",
-      subject: `New signed engagement — ${me.email} — ${tier.title}`,
+      subject: `New signed engagement · ${me.email} · ${tier.title}`,
       html: internalHtml,
       pdfBase64,
       filename: pdfFilename,

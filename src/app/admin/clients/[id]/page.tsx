@@ -225,7 +225,7 @@ export default async function AdminClientDetail({
                     <li key={c.id} className="grid grid-cols-1 gap-1 px-4 py-3 text-sm sm:grid-cols-[1fr_auto]">
                       <div>
                         <div className="font-semibold text-ink">
-                          {money((tier?.priceGbp ?? 0) * 100)} · {seg?.title ?? c.segment} — {tier?.title ?? c.tier}
+                          {money((tier?.priceGbp ?? 0) * 100)} · {seg?.title ?? c.segment} · {tier?.title ?? c.tier}
                         </div>
                         <div className="text-xs text-slate">
                           Submitted{" "}

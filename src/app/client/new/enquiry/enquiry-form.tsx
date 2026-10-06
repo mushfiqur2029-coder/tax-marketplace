@@ -102,7 +102,7 @@ export function EnquiryForm({
           className="text-xl font-semibold text-ink"
           style={{ fontFamily: "var(--font-heading)" }}
         >
-          Thanks — we&rsquo;ll be in touch shortly.
+          Thanks. We&rsquo;ll be in touch shortly.
         </h2>
         <p className="mt-2 text-sm text-slate">
           We&rsquo;ve logged your enquiry for{" "}
@@ -111,7 +111,7 @@ export function EnquiryForm({
           one business day to arrange a time for the scoping call.
         </p>
         <p className="mt-4 text-xs text-slate">
-          Nothing is charged yet — the fee is confirmed on the call.
+          Nothing is charged yet. The fee is confirmed on the call.
         </p>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <SLLink
@@ -161,7 +161,7 @@ export function EnquiryForm({
         </h2>
         <p className="mt-1 text-sm text-slate">
           We&rsquo;ll use these to arrange the scoping call. Pre-filled from
-          your account — edit if someone else inside the company should be
+          your account. Edit if someone else inside the company should be
           the point of contact.
         </p>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -201,7 +201,7 @@ export function EnquiryForm({
         </p>
         <p className="mt-2 text-xs text-slate">
           Direct booking is coming soon as a shared feature across every
-          service — the real calendar integration lands in a later update.
+          service. The real calendar integration lands in a later update.
         </p>
       </section>
 

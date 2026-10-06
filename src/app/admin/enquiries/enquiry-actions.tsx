@@ -70,7 +70,7 @@ export function EnquiryActions({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          placeholder="Follow-up notes — who you called, outcome, next step…"
+          placeholder="Follow-up notes: who you called, outcome, next step…"
           className="input-sl min-h-[60px] resize-y"
         />
       </label>

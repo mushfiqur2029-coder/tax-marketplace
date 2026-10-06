@@ -205,7 +205,7 @@ function PresetForm({
         >
           {catalog.map((c) => (
             <option key={c.key} value={c.key}>
-              {c.name} — £{(c.amount_pence / 100).toFixed(2)}
+              {c.name} · £{(c.amount_pence / 100).toFixed(2)}
             </option>
           ))}
         </select>

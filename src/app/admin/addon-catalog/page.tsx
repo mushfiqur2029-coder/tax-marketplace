@@ -52,7 +52,7 @@ export default async function AdminAddonCatalogPage() {
       <AdminPageHeader
         eyebrow="Admin console"
         title="Add-on catalog"
-        description="Preset add-ons accountants can offer clients mid-case. Edits do not change historical add-ons — existing case rows snapshot the price they were sold at."
+        description="Preset add-ons accountants can offer clients mid-case. Edits do not change historical add-ons. Existing case rows snapshot the price they were sold at."
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <div className="space-y-8">
