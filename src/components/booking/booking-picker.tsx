@@ -46,6 +46,14 @@ type Slot = { startIso: string; endIso: string; label: string };
 
 const DAYS_TO_SHOW_DEFAULT = 10;
 const SLOT_DURATION_MIN = 15;
+// Paging: step forward/back by one working week at a time, overlapping
+// the previous window by half so context carries across the jump.
+const PAGE_WORKING_DAYS = 5;
+// Hard cap on how far forward anyone can book. 8 weeks of working days
+// (~2 months) — plenty for a scoping call, prevents infinite future
+// browsing. If this needs to shift, change here and the right arrow
+// disables itself cleanly without any other callsite caring.
+const MAX_WORKING_DAYS = 40;
 
 // -----------------------------------------------------------------------
 // Date / time helpers
@@ -66,14 +74,22 @@ function isWorkingDay(ymd: string): boolean {
   return dow >= 1 && dow <= 5;
 }
 
-function nextWorkingDays(n: number): string[] {
+// Return `windowSize` working-day YYYY-MM-DD strings starting from the
+// `startOffset`-th working day after today (inclusive of today when
+// today is a working day and startOffset=0). Used by the day strip's
+// paging arrows: startOffset=0 is today's window, +PAGE_WORKING_DAYS
+// slides a week forward.
+function getWorkingDaysWindow(startOffset: number, windowSize: number): string[] {
   const out: string[] = [];
   const start = new Date();
-  for (let offset = 0; out.length < n && offset < 30; offset++) {
+  let collected = 0;
+  for (let calOffset = 0; collected < startOffset + windowSize && calOffset < 200; calOffset++) {
     const d = new Date(start);
-    d.setDate(d.getDate() + offset);
+    d.setDate(d.getDate() + calOffset);
     const ymd = toLondonYmd(d);
-    if (isWorkingDay(ymd)) out.push(ymd);
+    if (!isWorkingDay(ymd)) continue;
+    if (collected >= startOffset) out.push(ymd);
+    collected += 1;
   }
   return out;
 }
@@ -149,8 +165,32 @@ export function BookingPicker({
   daysToShow = DAYS_TO_SHOW_DEFAULT,
   onBooked,
 }: Props) {
-  const days = useMemo(() => nextWorkingDays(daysToShow), [daysToShow]);
+  const [startOffset, setStartOffset] = useState(0);
+  const days = useMemo(
+    () => getWorkingDaysWindow(startOffset, daysToShow),
+    [startOffset, daysToShow],
+  );
   const [selectedDate, setSelectedDate] = useState<string | null>(days[0] ?? null);
+
+  // Right arrow caps at MAX_WORKING_DAYS; left arrow caps at today.
+  const canGoBack = startOffset > 0;
+  const canGoForward = startOffset + daysToShow < MAX_WORKING_DAYS;
+
+  const pageBy = (delta: number) => {
+    const clamped = Math.max(
+      0,
+      Math.min(startOffset + delta, Math.max(0, MAX_WORKING_DAYS - daysToShow)),
+    );
+    if (clamped === startOffset) return;
+    setStartOffset(clamped);
+    // If the current selection is no longer in the visible window, snap
+    // to the first day of the new window. This also triggers the slot
+    // fetch effect so the time grid refreshes to the new date.
+    const nextDays = getWorkingDaysWindow(clamped, daysToShow);
+    if (selectedDate && !nextDays.includes(selectedDate)) {
+      setSelectedDate(nextDays[0] ?? null);
+    }
+  };
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
@@ -246,18 +286,31 @@ export function BookingPicker({
       {/* ======================= Day strip ======================= */}
       <section>
         <SectionLabel>Pick a day</SectionLabel>
-        {/* Negative margin + padding lets the scrollable row span to the
-            parent's edge visually while the scroll-row mask handles the
-            fade; cards never clip against the card edge. */}
-        <div className="scroll-row -mx-1 flex gap-2 overflow-x-auto px-1 pb-2 sm:gap-3">
-          {days.map((ymd) => (
-            <DayCard
-              key={ymd}
-              ymd={ymd}
-              active={ymd === selectedDate}
-              onClick={() => setSelectedDate(ymd)}
-            />
-          ))}
+        {/* Flanked by paging arrows. The arrows live outside the
+            scroll-row so (a) the horizontal swipe gesture inside the
+            row never fights with a tap on the arrow, and (b) the
+            edge-fade mask doesn't dim them. */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <PageArrow
+            direction="left"
+            disabled={!canGoBack}
+            onClick={() => pageBy(-PAGE_WORKING_DAYS)}
+          />
+          <div className="scroll-row -mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1 pb-2 sm:gap-3">
+            {days.map((ymd) => (
+              <DayCard
+                key={ymd}
+                ymd={ymd}
+                active={ymd === selectedDate}
+                onClick={() => setSelectedDate(ymd)}
+              />
+            ))}
+          </div>
+          <PageArrow
+            direction="right"
+            disabled={!canGoForward}
+            onClick={() => pageBy(PAGE_WORKING_DAYS)}
+          />
         </div>
       </section>
 
@@ -290,6 +343,55 @@ export function BookingPicker({
         />
       ) : null}
     </div>
+  );
+}
+
+// -----------------------------------------------------------------------
+// Paging arrow — 44x44 tap target (iOS Human Interface Guideline minimum)
+// so mobile taps land cleanly. Positioned outside the horizontal
+// scroll-row so swipe gestures don't fight with button taps.
+// -----------------------------------------------------------------------
+
+function PageArrow({
+  direction,
+  disabled,
+  onClick,
+}: {
+  direction: "left" | "right";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={direction === "left" ? "Earlier dates" : "Later dates"}
+      className={
+        "shrink-0 inline-flex h-11 w-11 items-center justify-center rounded-full border transition " +
+        (disabled
+          ? "cursor-not-allowed border-line/60 bg-paper/60 text-slate/40"
+          : "border-line bg-paper text-slate hover:-translate-y-0.5 hover:border-sky/60 hover:text-navy-deep")
+      }
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {direction === "left" ? (
+          <polyline points="15 18 9 12 15 6" />
+        ) : (
+          <polyline points="9 18 15 12 9 6" />
+        )}
+      </svg>
+    </button>
   );
 }
 
