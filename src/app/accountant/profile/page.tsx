@@ -4,9 +4,8 @@ import {
   submitAccountantProfileChangeAction,
   changePasswordAction,
 } from "@/app/profile-actions";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
-import { AccountantNav } from "@/app/accountant/accountant-nav";
+import { PortalPageHeader } from "@/components/portal-page-header";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { AccountantProfileForm } from "./accountant-profile-form";
 import { ChangePasswordForm } from "@/components/change-password-form";
 
@@ -46,16 +45,21 @@ export default async function AccountantAccountPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Account settings"
-      title="Your account"
-      description="Update your professional details or change your password."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AccountantNav active="profile" />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="Account settings"
+        title="Your account"
+        description="Update your professional details or change your password."
+      />
+      <RealtimeRefresh
+        channel={`accountant-profile-${me.id}`}
+        subscriptions={[
+          {
+            table: "pending_profile_changes",
+            filter: `user_id=eq.${me.id}`,
+          },
+        ]}
+      />
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
@@ -90,6 +94,6 @@ export default async function AccountantAccountPage() {
         </h2>
         <ChangePasswordForm change={change} />
       </section>
-    </DashboardShell>
+    </>
   );
 }

@@ -4,16 +4,16 @@ import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
-import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
+import { PortalPageHeader } from "@/components/portal-page-header";
+import { EmptyState } from "@/components/empty-state";
 import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
 import { formatDate } from "@/lib/format";
-import { ClientNav, ClientCasesFilter, type ClientCaseCounts } from "./client-nav";
-import { Bell } from "@/components/bell";
+import { ClientCasesFilter, type ClientCaseCounts } from "./client-cases-filter";
 import { ClientSuspensionBanner } from "./suspension-banner";
-import { ClientCasesRealtimeRefresh } from "./cases-realtime-refresh";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -60,18 +60,21 @@ export default async function ClientDashboard({
   };
 
   return (
-    <DashboardShell
-      eyebrow="Client workspace"
-      title="Your tax returns"
-      description="Track the status of your filings and chat with your accountant."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<ClientNav active="cases" />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="Client workspace"
+        title="Your tax returns"
+        description="Track the status of your filings and chat with your accountant."
+      />
       <ClientSuspensionBanner />
-      <ClientCasesRealtimeRefresh clientId={me.id} />
+      <RealtimeRefresh
+        channel={`client-dashboard-${me.id}`}
+        subscriptions={[
+          { table: "cases", filter: `client_id=eq.${me.id}` },
+          // Covers add-on paid updates (status flip) so the "Payment required" badge disappears live.
+          { table: "case_addons" },
+        ]}
+      />
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <ClientCasesFilter active={view} counts={counts} />
@@ -166,6 +169,6 @@ export default async function ClientDashboard({
           })}
         </ul>
       )}
-    </DashboardShell>
+    </>
   );
 }

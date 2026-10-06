@@ -15,8 +15,8 @@ import {
   ACCOUNTANT_CT600_KEY,
 } from "@/lib/engagement/period-docs";
 import { AddonPayBanner } from "./addon-pay-banner";
-import { Bell } from "@/components/bell";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import {
   sendMessageAction,
   uploadMessageAttachmentAction,
@@ -27,7 +27,7 @@ import {
   caseEyebrow,
   companyNameFromAnswers,
 } from "@/lib/case/company-label";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -255,27 +255,40 @@ export default async function CaseDetailPage({
     | null;
 
   return (
-    <DashboardShell
-      eyebrow={caseEyebrow({
-        segmentTitle: data.segment.title,
-        tierTitle: data.tier.title,
-        companyName: companyNameFromAnswers(
-          data.row.intake_answers,
-          data.row.segment,
-        ),
-      })}
-      title={isDraft ? "Finish your submission" : "Case dashboard"}
-      description={
-        isDraft
-          ? "You're a few steps away from submitting."
-          : "Track progress and message your accountant here."
-      }
-      name={data.me.name}
-      email={data.me.email}
-      role={data.me.role}
-      bell={<Bell userId={data.me.id} role={data.me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow={caseEyebrow({
+          segmentTitle: data.segment.title,
+          tierTitle: data.tier.title,
+          companyName: companyNameFromAnswers(
+            data.row.intake_answers,
+            data.row.segment,
+          ),
+        })}
+        title={isDraft ? "Finish your submission" : "Case dashboard"}
+        description={
+          isDraft
+            ? "You're a few steps away from submitting."
+            : "Track progress and message your accountant here."
+        }
+      />
       <ClientSuspensionBanner />
+      <RealtimeRefresh
+        channel={`client-case-${data.row.id}`}
+        subscriptions={[
+          // Accountant status moves, admin reassigns, payment flips.
+          { table: "cases", filter: `id=eq.${data.row.id}` },
+          // Accountant adds / client pays an add-on; the status flip
+          // doesn't touch cases, so it needs its own subscription.
+          { table: "case_addons", filter: `case_id=eq.${data.row.id}` },
+          // Accountant uploads Annual Accounts + CT600 for approval,
+          // or VAT return PDFs — the file list on the case page needs
+          // to refresh so the client can open the new file.
+          { table: "case_documents", filter: `case_id=eq.${data.row.id}` },
+          // Accountant moves a VAT cycle (sets due date, marks filed).
+          { table: "vat_return_cycles", filter: `case_id=eq.${data.row.id}` },
+        ]}
+      />
       {paid === "1" && data.progress.paid ? (
         <div
           role="status"
@@ -509,7 +522,7 @@ export default async function CaseDetailPage({
           ← Back to all cases
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }
 

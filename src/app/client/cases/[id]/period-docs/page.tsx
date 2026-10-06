@@ -3,8 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { getTier, type TierId } from "@/lib/plans";
 import {
@@ -138,17 +137,14 @@ export default async function PeriodDocsPage({
   };
 
   return (
-    <DashboardShell
-      eyebrow={`${tier.title} · £${tier.priceGbp}`}
-      title="Documents for your accounting period"
-      description={`Period: ${formatYmd(caseRow.period_start_date)} to ${formatYmd(
-        caseRow.period_end_date,
-      )}. Upload every required file. We'll start preparing your accounts the moment it's complete.`}
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow={`${tier.title} · £${tier.priceGbp}`}
+        title="Documents for your accounting period"
+        description={`Period: ${formatYmd(caseRow.period_start_date)} to ${formatYmd(
+          caseRow.period_end_date,
+        )}. Upload every required file. We'll start preparing your accounts the moment it's complete.`}
+      />
       <ClientSuspensionBanner />
 
       <PeriodDocsForm
@@ -171,6 +167,6 @@ export default async function PeriodDocsPage({
           ← Back to the case
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }

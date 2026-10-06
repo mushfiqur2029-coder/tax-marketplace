@@ -105,6 +105,31 @@ export async function createCaseAction(
       throw new Error("That service doesn't match the selected mode.");
     }
 
+    // Personal reinstates the deadline + urgent fee (same working-day rule
+    // as Limited Company's original urgent flow). Validate server-side so
+    // a crafted POST can't bypass the 5-working-day minimum. Limited
+    // Company stays a flat fee with no deadline.
+    let personalDeadline: string | null = null;
+    let personalIsUrgent = false;
+    let personalUrgentFee = 0;
+    if (segment === "personal") {
+      const deadlineRaw = String(formData.get("deadline") ?? "").trim();
+      personalIsUrgent = formData.get("is_urgent") === "true";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineRaw)) {
+        throw new Error("Please pick a filing deadline.");
+      }
+      const check = await validateDeadline(deadlineRaw, personalIsUrgent);
+      if (!check.ok) {
+        throw new Error(
+          personalIsUrgent
+            ? `That date is too soon even for urgent. Earliest urgent date: ${check.earliest}.`
+            : `Please pick a date on or after ${check.earliest} (5 working days minimum). Tick Urgent (+£${URGENT_FEE_PENCE / 100}) to allow earlier dates.`,
+        );
+      }
+      personalDeadline = deadlineRaw;
+      personalUrgentFee = personalIsUrgent ? URGENT_FEE_PENCE : 0;
+    }
+
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("cases")
@@ -114,11 +139,11 @@ export async function createCaseAction(
         tier,
         status: "draft",
         stripe_payment_status: "pending",
-        // No deadline / urgent on either flow. The columns stay in the
-        // schema for the retired personal cases that already carry them.
-        deadline: null,
-        is_urgent: false,
-        urgent_fee_pence: 0,
+        // Personal carries deadline + urgent (reinstated from the pre-P1
+        // flow). Limited Company remains flat-fee with no deadline.
+        deadline: personalDeadline,
+        is_urgent: personalIsUrgent,
+        urgent_fee_pence: personalUrgentFee,
       })
       .select("id")
       .single();

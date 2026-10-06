@@ -42,6 +42,7 @@ import {
   type VatApprovalPayload,
 } from "@/lib/vat/cycle";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
@@ -319,6 +320,15 @@ export default async function AdminCasePage({
 
   return (
     <>
+      <RealtimeRefresh
+        channel={`admin-case-${row.id}`}
+        subscriptions={[
+          { table: "cases", filter: `id=eq.${row.id}` },
+          { table: "case_addons", filter: `case_id=eq.${row.id}` },
+          { table: "case_documents", filter: `case_id=eq.${row.id}` },
+          { table: "vat_return_cycles", filter: `case_id=eq.${row.id}` },
+        ]}
+      />
       <AdminPageHeader
         eyebrow={caseEyebrow({
           segmentTitle: seg.title,

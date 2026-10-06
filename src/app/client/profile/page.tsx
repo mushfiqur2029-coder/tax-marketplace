@@ -4,10 +4,9 @@ import {
   submitClientProfileChangeAction,
   changePasswordAction,
 } from "@/app/profile-actions";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { ClientNav } from "@/app/client/client-nav";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { ClientProfileForm } from "./client-profile-form";
 import { ChangePasswordForm } from "@/components/change-password-form";
 
@@ -47,17 +46,24 @@ export default async function ClientAccountPage() {
   };
 
   return (
-    <DashboardShell
-      eyebrow="Account settings"
-      title="Your account"
-      description="Update your personal details or change your password."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<ClientNav active="profile" />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="Account settings"
+        title="Your account"
+        description="Update your personal details or change your password."
+      />
       <ClientSuspensionBanner />
+      <RealtimeRefresh
+        channel={`client-profile-${me.id}`}
+        subscriptions={[
+          // Admin approves / rejects the pending change — the status
+          // field drives the "awaiting review" banner on this page.
+          {
+            table: "pending_profile_changes",
+            filter: `user_id=eq.${me.id}`,
+          },
+        ]}
+      />
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
@@ -91,6 +97,6 @@ export default async function ClientAccountPage() {
         </h2>
         <ChangePasswordForm change={change} />
       </section>
-    </DashboardShell>
+    </>
   );
 }

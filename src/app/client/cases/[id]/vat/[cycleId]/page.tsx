@@ -2,8 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import {
   VAT_CYCLE_UPLOAD_FIELDS,
@@ -137,23 +136,20 @@ export default async function VatCyclePage({
   const headerDescription = `Period: ${formatYmd(cycle.cycle_start_date)} to ${formatYmd(cycle.cycle_end_date)} · HMRC due ${formatYmd(cycle.cycle_hmrc_due_date)}`;
 
   return (
-    <DashboardShell
-      eyebrow={`VAT return · ${cycle.period_label}`}
-      title={
-        cycle.status === "client_approval"
-          ? "Review and approve your VAT return"
-          : cycle.status === "filed"
-            ? "VAT period filed"
-            : cycle.status === "in_review"
-              ? "Your accountant is preparing your VAT return"
-              : "Upload documents for this VAT period"
-      }
-      description={headerDescription}
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow={`VAT return · ${cycle.period_label}`}
+        title={
+          cycle.status === "client_approval"
+            ? "Review and approve your VAT return"
+            : cycle.status === "filed"
+              ? "VAT period filed"
+              : cycle.status === "in_review"
+                ? "Your accountant is preparing your VAT return"
+                : "Upload documents for this VAT period"
+        }
+        description={headerDescription}
+      />
       <ClientSuspensionBanner />
 
       {cycle.status === "awaiting_client_docs" ? (
@@ -217,6 +213,6 @@ export default async function VatCyclePage({
           ← Back to the case
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }

@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { DashboardShell } from "@/components/dashboard-shell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { requestWithdrawalAction } from "./actions";
 import { WithdrawalRequestForm } from "./withdrawal-form";
 import { ReceiptLink } from "./receipt-link";
 import { getReceiptSignedUrl } from "@/app/admin/actions";
 import { formatDateTime } from "@/lib/format";
-import { AccountantNav } from "@/app/accountant/accountant-nav";
 import { IncomeSubnav } from "./income-subnav";
-import { Bell } from "@/components/bell";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -82,17 +81,28 @@ export default async function WalletPage({
           };
 
   return (
-    <DashboardShell
-      eyebrow="Accountant income"
-      title="Earnings and payouts"
-      description="You earn 50% of each case fee. Request a withdrawal to your bank when you're ready."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AccountantNav active="income" />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="Accountant income"
+        title="Earnings and payouts"
+        description="You earn 50% of each case fee. Request a withdrawal to your bank when you're ready."
+      />
       <IncomeSubnav active={view} />
+      <RealtimeRefresh
+        channel={`accountant-wallet-${me.id}`}
+        subscriptions={[
+          // Commission posts on case complete + manual admin credits.
+          {
+            table: "wallet_transactions",
+            filter: `accountant_id=eq.${me.id}`,
+          },
+          // Admin approves / rejects / marks paid.
+          {
+            table: "withdrawal_requests",
+            filter: `accountant_id=eq.${me.id}`,
+          },
+        ]}
+      />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <StatCard label="Available" pence={available} tone="mint" />
@@ -220,7 +230,7 @@ export default async function WalletPage({
           ← Back to dashboard
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }
 

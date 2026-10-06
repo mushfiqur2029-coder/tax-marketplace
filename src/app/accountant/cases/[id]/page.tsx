@@ -18,13 +18,13 @@ import {
   uploadMessageAttachmentAction,
   getMessageAttachmentSignedUrl,
 } from "@/app/messages";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import {
   caseEyebrow,
   companyNameFromAnswers,
 } from "@/lib/case/company-label";
 import { AccountantSuspensionBanner } from "@/app/accountant/suspension-banner";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
@@ -92,15 +92,12 @@ export default async function AccountantCaseDetailPage({
   // helpful explanation instead of a bare 404.
   if (load.kind === "taken") {
     return (
-      <DashboardShell
-        eyebrow={`${load.segment.title} · ${load.tier.title}`}
-        title="Already taken"
-        description="Another accountant picked this case up first."
-        name={load.me.name}
-        email={load.me.email}
-        role={load.me.role}
-        bell={<Bell userId={load.me.id} role={load.me.role} />}
-      >
+      <>
+        <PortalPageHeader
+          eyebrow={`${load.segment.title} · ${load.tier.title}`}
+          title="Already taken"
+          description="Another accountant picked this case up first."
+        />
         <AccountantSuspensionBanner />
         <div className="card-sl max-w-xl p-6 sm:p-8">
           <p className="text-sm text-slate">
@@ -117,7 +114,7 @@ export default async function AccountantCaseDetailPage({
             </Link>
           </div>
         </div>
-      </DashboardShell>
+      </>
     );
   }
 
@@ -466,27 +463,38 @@ export default async function AccountantCaseDetailPage({
   };
 
   return (
-    <DashboardShell
-      eyebrow={caseEyebrow({
-        segmentTitle: data.segment.title,
-        tierTitle: data.tier.title,
-        companyName: companyNameFromAnswers(
-          data.row.intake_answers,
-          data.row.segment,
-        ),
-      })}
-      title={data.isMine ? "Case dashboard" : "New case in the queue"}
-      description={
-        data.isMine
-          ? `Client: ${data.clientEmail ?? "."}`
-          : "Review the intake and take this case to see documents and start chat."
-      }
-      name={data.me.name}
-      email={data.me.email}
-      role={data.me.role}
-      bell={<Bell userId={data.me.id} role={data.me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow={caseEyebrow({
+          segmentTitle: data.segment.title,
+          tierTitle: data.tier.title,
+          companyName: companyNameFromAnswers(
+            data.row.intake_answers,
+            data.row.segment,
+          ),
+        })}
+        title={data.isMine ? "Case dashboard" : "New case in the queue"}
+        description={
+          data.isMine
+            ? `Client: ${data.clientEmail ?? "."}`
+            : "Review the intake and take this case to see documents and start chat."
+        }
+      />
       <AccountantSuspensionBanner />
+      <RealtimeRefresh
+        channel={`accountant-case-${data.row.id}`}
+        subscriptions={[
+          // Client signs engagement, pays, submits onboarding, submits
+          // period docs, approves and files. Admin reassigns.
+          { table: "cases", filter: `id=eq.${data.row.id}` },
+          // Client pays an add-on the accountant previously raised.
+          { table: "case_addons", filter: `case_id=eq.${data.row.id}` },
+          // Client uploads onboarding / period docs.
+          { table: "case_documents", filter: `case_id=eq.${data.row.id}` },
+          // Client submits a VAT cycle's docs or admin edits dates.
+          { table: "vat_return_cycles", filter: `case_id=eq.${data.row.id}` },
+        ]}
+      />
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={data.row.status} />
         {data.row.is_urgent ? <UrgentPill /> : null}
@@ -936,6 +944,6 @@ export default async function AccountantCaseDetailPage({
           ← Back to queue
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }

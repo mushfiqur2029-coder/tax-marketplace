@@ -2,8 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { getTier } from "@/lib/plans";
 import { submitServiceEnquiryAction } from "@/app/client/enquiry-actions";
@@ -44,15 +43,12 @@ export default async function ClientEnquiryPage({
   const defaultContactPhone = (profile?.contact_number ?? "").trim();
 
   return (
-    <DashboardShell
-      eyebrow="Limited Company"
-      title={tier.title}
-      description="Bespoke engagement. Tell us about your company and we'll book a scoping call."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="Limited Company"
+        title={tier.title}
+        description="Bespoke engagement. Tell us about your company and we'll book a scoping call."
+      />
       <ClientSuspensionBanner />
       <EnquiryForm
         serviceKey={tier.id}
@@ -71,6 +67,6 @@ export default async function ClientEnquiryPage({
           ← Back to service picker
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }

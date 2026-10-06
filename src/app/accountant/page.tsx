@@ -4,12 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
-import { DashboardShell, EmptyState } from "@/components/dashboard-shell";
+import { PortalPageHeader } from "@/components/portal-page-header";
+import { EmptyState } from "@/components/empty-state";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
-import { Bell } from "@/components/bell";
-import { AccountantNav } from "./accountant-nav";
 import {
   AccountantCasesFilter,
   type CasesView,
@@ -18,7 +17,7 @@ import {
   type DateFilter,
   type ViewCounts,
 } from "./cases-filter";
-import { AccountantCasesRealtimeRefresh } from "./cases-realtime-refresh";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { AccountantSuspensionBanner } from "./suspension-banner";
 import { formatDate, formatDateTime } from "@/lib/format";
 
@@ -159,18 +158,26 @@ export default async function AccountantDashboard({
   });
 
   return (
-    <DashboardShell
-      eyebrow="Accountant workspace"
-      title="Cases"
-      description="Pick up new cases from the queue and track everything you're working on."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      subnav={<AccountantNav active="cases" />}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="Accountant workspace"
+        title="Cases"
+        description="Pick up new cases from the queue and track everything you're working on."
+      />
       <AccountantSuspensionBanner />
-      <AccountantCasesRealtimeRefresh accountantId={me.id} />
+      <RealtimeRefresh
+        channel={`accountant-dashboard-${me.id}`}
+        subscriptions={[
+          // Any case anywhere could enter/leave this accountant's queue
+          // (new paid case joins, someone else takes it, assigned case
+          // status moves).
+          { table: "cases" },
+          // Add-on paid flips status without a cases.update, which is
+          // worth surfacing so a client's "paid add-on" badge appears
+          // without reload.
+          { table: "case_addons" },
+        ]}
+      />
       <AccountantCasesFilter view={view} urgency={urgency} fee={fee} date={date} counts={viewCounts} />
 
       {filtered.length === 0 ? (
@@ -210,7 +217,7 @@ export default async function AccountantDashboard({
           ))}
         </ul>
       )}
-    </DashboardShell>
+    </>
   );
 }
 

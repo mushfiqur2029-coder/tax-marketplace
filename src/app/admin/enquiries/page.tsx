@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 import { getTier } from "@/lib/plans";
 import { setServiceEnquiryStatusAction } from "@/app/client/enquiry-actions";
@@ -62,6 +63,10 @@ export default async function AdminEnquiriesPage() {
 
   return (
     <>
+      <RealtimeRefresh
+        channel="admin-enquiries"
+        subscriptions={[{ table: "service_enquiries" }]}
+      />
       <AdminPageHeader
         eyebrow="Admin console"
         title="Service enquiries"

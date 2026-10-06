@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import {
   markWithdrawalPaidAction,
   getReceiptSignedUrl,
@@ -48,6 +49,10 @@ export default async function AdminWithdrawalsPage() {
 
   return (
     <>
+      <RealtimeRefresh
+        channel="admin-withdrawals"
+        subscriptions={[{ table: "withdrawal_requests" }]}
+      />
       <AdminPageHeader
         eyebrow="Admin console"
         title="Withdrawal requests"

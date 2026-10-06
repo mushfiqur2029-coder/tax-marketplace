@@ -7,8 +7,7 @@ import {
   caseEyebrow,
   companyNameFromAnswers,
 } from "@/lib/case/company-label";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { getTier, type TierId } from "@/lib/plans";
 import {
@@ -136,19 +135,16 @@ export default async function OnboardingPage({
   };
 
   return (
-    <DashboardShell
-      eyebrow={caseEyebrow({
-        segmentTitle: tier.title,
-        tierTitle: `£${tier.priceGbp}`,
-        companyName: companyNameFromAnswers(answers, caseRow.segment),
-      })}
-      title="Your onboarding checklist"
-      description="Fill in each required item below. You can save progress as you go. Nothing is sent to an accountant until you click Submit at the bottom."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow={caseEyebrow({
+          segmentTitle: tier.title,
+          tierTitle: `£${tier.priceGbp}`,
+          companyName: companyNameFromAnswers(answers, caseRow.segment),
+        })}
+        title="Your onboarding checklist"
+        description="Fill in each required item below. You can save progress as you go. Nothing is sent to an accountant until you click Submit at the bottom."
+      />
       <ClientSuspensionBanner />
 
       {paid === "1" ? (
@@ -188,6 +184,6 @@ export default async function OnboardingPage({
           ← Back to the case
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }

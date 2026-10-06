@@ -4,8 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/plans";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { loadClientCase } from "@/lib/case";
 import { StepTracker } from "@/components/case/step-tracker";
@@ -138,19 +137,16 @@ export default async function EngagementPage({
     : "Read the letter below, draw your signature at the bottom, and tick to accept. The signed PDF is emailed to you and we start work after payment.";
 
   return (
-    <DashboardShell
-      eyebrow={caseEyebrow({
-        segmentTitle: tier.title,
-        tierTitle: `£${tier.priceGbp}`,
-        companyName: companyNameFromAnswers(answers, caseRow.segment),
-      })}
-      title="Review and sign your engagement letter"
-      description={headerDescription}
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow={caseEyebrow({
+          segmentTitle: tier.title,
+          tierTitle: `£${tier.priceGbp}`,
+          companyName: companyNameFromAnswers(answers, caseRow.segment),
+        })}
+        title="Review and sign your engagement letter"
+        description={headerDescription}
+      />
       <ClientSuspensionBanner />
 
       <div className="mb-8">
@@ -272,6 +268,6 @@ export default async function EngagementPage({
           ← Back to the case
         </Link>
       </div>
-    </DashboardShell>
+    </>
   );
 }

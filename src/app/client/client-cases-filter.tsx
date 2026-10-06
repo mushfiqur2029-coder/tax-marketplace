@@ -1,50 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
-type ClientTab = "cases" | "payments" | "profile";
+// In-page filter chip row on /client — swaps the Cases list between
+// in-progress / completed / pending. Lives separately from the sidebar
+// (that moved into the shared portal shell) because it's a page-level
+// control, not navigation chrome.
 
-const TABS: { key: ClientTab; label: string; href: string }[] = [
-  { key: "cases", label: "Cases", href: "/client" },
-  { key: "payments", label: "Payments", href: "/client/payments" },
-  { key: "profile", label: "Account", href: "/client/profile" },
-];
-
-export function ClientNav({ active }: { active?: ClientTab }) {
-  const pathname = usePathname();
-  const derived =
-    active ??
-    (pathname?.startsWith("/client/payments")
-      ? "payments"
-      : pathname?.startsWith("/client/profile")
-        ? "profile"
-        : "cases");
-
-  return (
-    <nav className="flex gap-1 overflow-x-auto py-2">
-      {TABS.map((t) => {
-        const isActive = derived === t.key;
-        return (
-          <Link
-            key={t.key}
-            href={t.href}
-            className={
-              "shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold transition " +
-              (isActive
-                ? "bg-navy-deep text-white"
-                : "text-slate hover:text-navy-deep")
-            }
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-// Sub-nav specifically for the Cases page, so the filter is a URL param.
 type CasesFilter = "in_progress" | "completed" | "pending";
 
 export type ClientCaseCounts = Record<CasesFilter, number>;

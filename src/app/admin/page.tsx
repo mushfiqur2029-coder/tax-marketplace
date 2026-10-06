@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getTier } from "@/lib/plans";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
-import { EmptyState } from "@/components/dashboard-shell";
+import { EmptyState } from "@/components/empty-state";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -15,7 +15,7 @@ import {
   type AdminCaseView,
   type AdminCaseCounts,
 } from "./cases-filter";
-import { AdminCasesRealtimeRefresh } from "./cases-realtime-refresh";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -205,7 +205,10 @@ export default async function AdminDashboard({
             Cases ({filteredCases.length})
           </h2>
         </div>
-        <AdminCasesRealtimeRefresh />
+        <RealtimeRefresh
+          channel="admin-dashboard"
+          subscriptions={[{ table: "cases" }, { table: "case_addons" }]}
+        />
         <AdminCasesFilter active={view} counts={caseCounts} />
         {filteredCases.length === 0 ? (
           <EmptyState

@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { redirect } from "next/navigation";
 import { createCaseAction } from "@/app/client/actions";
+import {
+  earliestStandardDeadline,
+  earliestUrgentDeadline,
+  URGENT_FEE_PENCE,
+} from "@/lib/working-days";
 import { NewCaseForm, type PersonalHint } from "./new-case-form";
 
 type Mode = "personal" | "company";
@@ -36,21 +40,29 @@ export default async function NewCasePage({
       ? (sp.hint as PersonalHint)
       : null;
 
+  // Compute earliest standard + urgent deadlines server-side (Europe/London,
+  // UK bank holidays excluded). The Personal step 3 picker uses these for
+  // its `min` and for the helper copy — client clocks can't move the gate.
+  const [earliestStandard, earliestUrgent] = await Promise.all([
+    earliestStandardDeadline(),
+    earliestUrgentDeadline(),
+  ]);
+
   return (
-    <DashboardShell
-      eyebrow="New tax return"
-      title="Pick your situation"
-      description="One flat fee, no surprises. Every service includes a qualified accountant and our accuracy guarantee."
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="New tax return"
+        title="Pick your situation"
+        description="One flat fee, no surprises. Every service includes a qualified accountant and our accuracy guarantee."
+      />
       <ClientSuspensionBanner />
       <NewCaseForm
         action={createCaseAction}
         initialMode={initialMode}
         hint={hint}
+        earliestStandard={earliestStandard}
+        earliestUrgent={earliestUrgent}
+        urgentFeePence={URGENT_FEE_PENCE}
       />
       <p className="mt-8 text-sm text-slate">
         Changed your mind?{" "}
@@ -58,6 +70,6 @@ export default async function NewCasePage({
           Back to your dashboard
         </Link>
       </p>
-    </DashboardShell>
+    </>
   );
 }

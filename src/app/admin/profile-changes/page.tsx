@@ -5,6 +5,7 @@ import {
   rejectProfileChangeAction,
 } from "@/app/profile-actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 import { ReviewActions } from "./review-actions";
 import { Avatar } from "@/components/avatar";
@@ -42,6 +43,10 @@ export default async function AdminProfileChangesPage() {
 
   return (
     <>
+      <RealtimeRefresh
+        channel="admin-profile-changes"
+        subscriptions={[{ table: "pending_profile_changes" }]}
+      />
       <AdminPageHeader
         eyebrow="Admin console"
         title="Profile change requests"

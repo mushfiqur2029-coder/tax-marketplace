@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -14,19 +13,16 @@ export default async function AccountantPendingPage() {
   const rejected = me.approvalStatus === "rejected";
 
   return (
-    <DashboardShell
-      eyebrow="Awaiting approval"
-      title={rejected ? "Application not approved" : "Thanks for signing up"}
-      description={
-        rejected
-          ? "Sterling Ledger admins reviewed your application and weren't able to approve it at this time."
-          : "Sterling Ledger admins review every accountant before you can take cases."
-      }
-      name={me.name}
-      email={me.email}
-      role={me.role}
-      bell={<Bell userId={me.id} role={me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow="Awaiting approval"
+        title={rejected ? "Application not approved" : "Thanks for signing up"}
+        description={
+          rejected
+            ? "Sterling Ledger admins reviewed your application and weren't able to approve it at this time."
+            : "Sterling Ledger admins review every accountant before you can take cases."
+        }
+      />
       <div className="card-sl p-8">
         <div className="flex items-start gap-4">
           <div
@@ -63,6 +59,6 @@ export default async function AccountantPendingPage() {
           </div>
         </div>
       </div>
-    </DashboardShell>
+    </>
   );
 }

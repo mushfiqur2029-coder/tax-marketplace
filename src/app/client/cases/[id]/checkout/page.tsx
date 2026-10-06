@@ -5,8 +5,7 @@ import {
   caseEyebrow,
   companyNameFromAnswers,
 } from "@/lib/case/company-label";
-import { DashboardShell } from "@/components/dashboard-shell";
-import { Bell } from "@/components/bell";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
 import { StepTracker } from "@/components/case/step-tracker";
 import { buildSteps } from "@/components/case/build-steps";
@@ -44,22 +43,19 @@ export default async function CheckoutPage({
   };
 
   return (
-    <DashboardShell
-      eyebrow={caseEyebrow({
-        segmentTitle: data.segment.title,
-        tierTitle: data.tier.title,
-        companyName: companyNameFromAnswers(
-          data.row.intake_answers,
-          data.row.segment,
-        ),
-      })}
-      title="Review and pay"
-      description="Your case is queued to accountants the moment payment succeeds."
-      name={data.me.name}
-      email={data.me.email}
-      role={data.me.role}
-      bell={<Bell userId={data.me.id} role={data.me.role} />}
-    >
+    <>
+      <PortalPageHeader
+        eyebrow={caseEyebrow({
+          segmentTitle: data.segment.title,
+          tierTitle: data.tier.title,
+          companyName: companyNameFromAnswers(
+            data.row.intake_answers,
+            data.row.segment,
+          ),
+        })}
+        title="Review and pay"
+        description="Your case is queued to accountants the moment payment succeeds."
+      />
       <ClientSuspensionBanner />
       <div className="mb-8">
         <StepTracker steps={buildSteps(id, data, "checkout")} />
@@ -131,7 +127,7 @@ export default async function CheckoutPage({
           </p>
         </aside>
       </div>
-    </DashboardShell>
+    </>
   );
 }
 

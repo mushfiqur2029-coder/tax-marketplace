@@ -6,6 +6,7 @@ import {
   rejectAddonAction,
 } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 import { ReviewActions } from "@/app/admin/profile-changes/review-actions";
 
@@ -52,6 +53,10 @@ export default async function AdminAddonRequestsPage() {
 
   return (
     <>
+      <RealtimeRefresh
+        channel="admin-addon-requests"
+        subscriptions={[{ table: "case_addons" }]}
+      />
       <AdminPageHeader
         eyebrow="Admin console"
         title="Add-on requests"

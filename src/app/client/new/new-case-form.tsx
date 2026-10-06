@@ -22,6 +22,12 @@ type Props = {
   // Soft hint keyed on the originating marketing page. Shown as an
   // info banner above the Personal tile grid; never auto-selects.
   hint?: PersonalHint | null;
+  // YYYY-MM-DD strings, computed server-side in Europe/London with UK
+  // bank holidays excluded. Used by the Personal deadline step as the
+  // picker's `min` and in helper copy. Limited Company has no deadline.
+  earliestStandard: string;
+  earliestUrgent: string;
+  urgentFeePence: number;
 };
 
 type Mode = "personal" | "company";
@@ -50,12 +56,38 @@ const HINT_COPY: Record<PersonalHint, string> = {
     "CIS subcontractor filing? Pick CIS subcontractors. Most workers are owed a refund and we reconcile every deduction.",
 };
 
-export function NewCaseForm({ action, initialMode = null, hint = null }: Props) {
+// Pretty format a YYYY-MM-DD string as "Mon 6 Oct 2026".
+function formatDay(ymd: string): string {
+  if (!ymd) return "";
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function NewCaseForm({
+  action,
+  initialMode = null,
+  hint = null,
+  earliestStandard,
+  earliestUrgent,
+  urgentFeePence,
+}: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode | null>(initialMode);
   const [tier, setTier] = useState<TierId | null>(null);
+  const [deadline, setDeadline] = useState<string>("");
+  const [isUrgent, setIsUrgent] = useState<boolean>(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const urgentFeeGbp = urgentFeePence / 100;
+  const minDate = isUrgent ? earliestUrgent : earliestStandard;
 
   const selectedTier = useMemo<PlanTier | null>(() => {
     if (!tier) return null;
@@ -63,15 +95,32 @@ export function NewCaseForm({ action, initialMode = null, hint = null }: Props) 
     return pool.find((t) => t.id === tier) ?? null;
   }, [mode, tier]);
 
-  // When the user flips the top-level mode, clear the tier so the
-  // wrong-side state can't leak into the form submission.
+  // When the user flips the top-level mode, clear the tier + deadline
+  // so the wrong-side state can't leak into the form submission.
   const onPickMode = (next: Mode) => {
     setMode(next);
     setTier(null);
+    setDeadline("");
+    setIsUrgent(false);
     setError(null);
   };
 
-  const canSubmit = !!mode && !!tier;
+  // When the urgent toggle flips off, snap any too-early date back to
+  // empty so the picker doesn't quietly submit an invalid value.
+  const onToggleUrgent = (next: boolean) => {
+    setIsUrgent(next);
+    const newMin = next ? earliestUrgent : earliestStandard;
+    if (deadline && deadline < newMin) {
+      setDeadline("");
+    }
+  };
+
+  const canSubmit =
+    mode === "personal"
+      ? !!tier && !!deadline
+      : mode === "company"
+        ? !!tier
+        : false;
 
   // Enquiry-only tiers (bespoke LC) don't create a case — they jump
   // straight to the enquiry form at /client/new/enquiry.
@@ -101,6 +150,8 @@ export function NewCaseForm({ action, initialMode = null, hint = null }: Props) 
     >
       <input type="hidden" name="segment" value={segmentId} />
       <input type="hidden" name="tier" value={tier ?? ""} />
+      <input type="hidden" name="deadline" value={deadline} />
+      <input type="hidden" name="is_urgent" value={isUrgent ? "true" : "false"} />
 
       {/* Step 1: top-level Personal vs Limited Company */}
       <section>
@@ -121,50 +172,118 @@ export function NewCaseForm({ action, initialMode = null, hint = null }: Props) 
         </div>
       </section>
 
-      {/* Personal flow: 9-tile picker, flat fee, no deadline step. */}
+      {/* Personal flow: 9-tile picker, then a deadline step with the
+          urgent upgrade (+£{urgentFeeGbp}). Mirrors the LC flow in
+          intent but is Personal-only because LC's fee includes the
+          whole engagement without a filing-urgency axis. */}
       {mode === "personal" ? (
-        <section>
-          <SectionHeading
-            eyebrow="Step 2"
-            title="Which best describes your situation?"
-          />
-          {hint && HINT_COPY[hint] ? (
-            <p
-              className="mt-4 rounded-xl border border-sky/30 bg-sky/5 p-4 text-sm text-ink"
-              role="note"
-            >
-              <span
-                className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-sky"
-                style={{ fontFamily: "var(--font-mono)" }}
-              >
-                Suggestion
-              </span>
-              {HINT_COPY[hint]}
-            </p>
-          ) : null}
-          <p className="mt-4 max-w-xl text-sm text-slate">
-            Each service is a one-off flat fee. You&apos;ll sign a short
-            engagement letter next, then pay. Once we have both, we upload
-            your documents and get started.
-          </p>
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {PERSONAL_TIERS.map((t) => (
-              <TierButton
-                key={t.id}
-                tier={t}
-                active={tier === t.id}
-                onClick={() => setTier(t.id)}
-              />
-            ))}
-          </div>
-          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-            <div />
-            <OrderSummary
-              selectedTier={selectedTier}
-              emptyHint="Pick a service above to see the fee."
+        <>
+          <section>
+            <SectionHeading
+              eyebrow="Step 2"
+              title="Which best describes your situation?"
             />
-          </div>
-        </section>
+            {hint && HINT_COPY[hint] ? (
+              <p
+                className="mt-4 rounded-xl border border-sky/30 bg-sky/5 p-4 text-sm text-ink"
+                role="note"
+              >
+                <span
+                  className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-sky"
+                  style={{ fontFamily: "var(--font-mono)" }}
+                >
+                  Suggestion
+                </span>
+                {HINT_COPY[hint]}
+              </p>
+            ) : null}
+            <p className="mt-4 max-w-xl text-sm text-slate">
+              Each service is a one-off flat fee. You&apos;ll sign a short
+              engagement letter next, pick a filing deadline, then pay.
+              Once we have both, we upload your documents and get started.
+            </p>
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {PERSONAL_TIERS.map((t) => (
+                <TierButton
+                  key={t.id}
+                  tier={t}
+                  active={tier === t.id}
+                  onClick={() => setTier(t.id)}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <SectionHeading
+              eyebrow="Step 3"
+              title="When do you need it filed by?"
+            />
+            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+              <div className="space-y-4">
+                <label className="block max-w-xs">
+                  <span
+                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Filing deadline
+                  </span>
+                  <input
+                    type="date"
+                    required
+                    className="input-sl"
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                    min={minDate}
+                  />
+                </label>
+                <p className="text-xs text-slate">
+                  Earliest standard date:{" "}
+                  <span className="font-semibold text-ink">
+                    {formatDay(earliestStandard)}
+                  </span>
+                  . Need it sooner? Tick{" "}
+                  <span className="font-semibold">Urgent</span>.
+                </p>
+                <label
+                  className="flex items-start gap-3 rounded-xl border border-line bg-paper p-3 cursor-pointer transition hover:border-sky/50"
+                  style={
+                    isUrgent
+                      ? {
+                          background: "rgba(25,156,217,0.06)",
+                          borderColor: "rgba(25,156,217,0.55)",
+                        }
+                      : undefined
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={isUrgent}
+                    onChange={(e) => onToggleUrgent(e.target.checked)}
+                    className="mt-1 h-4 w-4 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-ink">
+                      Urgent filing (+£{urgentFeeGbp})
+                    </div>
+                    <div className="mt-0.5 text-xs text-slate">
+                      Any date from the next working day.{" "}
+                      {isUrgent
+                        ? `Earliest urgent date: ${formatDay(earliestUrgent)}.`
+                        : "Ticking this widens the picker above."}
+                    </div>
+                  </div>
+                </label>
+              </div>
+              <OrderSummary
+                selectedTier={selectedTier}
+                isUrgent={isUrgent}
+                urgentFeeGbp={urgentFeeGbp}
+                emptyHint="Pick a service above to see the total."
+              />
+            </div>
+          </section>
+        </>
       ) : null}
 
       {/* Limited company flow: three flat-fee service cards + one
@@ -315,11 +434,16 @@ function TierButton({
 
 function OrderSummary({
   selectedTier,
+  isUrgent,
+  urgentFeeGbp,
   emptyHint,
 }: {
   selectedTier: PlanTier | null;
+  isUrgent?: boolean;
+  urgentFeeGbp?: number;
   emptyHint: string;
 }) {
+  const urgentAddon = isUrgent && urgentFeeGbp ? urgentFeeGbp : 0;
   return (
     <aside className="card-sl h-fit p-5">
       <span
@@ -350,6 +474,12 @@ function OrderSummary({
                   £{selectedTier.priceGbp}
                 </dd>
               </div>
+              {urgentAddon > 0 ? (
+                <div className="flex items-baseline justify-between">
+                  <dt className="text-ink">Urgent processing</dt>
+                  <dd className="font-semibold text-ink">+£{urgentAddon}</dd>
+                </div>
+              ) : null}
               <div className="flex items-baseline justify-between border-t border-line pt-2.5">
                 <dt
                   className="text-[11px] font-bold uppercase tracking-widest text-slate"
@@ -361,7 +491,7 @@ function OrderSummary({
                   className="text-lg font-bold text-ink"
                   style={{ fontFamily: "var(--font-heading)" }}
                 >
-                  £{selectedTier.priceGbp}
+                  £{selectedTier.priceGbp + urgentAddon}
                 </dd>
               </div>
             </dl>
