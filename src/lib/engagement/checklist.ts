@@ -530,6 +530,20 @@ export function requiredFieldsForTier(tier: TierId): ChecklistField[] {
   return fieldsForTier(tier).filter((f) => f.requiredFor.includes(t));
 }
 
+// Canonical "is this field required for this tier?" check. Every
+// UI label ("Required" / "Optional") and every server submit guard
+// must route through here so the tier aliasing stays in lockstep.
+// Direct `field.requiredFor.includes(tier)` reads silently skip the
+// alias — the bespoke tier would read as not-required even though
+// the server validator treats it as required, which produced the
+// label-versus-validator mismatch on Section D.
+export function isFieldRequired(
+  tier: TierId,
+  field: Pick<ChecklistField, "requiredFor">,
+): boolean {
+  return field.requiredFor.includes(aliasChecklistTier(tier));
+}
+
 // Visibility gate on a single field for a given set of answers.
 // A field with no `showWhen` is always visible. A field whose
 // `showWhen` references an unanswered question is hidden until that

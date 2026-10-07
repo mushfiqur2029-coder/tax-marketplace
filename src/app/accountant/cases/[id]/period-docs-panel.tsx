@@ -3,7 +3,10 @@
 import { useState, useTransition } from "react";
 import { formatDateTime } from "@/lib/format";
 import type { ActionResult } from "@/lib/action-result";
-import type { ChecklistField } from "@/lib/engagement/checklist";
+import {
+  isFieldRequired,
+  type ChecklistField,
+} from "@/lib/engagement/checklist";
 import type { TierId } from "@/lib/plans";
 
 type ClientDoc = {
@@ -46,7 +49,7 @@ export function PeriodDocsPanel({
 
       <ul className="space-y-4">
         {fields.map((field) => {
-          const required = field.requiredFor.includes(tierId);
+          const required = isFieldRequired(tierId, field);
           const docs = docsByKey[field.id] ?? [];
           return (
             <li key={field.id}>

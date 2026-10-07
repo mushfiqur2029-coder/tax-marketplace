@@ -7,7 +7,10 @@ import { DocumentUploader } from "@/components/case/document-uploader";
 import { formatDateTime } from "@/lib/format";
 import type { ActionResult } from "@/lib/action-result";
 import type { TierId } from "@/lib/plans";
-import type { ChecklistField } from "@/lib/engagement/checklist";
+import {
+  isFieldRequired,
+  type ChecklistField,
+} from "@/lib/engagement/checklist";
 
 type UploadedDoc = { id: string; file_name: string; uploaded_at: string };
 
@@ -47,7 +50,7 @@ export function PeriodDocsForm({
   const [submitting, startSubmit] = useTransition();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const requiredFields = fields.filter((f) => f.requiredFor.includes(tierId));
+  const requiredFields = fields.filter((f) => isFieldRequired(tierId, f));
   const doneCount = requiredFields.filter(
     (f) => (docsByKey[f.id]?.length ?? 0) > 0,
   ).length;
@@ -103,7 +106,7 @@ export function PeriodDocsForm({
             <PeriodUploadRow
               key={field.id}
               field={field}
-              required={field.requiredFor.includes(tierId)}
+              required={isFieldRequired(tierId, field)}
               docs={docsByKey[field.id] ?? []}
               onUploaded={(doc) =>
                 setDocsByKey((prev) => ({

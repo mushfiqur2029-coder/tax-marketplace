@@ -11,6 +11,7 @@ import {
   ENCRYPTED_FIELD_ID,
   LEGACY_DRIVING_LICENCE_ID,
   fieldIsVisible,
+  isFieldRequired,
   type ChecklistField,
   type ChecklistSectionDef,
 } from "@/lib/engagement/checklist";
@@ -75,7 +76,7 @@ export function OnboardingForm({
   // and the submit guard.
   const visibleFields = fields.filter((f) => fieldIsVisible(f, answers));
   const requiredFields = visibleFields.filter((f) =>
-    f.requiredFor.includes(tierId),
+    isFieldRequired(tierId, f),
   );
   const requiredCount = requiredFields.length;
   const doneCount = requiredFields.filter((f) => {
@@ -209,7 +210,7 @@ export function OnboardingForm({
               ) {
                 return null;
               }
-              const required = field.requiredFor.includes(tierId);
+              const required = isFieldRequired(tierId, field);
               if (field.kind === "upload") {
                 return (
                   <UploadRow

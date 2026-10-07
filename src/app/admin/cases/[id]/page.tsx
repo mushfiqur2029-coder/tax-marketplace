@@ -23,6 +23,7 @@ import { OnboardingAnswersPanel } from "@/components/engagement/onboarding-answe
 import {
   sectionsForTier,
   fieldsForTier,
+  isFieldRequired,
 } from "@/lib/engagement/checklist";
 import type { TierId } from "@/lib/plans";
 import {
@@ -489,8 +490,9 @@ export default async function AdminCasePage({
               </h4>
               <ul className="mt-2 space-y-3">
                 {periodFieldList.map((field) => {
-                  const required = field.requiredFor.includes(
+                  const required = isFieldRequired(
                     tier.id as TierId,
+                    field,
                   );
                   const items = periodDocsByKey[field.id] ?? [];
                   return (

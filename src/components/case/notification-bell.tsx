@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { playNotificationBeep } from "@/lib/notification-sound";
@@ -121,6 +122,25 @@ export function NotificationBell({
   const [toasts, setToasts] = useState<NotificationRow[]>([]);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  // Toasts render through a portal into document.body. The site
+  // header has backdrop-blur-md on it, which creates a new
+  // containing block for `position: fixed` descendants — without
+  // the portal, the toast's "fixed bottom-4 right-4" anchored to
+  // the header's bounds (a short strip at the top of the viewport)
+  // and ended up overlapping the browser chrome at the top. The
+  // portal escapes any ancestor containing-block created by
+  // backdrop-filter / transform / filter.
+  const [portalMounted, setPortalMounted] = useState(false);
+  useEffect(() => {
+    // Standard SSR-safe portal mount gate — the effect only runs on
+    // the client, flipping us from the server-rendered (no portal)
+    // to the client-rendered (portal) tree exactly once. The
+    // react-hooks/set-state-in-effect rule flags any setState in an
+    // effect, but this specific pattern is the recommended one for
+    // "mounted on client only" guards.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPortalMounted(true);
+  }, []);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -343,14 +363,22 @@ export function NotificationBell({
 
       {/*
         Toast stack — fixed to the viewport so the notification is visible
-        without opening the bell. Rendered inside the bell's tree so it
-        naturally lives on every dashboard page (Bell is in DashboardShell).
+        without opening the bell. Rendered through a Portal into
+        document.body so no ancestor containing-block (the site
+        header's backdrop-filter, for one) can trap the position.
         Auto-dismiss timer is set in applyNew; user can also dismiss by
         clicking the toast (which also navigates + marks read).
       */}
-      {toasts.length > 0 ? (
+      {portalMounted && toasts.length > 0
+        ? createPortal(
         <div
           className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
+          style={{
+            // Respect iOS safe-area so a notched phone doesn't clip
+            // the bottom of the toast on first paint.
+            paddingBottom: "env(safe-area-inset-bottom)",
+            paddingRight: "env(safe-area-inset-right)",
+          }}
           aria-live="polite"
         >
           {toasts.map((n) => (
@@ -390,8 +418,10 @@ export function NotificationBell({
               </button>
             </div>
           ))}
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
