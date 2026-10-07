@@ -78,7 +78,18 @@ export default async function CaseDetailPage({
     data.progress.nextStep === "period_docs" && !data.progress.periodDatesSet;
   const showResumeButton =
     data.progress.nextStep !== "done" && !awaitingPeriodDates;
-  const nextHref = `/client/cases/${id}/${data.progress.nextStep === "done" ? "" : data.progress.nextStep}`;
+  // Derive the Resume button's href from buildSteps() rather than
+  // interpolating `nextStep` directly. The step keys are
+  // `period_docs` (underscore, from the TypeScript union) but the
+  // route folder is `period-docs` (hyphen) — interpolating the key
+  // produced /period_docs which 404s. buildSteps() is the single
+  // source of truth for step → URL mapping and is already correct.
+  const stepsForLinks = buildSteps(id, data, null);
+  const resumeStep =
+    data.progress.nextStep !== "done"
+      ? stepsForLinks.find((s) => s.key === data.progress.nextStep)
+      : undefined;
+  const nextHref = resumeStep?.href ?? `/client/cases/${id}`;
 
   // Load add-ons on this case. Clients see:
   //   • pending_payment as a prominent pay banner near the top
