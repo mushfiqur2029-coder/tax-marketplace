@@ -46,7 +46,14 @@ async function assertClientOnCycle(cycleId: string) {
     .single();
   if (caseErr || !caseRow) throw new Error("Case not found.");
   if (caseRow.client_id !== me.id) throw new Error("Not your case.");
-  if (caseRow.segment !== "limited_company_vat" || caseRow.tier !== "vat_reg") {
+  // vat_plus_accounts_bespoke is the admin-created bespoke variant
+  // of vat_reg (same workflow, bespoke-priced). Both carry VAT
+  // cycles; everything else does not.
+  if (
+    caseRow.segment !== "limited_company_vat" ||
+    (caseRow.tier !== "vat_reg" &&
+      caseRow.tier !== "vat_plus_accounts_bespoke")
+  ) {
     throw new Error("VAT cycles only apply to VAT Registered cases.");
   }
 

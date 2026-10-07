@@ -7,9 +7,16 @@ type Status =
   | "filed"
   | "complete";
 
+// "Awaiting review" instead of "Awaiting accountant" for the
+// submitted bucket: on bespoke cases the accountant is pre-assigned
+// at creation (createBespokeCaseFromEnquiryAction), so a row that
+// reads "Accountant X · AWAITING ACCOUNTANT" directly contradicts
+// itself. "Awaiting review" describes the actual state regardless
+// of whether a particular accountant is already on the case or it's
+// still sitting in the self-serve queue.
 const LABELS: Record<Status, { label: string; tone: "grey" | "blue" | "amber" | "green" }> = {
   draft: { label: "Draft", tone: "grey" },
-  submitted: { label: "Awaiting accountant", tone: "amber" },
+  submitted: { label: "Awaiting review", tone: "amber" },
   in_review: { label: "In review", tone: "blue" },
   prepared: { label: "Prepared", tone: "blue" },
   client_approval: { label: "Awaiting your approval", tone: "amber" },

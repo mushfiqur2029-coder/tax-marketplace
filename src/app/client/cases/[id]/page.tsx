@@ -132,7 +132,11 @@ export default async function CaseDetailPage({
   if (
     !isDraft &&
     data.row.segment === "limited_company_vat" &&
-    data.tier.id === "vat_reg"
+    // vat_plus_accounts_bespoke is the admin-created bespoke
+    // variant of vat_reg — same VAT return workflow, bespoke-priced,
+    // so the VAT cycles panel renders for both.
+    (data.tier.id === "vat_reg" ||
+      data.tier.id === "vat_plus_accounts_bespoke")
   ) {
     const admin = createAdminClient();
     const { data: cycleRows } = await admin

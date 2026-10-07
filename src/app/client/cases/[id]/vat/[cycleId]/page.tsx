@@ -61,9 +61,13 @@ export default async function VatCyclePage({
     .eq("id", id)
     .single();
   if (!caseRow || caseRow.client_id !== me.id) notFound();
+  // vat_plus_accounts_bespoke is the admin-created bespoke variant
+  // of vat_reg (same VAT return workflow, bespoke-priced). Both
+  // land on this cycle page; everything else 404s.
   if (
     caseRow.segment !== "limited_company_vat" ||
-    caseRow.tier !== "vat_reg"
+    (caseRow.tier !== "vat_reg" &&
+      caseRow.tier !== "vat_plus_accounts_bespoke")
   ) {
     notFound();
   }
