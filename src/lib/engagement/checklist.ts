@@ -508,7 +508,7 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
     hint: "Tells us whether to expect a P60 / P45.",
     kind: "select",
     options: ["Yes", "No"],
-    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    requiredFor: PERSONAL_TIER_IDS,
   },
   {
     id: "sa_p60_p45",
@@ -516,7 +516,7 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
     label: "P60 and / or P45",
     hint: "P60 is the year-end summary from an employer; P45 is issued when you leave a job. Upload whichever applies.",
     kind: "upload",
-    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    requiredFor: PERSONAL_TIER_IDS,
     multi: true,
     showWhen: { fieldId: "sa_was_employed", equals: "Yes" },
   },
