@@ -215,9 +215,9 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
   {
     id: "company_utr",
     section: "A",
-    label: "Company UTR (from HMRC)",
-    hint: "10-digit Unique Taxpayer Reference, on your corporation tax letters.",
-    kind: "text",
+    label: "Company UTR letter",
+    hint: "Upload the HMRC letter showing your 10-digit Unique Taxpayer Reference (your corporation tax welcome letter).",
+    kind: "upload",
     requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
     showWhen: { fieldId: "company_utr_registered", equals: "Yes" },
   },
@@ -429,14 +429,10 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
   {
     id: "sa_utr",
     section: "P",
-    label: "Personal UTR (from HMRC)",
-    hint: "10-digit Unique Taxpayer Reference, on your Self Assessment correspondence.",
-    kind: "text",
+    label: "Personal UTR letter",
+    hint: "Upload your HMRC Self Assessment letter showing your 10-digit Unique Taxpayer Reference.",
+    kind: "upload",
     requiredFor: PERSONAL_TIER_IDS,
-    pattern: {
-      regex: "^\\d{10}$",
-      message: "UTR must be exactly 10 digits, no spaces.",
-    },
     showWhen: { fieldId: "sa_utr_registered", equals: "Yes" },
   },
   {

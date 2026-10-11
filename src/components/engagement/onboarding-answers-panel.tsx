@@ -114,6 +114,19 @@ export function OnboardingAnswersPanel({
         if (fieldsHere.length === 0 && legacyDl.length === 0) return null;
         const missingHere =
           missingBySection[section.key as ChecklistSection] ?? 0;
+        // "Not yet registered for UTR" callout — fires when the client
+        // ticked the gating sibling as "No". Distinct from the amber
+        // "Flagged as unavailable" pill: that pill means "client has it
+        // but didn't upload"; this callout means "client doesn't have
+        // one at all" and prompts the accountant/admin to add the
+        // UTR-registration service as a chargeable add-on.
+        const utrNotRegistered =
+          (section.key === "A" && answers.company_utr_registered === "No"
+            ? "Company UTR"
+            : null) ??
+          (section.key === "P" && answers.sa_utr_registered === "No"
+            ? "Self Assessment UTR"
+            : null);
         return (
           <div
             key={section.key}
@@ -153,6 +166,27 @@ export function OnboardingAnswersPanel({
                 </span>
               )}
             </div>
+            {utrNotRegistered ? (
+              <div
+                className="mb-3 flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+                style={{
+                  background: "rgba(25,156,217,0.08)",
+                  border: "1px solid rgba(25,156,217,0.35)",
+                  color: "#0F1E4D",
+                }}
+                role="note"
+              >
+                <span aria-hidden="true" style={{ fontSize: "14px", lineHeight: 1 }}>
+                  &#9432;
+                </span>
+                <span>
+                  <strong>Not yet registered for a {utrNotRegistered}.</strong>{" "}
+                  Consider adding a UTR-registration service as a chargeable
+                  add-on — the client is relying on us to get them set up with
+                  HMRC.
+                </span>
+              </div>
+            ) : null}
             <dl className="divide-y divide-line">
               {fieldsHere.map((field) => (
                 <Row
