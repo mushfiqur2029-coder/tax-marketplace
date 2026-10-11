@@ -15,7 +15,10 @@ import {
   readNeedsPayeRegistration,
   SECTION_A_PAYE_UPLOAD_ID,
 } from "@/lib/engagement/period-docs";
-import type { ChecklistField } from "@/lib/engagement/checklist";
+import {
+  isFieldMarkedNotAvailable,
+  type ChecklistField,
+} from "@/lib/engagement/checklist";
 
 const BUCKET = "case-documents";
 
@@ -85,6 +88,53 @@ export type UploadedPeriodDoc = {
   file_name: string;
   uploaded_at: string;
 };
+
+// Mirror of the onboarding form's "I don't have this" toggle, scoped
+// to period-docs fields. Writes `{fieldId}_not_available = "true"`
+// into cases.intake_answers so the submit guard
+// (requiredPeriodDocFieldsForCase + requiredFieldsForTierGiven)
+// treats the field as resolved rather than missing. Server-side
+// validates the fieldId is one of the known period-doc fields for
+// this case.
+export async function setPeriodDocNotAvailableAction(
+  caseId: string,
+  fieldId: string,
+  notAvailable: boolean,
+): Promise<ActionResult> {
+  try {
+    const { supabase, caseRow } = await assertCaseInPeriodUpload(caseId);
+
+    const answers = caseRow.intake_answers as
+      | Record<string, string>
+      | null;
+    const fieldList = periodDocFieldsForCase({
+      payrollRegistered: !!caseRow.payroll_registered,
+      payeCertificateUploadedInSectionA: false,
+      needsPayeRegistration: readNeedsPayeRegistration(answers ?? null),
+    });
+    if (!fieldList.some((f: ChecklistField) => f.id === fieldId)) {
+      throw new Error("Not a recognised period-docs field.");
+    }
+
+    const patch: Record<string, string> = {
+      [`${fieldId}_not_available`]: notAvailable ? "true" : "",
+    };
+    const { data: rows, error } = await supabase.rpc(
+      "merge_case_intake_answers",
+      { p_case_id: caseId, p_patch: patch },
+    );
+    if (error) throw new Error(error.message);
+    if ((rows ?? 0) === 0) {
+      throw new Error(
+        "Save didn't take. The database refused the write. Reload and retry.",
+      );
+    }
+    revalidatePath(`/client/cases/${caseId}/period-docs`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
 export async function uploadPeriodDocumentAction(
   caseId: string,
@@ -262,7 +312,16 @@ export async function submitPeriodDocsAction(
         .filter((k): k is string => !!k),
     );
 
-    const missing = required.filter((f) => !uploadedKeys.has(f.id));
+    // "I don't have this" skips the upload requirement — the row is
+    // flagged for admin/accountant visibility rather than blocked.
+    const answers = (caseRow as unknown as {
+      intake_answers: Record<string, string> | null;
+    }).intake_answers;
+    const missing = required.filter(
+      (f) =>
+        !uploadedKeys.has(f.id) &&
+        !isFieldMarkedNotAvailable(f.id, answers),
+    );
     if (missing.length > 0) {
       throw new Error(
         `Still missing: ${missing.map((f) => f.label).join(", ")}.`,

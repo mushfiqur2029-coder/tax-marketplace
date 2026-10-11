@@ -9,6 +9,7 @@ import type { ActionResult } from "@/lib/action-result";
 import type { TierId } from "@/lib/plans";
 import {
   isFieldRequired,
+  isFieldMarkedNotAvailable,
   type ChecklistField,
 } from "@/lib/engagement/checklist";
 
@@ -18,6 +19,9 @@ type Props = {
   tierId: TierId;
   fields: ChecklistField[];
   docsByKey: Record<string, UploadedDoc[]>;
+  // Current intake_answers — used to read `{fieldId}_not_available`
+  // flags that drive the per-row "I don't have this" checkbox state.
+  answers: Record<string, string>;
   requiredCount: number;
   requiredDone: number;
   footer: string;
@@ -27,6 +31,7 @@ type Props = {
   ) => Promise<ActionResult<UploadedDoc>>;
   removeDoc: (docId: string) => Promise<ActionResult>;
   submit: () => Promise<ActionResult>;
+  setNotAvailable: (fieldId: string, next: boolean) => Promise<ActionResult>;
 };
 
 // Period-docs form. Single-section layout — no text/select fields,
@@ -37,20 +42,29 @@ export function PeriodDocsForm({
   tierId,
   fields,
   docsByKey: initialDocsByKey,
+  answers: initialAnswers,
   requiredCount,
-  requiredDone: initialRequiredDone,
   footer,
   uploadDoc,
   removeDoc,
   submit,
+  setNotAvailable,
 }: Props) {
   const router = useRouter();
   const [docsByKey, setDocsByKey] =
     useState<Record<string, UploadedDoc[]>>(initialDocsByKey);
+  const [answers, setAnswers] = useState<Record<string, string>>(initialAnswers);
   const [submitting, startSubmit] = useTransition();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const requiredFields = fields.filter((f) => isFieldRequired(tierId, f));
+  // Required set skips any field the client marked "I don't have
+  // this" so the progress bar + submit guard stay in lockstep with
+  // the server validator (see requiredPeriodDocFieldsForCase).
+  const requiredFields = fields.filter((f) => {
+    if (!isFieldRequired(tierId, f)) return false;
+    if (isFieldMarkedNotAvailable(f.id, answers)) return false;
+    return true;
+  });
   const doneCount = requiredFields.filter(
     (f) => (docsByKey[f.id]?.length ?? 0) > 0,
   ).length;
@@ -108,6 +122,16 @@ export function PeriodDocsForm({
               field={field}
               required={isFieldRequired(tierId, field)}
               docs={docsByKey[field.id] ?? []}
+              notAvailable={isFieldMarkedNotAvailable(field.id, answers)}
+              onToggleNotAvailable={async (next) => {
+                // Optimistic update so the drop zone fades
+                // immediately; the server catches up in parallel.
+                setAnswers((prev) => ({
+                  ...prev,
+                  [`${field.id}_not_available`]: next ? "true" : "",
+                }));
+                await setNotAvailable(field.id, next);
+              }}
               onUploaded={(doc) =>
                 setDocsByKey((prev) => ({
                   ...prev,
@@ -164,6 +188,8 @@ function PeriodUploadRow({
   field,
   required,
   docs,
+  notAvailable,
+  onToggleNotAvailable,
   onUploaded,
   onRemoved,
   uploadDoc,
@@ -172,6 +198,8 @@ function PeriodUploadRow({
   field: ChecklistField;
   required: boolean;
   docs: UploadedDoc[];
+  notAvailable: boolean;
+  onToggleNotAvailable: (next: boolean) => void | Promise<void>;
   onUploaded: (doc: UploadedDoc) => void;
   onRemoved: (id: string) => void;
   uploadDoc: (
@@ -261,6 +289,8 @@ function PeriodUploadRow({
             multiple={allowMultiple}
             accept={acceptForPeriodDocSlot(field.id)}
             hint={hintForPeriodDocSlot(field.id, allowMultiple)}
+            notAvailable={notAvailable}
+            onToggleNotAvailable={onToggleNotAvailable}
           />
         </div>
       )}

@@ -94,18 +94,20 @@ export function renderEngagementLetterHtml(
     <dt>Client Name</dt><dd>${esc(f.clientName)}</dd>
     <dt>Client Email</dt><dd>${esc(f.clientEmail)}</dd>
     <dt>Client Phone</dt><dd>${esc(f.clientPhone)}</dd>
-    <dt>Accountants</dt><dd>NAFH ACCOUNTANTS LTD</dd>
-    <dt>Platform</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
-    <dt>Trading Name</dt><dd>Sterling Ledger</dd>`
+    <dt>Accountant (legal name)</dt><dd>SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD, Company number 12636834</dd>
+    <dt>Accountant trading name</dt><dd>NAFH ACCOUNTANTS</dd>
+    <dt>Platform (legal name)</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
+    <dt>Platform trading name</dt><dd>Sterling Ledger</dd>`
       : `
     <dt>Company Name</dt><dd>${esc(f.companyName) || "—"}</dd>
     <dt>Company Number</dt><dd>${esc(f.companyNumber) || "—"}</dd>
     <dt>Director Name</dt><dd>${esc(f.clientName)}</dd>
     <dt>Director Email</dt><dd>${esc(f.clientEmail)}</dd>
     <dt>Director Number</dt><dd>${esc(f.clientPhone)}</dd>
-    <dt>Accountants</dt><dd>NAFH ACCOUNTANTS LTD</dd>
-    <dt>Platform</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
-    <dt>Trading Name</dt><dd>Sterling Ledger</dd>`;
+    <dt>Accountant (legal name)</dt><dd>SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD, Company number 12636834</dd>
+    <dt>Accountant trading name</dt><dd>NAFH ACCOUNTANTS</dd>
+    <dt>Platform (legal name)</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
+    <dt>Platform trading name</dt><dd>Sterling Ledger</dd>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -522,8 +524,9 @@ export function renderEngagementLetterHtml(
   </div>
 
   <div class="footer">
-    Sterling Ledger Advisory Ltd &middot; NAFH Accountants Ltd &middot;
-    England &amp; Wales
+    Sterling Ledger Advisory Ltd &middot; Shann Accountancy and Financial
+    Services Ltd (trading as NAFH Accountants) &middot; England &amp;
+    Wales
   </div>
 
 </div>

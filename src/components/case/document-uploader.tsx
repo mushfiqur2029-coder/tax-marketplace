@@ -31,6 +31,21 @@ type Props = {
    * list, only the drop zone + chip strip.
    */
   onEachUploadSuccess?: () => void;
+  /**
+   * "I don't have this" state owned by the parent (onboarding form,
+   * period-docs form). When true the drop zone is disabled and
+   * visibly suppressed; required-missing calculations elsewhere skip
+   * this field. See isFieldMarkedNotAvailable in checklist.ts.
+   */
+  notAvailable?: boolean;
+  /** Fires when the user toggles the "I don't have this" checkbox. */
+  onToggleNotAvailable?: (next: boolean) => void;
+  /**
+   * When true, hide the "I don't have this" row entirely. Used by
+   * chat attachments and other surfaces where the control is
+   * meaningless. Defaults to false (shown).
+   */
+  hideNotAvailableToggle?: boolean;
 };
 
 // Kept in sync with case-document upload actions (onboarding + VAT period docs).
@@ -87,8 +102,16 @@ export function DocumentUploader({
   hint,
   accept,
   onEachUploadSuccess,
+  notAvailable = false,
+  onToggleNotAvailable,
+  hideNotAvailableToggle = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Second hidden input for the camera-capture button. Separate from
+  // the file picker so the attribute (`capture="environment"`) stays
+  // local to that button — otherwise desktop users see weird camera
+  // prompts and mobile users don't get both choices.
+  const cameraRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<PendingItem[]>([]);
   const [dragDepth, setDragDepth] = useState(0);
 
@@ -188,15 +211,25 @@ export function DocumentUploader({
 
   const anyUploading = items.some((p) => p.status === "uploading");
 
+  const dropZoneDisabled = notAvailable;
+
   return (
     <div
       className="relative"
-      onDragEnter={onDragEnter}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      onDragEnter={dropZoneDisabled ? undefined : onDragEnter}
+      onDragOver={dropZoneDisabled ? undefined : onDragOver}
+      onDragLeave={dropZoneDisabled ? undefined : onDragLeave}
+      onDrop={dropZoneDisabled ? undefined : onDrop}
     >
-      <div className="rounded-2xl border-2 border-dashed border-line p-6 text-center transition hover:border-sky/50">
+      <div
+        className={
+          "rounded-2xl border-2 border-dashed p-6 text-center transition " +
+          (dropZoneDisabled
+            ? "border-line/60 bg-line/5 opacity-60"
+            : "border-line hover:border-sky/50")
+        }
+        aria-disabled={dropZoneDisabled || undefined}
+      >
         <div
           className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-xl text-white"
           style={{
@@ -234,13 +267,30 @@ export function DocumentUploader({
             if (e.target) e.target.value = "";
           }}
         />
+        {/* Camera capture — same action, but `capture="environment"`
+            tells mobile browsers to open the rear-facing camera
+            directly. Desktop silently falls back to the normal file
+            picker (desktops ignore `capture`). accept is forced to
+            image/* here so the camera is the obvious interpretation. */}
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            addFiles(files);
+            if (e.target) e.target.value = "";
+          }}
+        />
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
             className="btn-sl btn-sl-primary"
-            disabled={anyUploading}
+            disabled={anyUploading || dropZoneDisabled}
           >
             {anyUploading
               ? "Uploading…"
@@ -248,8 +298,44 @@ export function DocumentUploader({
                 ? "Choose files"
                 : "Choose file"}
           </button>
+          <button
+            type="button"
+            onClick={() => cameraRef.current?.click()}
+            className="btn-sl btn-sl-outline"
+            disabled={anyUploading || dropZoneDisabled}
+            // On mobile, this opens the camera. On desktop, it opens
+            // the file picker (any image). The label matches the
+            // mobile-first interpretation since that's where it earns
+            // its keep.
+            aria-label="Take a photo of this document"
+          >
+            {/* camera icon */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6 }}>
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+            Take photo
+          </button>
         </div>
       </div>
+
+      {hideNotAvailableToggle ? null : (
+        <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-line bg-paper p-3 text-sm text-ink transition hover:border-sky/40">
+          <input
+            type="checkbox"
+            checked={notAvailable}
+            onChange={(e) => onToggleNotAvailable?.(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0"
+          />
+          <span>
+            <span className="font-semibold">I don&rsquo;t have this document</span>
+            <span className="mt-0.5 block text-xs text-slate">
+              Tick this if you don&rsquo;t have it to hand. We&rsquo;ll flag it
+              to your accountant rather than block your submission.
+            </span>
+          </span>
+        </label>
+      )}
 
       {items.length > 0 ? (
         <ul

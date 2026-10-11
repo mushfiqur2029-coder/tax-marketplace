@@ -56,7 +56,10 @@ export default async function AccountantDashboard({
 }) {
   const raw = await searchParams;
   const view: CasesView =
-    raw.view === "queue" || raw.view === "completed" || raw.view === "pending"
+    raw.view === "queue" ||
+    raw.view === "completed" ||
+    raw.view === "pending" ||
+    raw.view === "assigned"
       ? raw.view
       : "live";
   const urgency: UrgencyFilter =
@@ -122,10 +125,19 @@ export default async function AccountantDashboard({
   // "Pending" from the accountant's POV = returned to client for approval,
   // now waiting on the client to sign off.
   const pendingCases = mine.filter((c) => c.status === "client_approval");
+  // "Assigned" = admin pre-assigned (bespoke flow) and the case
+  // hasn't entered the active work status yet. Mostly bespoke cases
+  // in `draft` (client still to sign + pay) or `submitted` (paid,
+  // not yet moved to in_review). Visible immediately so the
+  // accountant can see what's coming + help the client via chat.
+  const assigned = mine.filter(
+    (c) => c.status === "draft" || c.status === "submitted",
+  );
 
   const viewCounts: ViewCounts = {
     live: live.length,
     queue: queue.length,
+    assigned: assigned.length,
     completed: completed.length,
     pending: pendingCases.length,
   };
@@ -133,11 +145,13 @@ export default async function AccountantDashboard({
   const pool =
     view === "queue"
       ? queue
-      : view === "completed"
-        ? completed
-        : view === "pending"
-          ? pendingCases
-          : live;
+      : view === "assigned"
+        ? assigned
+        : view === "completed"
+          ? completed
+          : view === "pending"
+            ? pendingCases
+            : live;
 
   const filtered = pool.filter((c) => {
     if (fee !== "all") {

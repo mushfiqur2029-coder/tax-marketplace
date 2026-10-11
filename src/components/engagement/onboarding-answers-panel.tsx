@@ -7,9 +7,13 @@ import {
   ENCRYPTED_FIELD_ID,
   LEGACY_DRIVING_LICENCE_ID,
   fieldIsVisible,
+  isFieldMarkedNotAvailable,
+  missingRequiredBySection,
   type ChecklistField,
+  type ChecklistSection,
   type ChecklistSectionDef,
 } from "@/lib/engagement/checklist";
+import type { TierId } from "@/lib/plans";
 
 export type OnboardingDoc = {
   id: string;
@@ -20,6 +24,10 @@ export type OnboardingDoc = {
 };
 
 type Props = {
+  // Tier is needed so we can compute the per-section missing-required
+  // count via missingRequiredBySection (same semantics as the client's
+  // submit guard; respects "I don't have this").
+  tierId: TierId;
   sections: ChecklistSectionDef[];
   fields: ChecklistField[];
   answers: Record<string, string>;
@@ -38,6 +46,7 @@ type Props = {
 // section by section, so a reviewer can tick through the same shape
 // the client filled in.
 export function OnboardingAnswersPanel({
+  tierId,
   sections,
   fields,
   answers,
@@ -51,6 +60,25 @@ export function OnboardingAnswersPanel({
     if (!d.requirement_key) continue;
     (docsByKey[d.requirement_key] ??= []).push(d);
   }
+
+  // Red-flag count per section: how many required fields are still
+  // unresolved (no upload, no answer, and NOT marked "I don't have
+  // this"). Powers the section-header badge below.
+  const uploadedBySection: Record<string, Set<string>> = {};
+  for (const f of fields) {
+    uploadedBySection[f.section] ??= new Set();
+  }
+  for (const d of docs) {
+    if (!d.requirement_key) continue;
+    const field = fields.find((f) => f.id === d.requirement_key);
+    if (field) uploadedBySection[field.section]?.add(d.requirement_key);
+  }
+  const missingBySection = missingRequiredBySection(
+    tierId,
+    answers,
+    uploadedBySection,
+    authCodeAvailable,
+  );
 
   const [pendingDocId, setPendingDocId] = useState<string | null>(null);
   const [docPending, startDoc] = useTransition();
@@ -77,26 +105,54 @@ export function OnboardingAnswersPanel({
         // Mirrors the client form so the accountant sees the same branch
         // the client was filling in.
         const fieldsHere = fields.filter(
-          (f) => f.section === section.key && fieldIsVisible(f, answers),
+          (f) => f.section === section.key && fieldIsVisible(f, answers, tierId),
         );
         const legacyDl =
           section.key === "B"
             ? docsByKey[LEGACY_DRIVING_LICENCE_ID] ?? []
             : [];
         if (fieldsHere.length === 0 && legacyDl.length === 0) return null;
+        const missingHere =
+          missingBySection[section.key as ChecklistSection] ?? 0;
         return (
           <div
             key={section.key}
             className="rounded-xl border border-line bg-paper p-4"
           >
-            <h4
-              className="mb-3 text-sm font-semibold text-ink"
-              style={{ fontFamily: "var(--font-heading)" }}
-            >
-              {section.key === "P"
-                ? section.title
-                : `Section ${section.key}: ${section.title}`}
-            </h4>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h4
+                className="text-sm font-semibold text-ink"
+                style={{ fontFamily: "var(--font-heading)" }}
+              >
+                {section.key === "P"
+                  ? section.title
+                  : `Section ${section.key}: ${section.title}`}
+              </h4>
+              {missingHere > 0 ? (
+                <span
+                  className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                  style={{
+                    background: "rgba(220,38,38,0.10)",
+                    color: "#B91C1C",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  title="Required items the client still owes us"
+                >
+                  {missingHere} missing
+                </span>
+              ) : (
+                <span
+                  className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                  style={{
+                    background: "rgba(19,217,160,0.14)",
+                    color: "#0E9E77",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  Complete
+                </span>
+              )}
+            </div>
             <dl className="divide-y divide-line">
               {fieldsHere.map((field) => (
                 <Row
@@ -150,6 +206,7 @@ function Row({
   authCodeAvailable: boolean;
   revealAuthCode: () => Promise<ActionResult<string | null>>;
 }) {
+  const notAvailable = isFieldMarkedNotAvailable(field.id, answers);
   return (
     <div className="grid gap-1 py-3 sm:grid-cols-[220px_1fr] sm:gap-4">
       <dt
@@ -159,17 +216,30 @@ function Row({
         {field.label}
       </dt>
       <dd className="text-sm text-ink">
-        <FieldValue
-          field={field}
-          answers={answers}
-          docs={docs}
-          openDoc={openDoc}
-          pendingDocId={pendingDocId}
-          docPending={docPending}
-          docError={docError}
-          authCodeAvailable={authCodeAvailable}
-          revealAuthCode={revealAuthCode}
-        />
+        {notAvailable ? (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+            style={{
+              background: "rgba(217,159,25,0.14)",
+              color: "#8a5c05",
+            }}
+            title="Client flagged this as unavailable"
+          >
+            Flagged as unavailable
+          </span>
+        ) : (
+          <FieldValue
+            field={field}
+            answers={answers}
+            docs={docs}
+            openDoc={openDoc}
+            pendingDocId={pendingDocId}
+            docPending={docPending}
+            docError={docError}
+            authCodeAvailable={authCodeAvailable}
+            revealAuthCode={revealAuthCode}
+          />
+        )}
       </dd>
     </div>
   );

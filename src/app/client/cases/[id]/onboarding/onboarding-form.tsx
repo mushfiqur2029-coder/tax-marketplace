@@ -12,6 +12,7 @@ import {
   LEGACY_DRIVING_LICENCE_ID,
   fieldIsVisible,
   isFieldRequired,
+  isFieldMarkedNotAvailable,
   type ChecklistField,
   type ChecklistSectionDef,
 } from "@/lib/engagement/checklist";
@@ -73,11 +74,16 @@ export function OnboardingForm({
   // branches (Section B: Passport vs Driving licence) toggle live.
   // Required count re-computes on every answer change — picking
   // Passport drops the driving-licence slots out of both the count
-  // and the submit guard.
-  const visibleFields = fields.filter((f) => fieldIsVisible(f, answers));
-  const requiredFields = visibleFields.filter((f) =>
-    isFieldRequired(tierId, f),
-  );
+  // and the submit guard. Fields the client marked "I don't have
+  // this" (via DocumentUploader's checkbox → {fieldId}_not_available
+  // in answers) are considered resolved: they don't count towards
+  // required-missing, so the submit button isn't blocked by them.
+  const visibleFields = fields.filter((f) => fieldIsVisible(f, answers, tierId));
+  const requiredFields = visibleFields.filter((f) => {
+    if (!isFieldRequired(tierId, f)) return false;
+    if (isFieldMarkedNotAvailable(f.id, answers)) return false;
+    return true;
+  });
   const requiredCount = requiredFields.length;
   const doneCount = requiredFields.filter((f) => {
     if (f.kind === "upload") return (docsByKey[f.id]?.length ?? 0) > 0;
@@ -212,12 +218,31 @@ export function OnboardingForm({
               }
               const required = isFieldRequired(tierId, field);
               if (field.kind === "upload") {
+                const notAvailable = isFieldMarkedNotAvailable(
+                  field.id,
+                  answers,
+                );
                 return (
                   <UploadRow
                     key={field.id}
                     field={field}
                     required={required}
                     docs={docsByKey[field.id] ?? []}
+                    notAvailable={notAvailable}
+                    onToggleNotAvailable={async (next) => {
+                      // Optimistic UI update so the drop zone fades
+                      // immediately; the save races in parallel.
+                      setAnswers((prev) => ({
+                        ...prev,
+                        [`${field.id}_not_available`]: next ? "true" : "",
+                      }));
+                      const fd = new FormData();
+                      fd.set(
+                        `${field.id}_not_available`,
+                        next ? "true" : "",
+                      );
+                      await saveAnswers(fd);
+                    }}
                     onUploaded={(doc) =>
                       setDocsByKey((prev) => ({
                         ...prev,
@@ -762,6 +787,8 @@ function UploadRow({
   field,
   required,
   docs,
+  notAvailable,
+  onToggleNotAvailable,
   onUploaded,
   onRemoved,
   uploadDoc,
@@ -770,6 +797,8 @@ function UploadRow({
   field: ChecklistField;
   required: boolean;
   docs: UploadedDoc[];
+  notAvailable: boolean;
+  onToggleNotAvailable: (next: boolean) => void | Promise<void>;
   onUploaded: (doc: UploadedDoc) => void;
   onRemoved: (id: string) => void;
   uploadDoc: (
@@ -857,6 +886,8 @@ function UploadRow({
                 ? "PDF or image · up to 50 MB each · multiple files ok"
                 : "PDF or image · up to 50 MB"
             }
+            notAvailable={notAvailable}
+            onToggleNotAvailable={onToggleNotAvailable}
           />
         </div>
       )}

@@ -559,6 +559,7 @@ export default async function AccountantCaseDetailPage({
               ) : null}
               <div className="mt-4">
                 <OnboardingAnswersPanel
+                  tierId={data.tier.id as TierId}
                   sections={sectionsForTier(data.tier.id as TierId)}
                   fields={fieldsForTier(data.tier.id as TierId)}
                   answers={answers}
@@ -633,6 +634,50 @@ export default async function AccountantCaseDetailPage({
                 liability, then send. The client sees the approval screen
                 with these files and this payment reference.
               </p>
+              {(() => {
+                // Pre-flight warning when add-ons on this case are
+                // unpaid — the server action will refuse, so flag it
+                // here instead of after the accountant fills in the
+                // form and clicks Send.
+                const unpaid = addons.filter(
+                  (a) =>
+                    a.status === "pending_payment" ||
+                    a.status === "pending_admin",
+                );
+                if (unpaid.length === 0) return null;
+                return (
+                  <div
+                    role="status"
+                    className="mt-4 rounded-xl border px-4 py-3 text-xs"
+                    style={{
+                      background: "rgba(220,38,38,0.08)",
+                      borderColor: "rgba(220,38,38,0.35)",
+                      color: "#B91C1C",
+                    }}
+                  >
+                    <strong className="font-semibold">
+                      Can&apos;t send for approval yet.
+                    </strong>{" "}
+                    {unpaid.length} add-on
+                    {unpaid.length === 1 ? "" : "s"} still unpaid:
+                    <ul className="mt-2 list-disc space-y-0.5 pl-5">
+                      {unpaid.map((a) => (
+                        <li key={a.id}>
+                          £{(a.amount_pence / 100).toFixed(2)} · {a.description}
+                          {" "}
+                          <span className="italic">
+                            (
+                            {a.status === "pending_admin"
+                              ? "awaiting admin review"
+                              : "awaiting client payment"}
+                            )
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })()}
               <div className="mt-4">
                 <PrepareApprovalCard
                   initialAnnualAccounts={accountantAnnualAccounts.map(

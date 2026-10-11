@@ -101,7 +101,23 @@ export async function saveChecklistAnswersAction(
     let encryptPlain: string | null = null;
 
     for (const field of visibleFields) {
-      if (field.kind === "upload") continue; // uploads live in case_documents
+      if (field.kind === "upload") {
+        // Uploads live in case_documents, so we don't write the field
+        // itself into intake_answers. BUT the client can tick
+        // "I don't have this" on an upload slot — that state lives
+        // as a sibling boolean key `{fieldId}_not_available` in the
+        // intake_answers JSONB. The required-missing calculations
+        // (see requiredFieldsForTierGiven in checklist.ts) treat a
+        // field with `_not_available = "true"` as resolved rather
+        // than missing.
+        const naRaw = formData.get(`${field.id}_not_available`);
+        if (naRaw != null) {
+          const naVal = String(naRaw).trim();
+          patch[`${field.id}_not_available`] =
+            naVal === "true" ? "true" : "";
+        }
+        continue;
+      }
 
       // Company identity is set at engagement sign and is immutable from
       // onboarding. Silently drop any attempt to overwrite — the UI

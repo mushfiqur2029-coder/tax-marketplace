@@ -626,6 +626,29 @@ export async function prepareApprovalAction(
       throw new Error(`Upload ${missing.join(" and ")} before sending for approval.`);
     }
 
+    // Add-on payment gate (item 5): refuse to send for approval while
+    // any add-on on this case is still awaiting payment. Preset add-
+    // ons sit at `pending_payment`, custom ones at `pending_admin`
+    // (awaiting admin review) or `pending_payment` (approved,
+    // awaiting client payment). Either state blocks — a case can't
+    // move downstream while the client still owes the fee.
+    const { data: unpaidAddons } = await admin
+      .from("case_addons")
+      .select("id, description, amount_pence, status")
+      .eq("case_id", caseId)
+      .in("status", ["pending_payment", "pending_admin"]);
+    if (unpaidAddons && unpaidAddons.length > 0) {
+      const list = unpaidAddons
+        .map(
+          (a) =>
+            `£${(a.amount_pence / 100).toFixed(2)} ${a.description} (${a.status === "pending_admin" ? "awaiting admin review" : "awaiting client payment"})`,
+        )
+        .join("; ");
+      throw new Error(
+        `Can't send for approval while add-ons are unpaid: ${list}.`,
+      );
+    }
+
     const ct = Math.round(input.ctLiabilityPence);
     if (!Number.isFinite(ct) || ct < 0) {
       throw new Error("CT liability must be zero or more.");

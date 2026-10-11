@@ -413,6 +413,7 @@ export default async function AdminCasePage({
               </h3>
               <div className="mt-4">
                 <OnboardingAnswersPanel
+                  tierId={tier.id as TierId}
                   sections={sectionsForTier(tier.id as TierId)}
                   fields={fieldsForTier(tier.id as TierId)}
                   answers={answers}

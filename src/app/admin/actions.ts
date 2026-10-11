@@ -687,17 +687,18 @@ export async function reassignCaseAction(
   if (fetchErr || !current) throw new Error("Case not found.");
 
   const prevAccountantId = current.accountant_id;
-  const nextStatus =
-    current.status === "draft" || current.status === "submitted"
-      ? "in_review"
-      : current.status;
 
+  // Historical behaviour promoted draft/submitted cases to in_review on
+  // reassign, which was a workaround for the accountant dashboard not
+  // surfacing admin-assigned cases in those statuses. The dashboard
+  // now carries an "Assigned" bucket (see src/app/accountant/page.tsx)
+  // that shows every case where accountant_id = me regardless of
+  // status, so the status flip here is no longer needed — reassignment
+  // is a pure assignment change, status transitions stay with the
+  // accountant via updateCaseStatusAction.
   const { error: updateErr } = await supabase
     .from("cases")
-    .update({
-      accountant_id: newAccountantId,
-      status: nextStatus,
-    })
+    .update({ accountant_id: newAccountantId })
     .eq("id", caseId);
   if (updateErr) throw new Error(updateErr.message);
 

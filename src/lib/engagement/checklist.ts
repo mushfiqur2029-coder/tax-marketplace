@@ -39,16 +39,32 @@ function aliasChecklistTier(tier: TierId): TierId {
 // instead of being generated from plans.ts. If plans.ts ever adds a
 // tier that should take onboarding, both lists need updating.
 const LC_TIER_IDS: TierId[] = ["dormant", "non_vat_reg", "vat_reg"];
-const PERSONAL_TIER_IDS: TierId[] = [
+
+// Personal tier catalogue is split by document-requirement profile.
+// Group A (the seven "straightforward" tiers) carry full upload
+// requirements including P60/P45, P11D, pension / Gift Aid / child
+// benefit / student loan statements. Group B (non-resident landlord
+// + complex international) drops P11D, child benefit, student loan,
+// and demands a Passport only — no driving-licence option. Sections
+// above (A/B/C/D) are Limited Company only; Personal uses Section P
+// with per-field requirements driven by these groups via `requiredFor`
+// + `hiddenForTiers`.
+const PERSONAL_GROUP_A_TIER_IDS: TierId[] = [
   "uber_driver",
   "cis_subcontractor",
   "sole_trader",
   "landlord_small",
-  "non_resident_landlord",
   "gig_worker",
   "freelancer_consultant",
   "landlord_multi",
+];
+const PERSONAL_GROUP_B_TIER_IDS: TierId[] = [
+  "non_resident_landlord",
   "complex_international",
+];
+const PERSONAL_TIER_IDS: TierId[] = [
+  ...PERSONAL_GROUP_A_TIER_IDS,
+  ...PERSONAL_GROUP_B_TIER_IDS,
 ];
 
 /**
@@ -59,8 +75,26 @@ const PERSONAL_TIER_IDS: TierId[] = [
  */
 export type ShowWhen = { fieldId: string; equals: string };
 
+// Tier-level visibility flags shared across every field variant.
+// Kept outside the discriminated union so adding a new kind doesn't
+// require re-declaring them each time.
+//
+//   hiddenForTiers           — hard-hide for these tiers regardless of
+//                              showWhen. Used for Group B dropping
+//                              items 2/9/11, and for driving-licence
+//                              uploads vanishing from Group B entirely.
+//   showWhenBypassForTiers   — ignore the showWhen gate for these
+//                              tiers (field renders unconditionally).
+//                              Used so Group B's passport upload is
+//                              always visible even though sa_id_type
+//                              is hidden for Group B.
+type TierVisibility = {
+  hiddenForTiers?: TierId[];
+  showWhenBypassForTiers?: TierId[];
+};
+
 export type ChecklistField =
-  | {
+  | ({
       id: string;
       section: ChecklistSection;
       label: string;
@@ -70,8 +104,8 @@ export type ChecklistField =
       /** Optional server-side regex. If present, the raw value must match. */
       pattern?: { regex: string; message: string };
       showWhen?: ShowWhen;
-    }
-  | {
+    } & TierVisibility)
+  | ({
       id: string;
       section: ChecklistSection;
       label: string;
@@ -82,8 +116,8 @@ export type ChecklistField =
       /** When the user picks this option, surface a freetext id={id}_other. */
       showOtherOn?: string;
       showWhen?: ShowWhen;
-    }
-  | {
+    } & TierVisibility)
+  | ({
       id: string;
       section: ChecklistSection;
       label: string;
@@ -92,7 +126,7 @@ export type ChecklistField =
       requiredFor: TierId[];
       multi?: boolean;
       showWhen?: ShowWhen;
-    };
+    } & TierVisibility);
 
 export type ChecklistSectionDef = {
   key: ChecklistSection;
@@ -166,12 +200,26 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
     requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
   },
   {
+    // Gates company_utr. If the client isn't registered yet (brand
+    // new company that hasn't received the HMRC welcome letter) we
+    // don't block the engagement on the UTR — the accountant can
+    // guide them through registration later.
+    id: "company_utr_registered",
+    section: "A",
+    label: "Are you registered for a Company UTR yet?",
+    hint: "HMRC posts the 10-digit UTR about 14 days after Companies House incorporation.",
+    kind: "select",
+    options: ["Yes", "No"],
+    requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
+  },
+  {
     id: "company_utr",
     section: "A",
     label: "Company UTR (from HMRC)",
     hint: "10-digit Unique Taxpayer Reference, on your corporation tax letters.",
     kind: "text",
     requiredFor: ["dormant", "non_vat_reg", "vat_reg"],
+    showWhen: { fieldId: "company_utr_registered", equals: "Yes" },
   },
   {
     id: "vat_registration_certificate",
@@ -355,54 +403,120 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
 
   // ---------------- Section P: Personal Self Assessment ----------------
   //
-  // Flat list shared by all nine Personal tiers. UTR and NI proof are
-  // the only required items; everything else is optional. P60/P45 is
-  // visible only when the client answers "Were you employed?" with
-  // "Yes" — same showWhen mechanic used by Section B's ID branch.
+  // Two groups:
+  //   Group A — the seven "straightforward" tiers. Full upload set.
+  //             Identity: Passport OR Driving licence (branched).
+  //   Group B — non-resident landlord + complex international. Drops
+  //             P11D, child benefit, and student loan. Identity:
+  //             Passport only, always visible (no select).
+  //
+  // Every document request is upload-or-"I don't have this": no free-
+  // text input. The "I don't have this" flag is written to a sibling
+  // key `{fieldId}_not_available` in intake_answers so required-
+  // missing calculations skip the field. See src/components/case/
+  // document-uploader.tsx for the UI.
+
+  // -- UTR gating sibling (item 1): mirror of company_utr_registered.
+  {
+    id: "sa_utr_registered",
+    section: "P",
+    label: "Are you registered for Self Assessment yet?",
+    hint: "HMRC assigns a 10-digit UTR after you register. New filers can take 2-4 weeks.",
+    kind: "select",
+    options: ["Yes", "No"],
+    requiredFor: PERSONAL_TIER_IDS,
+  },
   {
     id: "sa_utr",
     section: "P",
     label: "Personal UTR (from HMRC)",
-    hint: "10-digit Unique Taxpayer Reference, on your Self Assessment correspondence. Required to file your return.",
+    hint: "10-digit Unique Taxpayer Reference, on your Self Assessment correspondence.",
     kind: "text",
     requiredFor: PERSONAL_TIER_IDS,
     pattern: {
       regex: "^\\d{10}$",
       message: "UTR must be exactly 10 digits, no spaces.",
     },
+    showWhen: { fieldId: "sa_utr_registered", equals: "Yes" },
   },
   {
     id: "sa_ni_proof",
     section: "P",
     label: "National Insurance proof",
-    hint: "Upload your NI card, letter, or payslip clearly showing your NI number.",
+    hint: "Your NI card, letter, or a payslip clearly showing your NI number.",
     kind: "upload",
     requiredFor: PERSONAL_TIER_IDS,
   },
+
+  // -- Identity: Group A uses a Passport/Driving licence branch;
+  //    Group B is Passport only (sa_id_type + driving-licence slots
+  //    hidden entirely, sa_passport always visible via
+  //    showWhenBypassForTiers).
+  {
+    id: "sa_id_type",
+    section: "P",
+    label: "Which ID are you providing?",
+    kind: "select",
+    options: ["Passport", "Driving licence"],
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    hiddenForTiers: PERSONAL_GROUP_B_TIER_IDS,
+  },
+  {
+    id: "sa_passport",
+    section: "P",
+    label: "Passport (main photo page)",
+    kind: "upload",
+    requiredFor: PERSONAL_TIER_IDS,
+    showWhen: { fieldId: "sa_id_type", equals: "Passport" },
+    // For Group B tiers, sa_id_type doesn't render — the showWhen
+    // can never resolve. Bypass makes passport always visible for
+    // those tiers.
+    showWhenBypassForTiers: PERSONAL_GROUP_B_TIER_IDS,
+  },
+  {
+    id: "sa_driving_licence_front",
+    section: "P",
+    label: "Driving licence (front)",
+    kind: "upload",
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    showWhen: { fieldId: "sa_id_type", equals: "Driving licence" },
+    hiddenForTiers: PERSONAL_GROUP_B_TIER_IDS,
+  },
+  {
+    id: "sa_driving_licence_back",
+    section: "P",
+    label: "Driving licence (back)",
+    kind: "upload",
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    showWhen: { fieldId: "sa_id_type", equals: "Driving licence" },
+    hiddenForTiers: PERSONAL_GROUP_B_TIER_IDS,
+  },
+
+  // -- Income + supporting documents.
   {
     id: "sa_last_year_return",
     section: "P",
     label: "Last year's tax return",
-    hint: "Optional. If you filed last year, uploading a copy helps us pick up where it left off.",
+    hint: "If you filed last year, uploading a copy helps us pick up where it left off.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_TIER_IDS,
   },
   {
     id: "sa_was_employed",
     section: "P",
     label: "Were you employed this tax year?",
-    hint: "Optional. Tells us whether to expect a P60 / P45. You can leave blank if neither applies.",
+    hint: "Tells us whether to expect a P60 / P45.",
     kind: "select",
     options: ["Yes", "No"],
-    requiredFor: [],
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
   },
   {
     id: "sa_p60_p45",
     section: "P",
     label: "P60 and / or P45",
-    hint: "P60 is the year-end summary from an employer; P45 is issued when you leave a job. Upload whichever applies. Multiple allowed.",
+    hint: "P60 is the year-end summary from an employer; P45 is issued when you leave a job. Upload whichever applies.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
     multi: true,
     showWhen: { fieldId: "sa_was_employed", equals: "Yes" },
   },
@@ -410,94 +524,99 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
     id: "sa_p11d",
     section: "P",
     label: "P11D (benefits in kind)",
-    hint: "Optional. Only if your employer issues one for company car, medical, etc.",
+    hint: "If your employer issues one for company car, medical, etc.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    hiddenForTiers: PERSONAL_GROUP_B_TIER_IDS,
   },
   {
     id: "sa_interest_certificates",
     section: "P",
     label: "Bank interest certificates",
-    hint: "Optional. Certificates or statements showing taxable interest earned. Multiple allowed.",
+    hint: "Certificates or statements showing taxable interest earned.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_TIER_IDS,
     multi: true,
   },
   {
     id: "sa_dividend_vouchers",
     section: "P",
     label: "Dividend vouchers",
-    hint: "Optional. Vouchers or statements for any dividends received. Multiple allowed.",
+    hint: "Vouchers or statements for any dividends received.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_TIER_IDS,
     multi: true,
   },
   {
     id: "sa_capital_gains",
     section: "P",
     label: "Capital gains documents",
-    hint: "Optional. Broker statements, completion statements, or crypto exchange CSVs for any disposals. Multiple allowed.",
+    hint: "Broker statements, completion statements, or crypto exchange CSVs for any disposals.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_TIER_IDS,
     multi: true,
   },
   {
     id: "sa_rental_docs",
     section: "P",
     label: "Rental income, expenses & mortgage statements",
-    hint: "Optional. Upload rental statements, expenses receipts, and mortgage interest certificates for any let property. Multiple allowed.",
+    hint: "Rental statements, expenses receipts, and mortgage interest certificates for any let property.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_TIER_IDS,
     multi: true,
   },
   {
     id: "sa_private_pension",
     section: "P",
-    label: "Private pension contributions",
-    hint: "Optional. Amount contributed personally this year and the provider (e.g. Vanguard SIPP, £6,000).",
-    kind: "text",
-    requiredFor: [],
+    label: "Private pension statement",
+    hint: "Pension provider's annual statement or contribution certificate.",
+    kind: "upload",
+    requiredFor: PERSONAL_TIER_IDS,
   },
   {
     id: "sa_gift_aid",
     section: "P",
-    label: "Charitable donations (Gift Aid)",
-    hint: "Optional. Annual total of donations where you ticked Gift Aid. We'll claim the higher-rate top-up for you.",
-    kind: "text",
-    requiredFor: [],
+    label: "Gift Aid certificates",
+    hint: "Charity receipts or year-end summaries for donations where you ticked Gift Aid.",
+    kind: "upload",
+    requiredFor: PERSONAL_TIER_IDS,
+    multi: true,
   },
   {
     id: "sa_child_benefit",
     section: "P",
-    label: "Child benefit received",
-    hint: "Optional. For example: \"Yes, £X per month\" or \"No\". Needed for the High Income Child Benefit Charge if either partner earns over £60k.",
-    kind: "text",
-    requiredFor: [],
+    label: "Child benefit award letter",
+    hint: "The HMRC award letter or an official document confirming the amount.",
+    kind: "upload",
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    hiddenForTiers: PERSONAL_GROUP_B_TIER_IDS,
   },
   {
     id: "sa_overseas",
     section: "P",
     label: "Overseas income and tax paid",
-    hint: "Optional. Upload any foreign income statements and foreign tax paid certificates. Multiple allowed.",
+    hint: "Foreign income statements and foreign tax paid certificates.",
     kind: "upload",
-    requiredFor: [],
+    requiredFor: PERSONAL_TIER_IDS,
     multi: true,
   },
   {
     id: "sa_student_loan",
     section: "P",
-    label: "Student loan position",
-    hint: "Optional. For example: \"Plan 2, approx £18k outstanding\" or \"paid off\".",
-    kind: "text",
-    requiredFor: [],
+    label: "Student loan statement",
+    hint: "The Student Loans Company annual statement.",
+    kind: "upload",
+    requiredFor: PERSONAL_GROUP_A_TIER_IDS,
+    hiddenForTiers: PERSONAL_GROUP_B_TIER_IDS,
   },
   {
     id: "sa_anything_else",
     section: "P",
-    label: "Anything else we should know?",
-    hint: "Optional. One-off events, major life changes, or anything you're unsure about.",
-    kind: "text",
+    label: "Anything else relevant",
+    hint: "Any additional document that might affect your return. Optional.",
+    kind: "upload",
     requiredFor: [],
+    multi: true,
   },
 ];
 
@@ -515,8 +634,17 @@ export function sectionsForTier(tier: TierId): ChecklistSectionDef[] {
 }
 
 export function fieldsForTier(tier: TierId): ChecklistField[] {
+  const t = aliasChecklistTier(tier);
   const visibleSections = new Set(sectionsForTier(tier).map((s) => s.key));
-  return CHECKLIST_FIELDS.filter((f) => visibleSections.has(f.section));
+  return CHECKLIST_FIELDS.filter((f) => {
+    if (!visibleSections.has(f.section)) return false;
+    // Field-level tier hard-hide (new in migration 0063 era for the
+    // Group B Personal split — P11D / child benefit / student loan
+    // vanish for Group B tiers, and the driving-licence slots vanish
+    // for Group B's Passport-only identity path).
+    if (f.hiddenForTiers?.includes(t)) return false;
+    return true;
+  });
 }
 
 // Which fields in the visible-for-this-tier set are required for this
@@ -549,13 +677,37 @@ export function isFieldRequired(
 // `showWhen` references an unanswered question is hidden until that
 // question is answered — which is the right default for conditional
 // branches like Section B's ID type.
+//
+// Tier parameter is optional for back-compat with existing callers;
+// when provided, `showWhenBypassForTiers` can override the showWhen
+// gate (Group B passport is always visible regardless of sa_id_type,
+// which itself is hidden for Group B).
 export function fieldIsVisible(
   field: ChecklistField,
   answers: Record<string, string> | null | undefined,
+  tier?: TierId,
 ): boolean {
   if (!field.showWhen) return true;
+  if (tier && field.showWhenBypassForTiers) {
+    const t = aliasChecklistTier(tier);
+    if (field.showWhenBypassForTiers.includes(t)) return true;
+  }
   const current = answers?.[field.showWhen.fieldId];
   return current === field.showWhen.equals;
+}
+
+// A document-style field counts as "resolved" when the client either
+// uploaded one or ticked "I don't have this". The latter writes a
+// sibling flag `{fieldId}_not_available: "true"` into intake_answers
+// — see src/components/case/document-uploader.tsx + the onboarding
+// server actions. This helper centralises the check so both the
+// client-facing missing-count math and the admin/accountant red-flag
+// badge agree.
+export function isFieldMarkedNotAvailable(
+  fieldId: string,
+  answers: Record<string, string> | null | undefined,
+): boolean {
+  return (answers?.[`${fieldId}_not_available`] ?? "") === "true";
 }
 
 // Fields visible for this tier *and* for the given answers. Use this
@@ -565,20 +717,60 @@ export function visibleFieldsForTier(
   tier: TierId,
   answers: Record<string, string> | null | undefined,
 ): ChecklistField[] {
-  return fieldsForTier(tier).filter((f) => fieldIsVisible(f, answers));
+  return fieldsForTier(tier).filter((f) => fieldIsVisible(f, answers, tier));
+}
+
+// Per-section missing-required count. Admin / accountant case views
+// render a red "incomplete" badge when a section has any required
+// field still unresolved (no upload, no non-empty answer, and the
+// client hasn't ticked "I don't have this"). Fields marked
+// not-available are considered resolved — the badge is for the
+// client's active to-do list, not for admin's chase list (admin sees
+// the not-available flag separately as a "flagged as unavailable"
+// state on the field).
+export function missingRequiredBySection(
+  tier: TierId,
+  answers: Record<string, string> | null | undefined,
+  uploadedKeysBySection: Record<string, Set<string>>,
+  authCodeSet: boolean,
+): Record<ChecklistSection, number> {
+  const out: Record<ChecklistSection, number> = {
+    A: 0,
+    B: 0,
+    C: 0,
+    D: 0,
+    P: 0,
+  };
+  for (const f of requiredFieldsForTierGiven(tier, answers)) {
+    let resolved = false;
+    if (f.kind === "upload") {
+      resolved = uploadedKeysBySection[f.section]?.has(f.id) ?? false;
+    } else if (f.id === ENCRYPTED_FIELD_ID) {
+      resolved = authCodeSet;
+    } else {
+      const v = answers?.[f.id];
+      resolved = !!v && v.trim().length > 0;
+    }
+    if (!resolved) out[f.section] += 1;
+  }
+  return out;
 }
 
 // Required subset of visible fields. The onboarding submit guard calls
 // this with the current intake_answers so a Passport-only path doesn't
-// demand driving-licence uploads, and vice versa.
+// demand driving-licence uploads, and vice versa. Fields the client
+// has marked "I don't have this" are excluded — they're resolved, not
+// missing (see isFieldMarkedNotAvailable).
 export function requiredFieldsForTierGiven(
   tier: TierId,
   answers: Record<string, string> | null | undefined,
 ): ChecklistField[] {
   const t = aliasChecklistTier(tier);
-  return visibleFieldsForTier(tier, answers).filter((f) =>
-    f.requiredFor.includes(t),
-  );
+  return visibleFieldsForTier(tier, answers).filter((f) => {
+    if (!f.requiredFor.includes(t)) return false;
+    if (isFieldMarkedNotAvailable(f.id, answers)) return false;
+    return true;
+  });
 }
 
 // Legacy driving-licence upload key. Before the Passport/Driving-licence

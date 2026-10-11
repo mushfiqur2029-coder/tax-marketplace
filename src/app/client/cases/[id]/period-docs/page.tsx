@@ -20,6 +20,7 @@ import {
   uploadPeriodDocumentAction,
   removePeriodDocumentAction,
   submitPeriodDocsAction,
+  setPeriodDocNotAvailableAction,
 } from "@/app/client/period-docs-actions";
 import { PeriodDocsForm } from "./period-docs-form";
 
@@ -137,6 +138,15 @@ export default async function PeriodDocsPage({
     "use server";
     return submitPeriodDocsAction(id);
   };
+  const setNotAvailable = async (fieldId: string, next: boolean) => {
+    "use server";
+    return setPeriodDocNotAvailableAction(id, fieldId, next);
+  };
+
+  const answersForNa = (caseRow.intake_answers ?? {}) as Record<
+    string,
+    string
+  >;
 
   return (
     <>
@@ -153,12 +163,14 @@ export default async function PeriodDocsPage({
         tierId={tier.id as TierId}
         fields={fields}
         docsByKey={Object.fromEntries(docsByKey)}
+        answers={answersForNa}
         requiredCount={required.length}
         requiredDone={doneCount}
         footer={PERIOD_DOCS_FOOTER_NOTE}
         uploadDoc={uploadDoc}
         removeDoc={removeDoc}
         submit={submit}
+        setNotAvailable={setNotAvailable}
       />
 
       <div className="mt-10">

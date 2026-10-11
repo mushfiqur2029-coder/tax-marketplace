@@ -28,9 +28,10 @@ CLIENT NAME: {{CLIENT_NAME}}
 Client Email: {{CLIENT_EMAIL}}
 Client Number: {{CLIENT_PHONE}}
 
-Accountants: NAFH ACCOUNTANTS LTD
-Platform: STERLING LEDGER ADVISORY LTD
-Trading Name: Sterling Ledger
+Accountant (legal name): SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD, Company number 12636834
+Accountant trading name: NAFH ACCOUNTANTS
+Platform (legal name): STERLING LEDGER ADVISORY LTD
+Platform trading name: Sterling Ledger
 
 Thank you for choosing the Platform and engaging the accountants. This
 Engagement Letter, together with our Terms and Conditions, Refund Policy,

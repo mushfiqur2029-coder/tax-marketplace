@@ -3,7 +3,17 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-export type CasesView = "live" | "queue" | "completed" | "pending";
+// "assigned" surfaces admin-assigned cases (bespoke flow) that are
+// still in draft or submitted — the accountant can see the case the
+// moment it lands, before the client has done their part. Historical
+// behaviour forced status to in_review on assign to make the case
+// visible, which was wrong for a case the client hadn't paid for yet.
+export type CasesView =
+  | "live"
+  | "queue"
+  | "assigned"
+  | "completed"
+  | "pending";
 export type UrgencyFilter = "all" | "safe" | "soon" | "urgent";
 // Fee bands replace the old Personal basic/standard/premium filter.
 // Twelve tiers (nine Personal + three LC flat-fee) don't fit a per-tier
@@ -21,6 +31,7 @@ export type ViewCounts = Record<CasesView, number>;
 const VIEWS: { key: CasesView; label: string }[] = [
   { key: "live", label: "Live" },
   { key: "queue", label: "Queue" },
+  { key: "assigned", label: "Assigned" },
   { key: "completed", label: "Completed" },
   { key: "pending", label: "Pending" },
 ];
