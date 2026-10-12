@@ -1054,6 +1054,7 @@ export async function updateAddonCatalogAction(
 export async function createBespokeCaseFromEnquiryAction(
   enquiryId: string,
   feeGbp: number,
+  depositGbp: number,
   accountantId: string,
   note: string | null,
 ): Promise<ActionResult<{ caseId: string }>> {
@@ -1061,11 +1062,26 @@ export async function createBespokeCaseFromEnquiryAction(
     const me = await requireRole("admin");
     const admin = createAdminClient();
 
-    // Whole-£ input per the admin-UI constraint; integer only.
+    // Whole-£ inputs per the admin-UI constraint; both integers.
+    // Deposit paid up front via Stripe before work starts; balance
+    // (total - deposit) is charged automatically the moment the
+    // client approves the prepared work. 0 < deposit < total so
+    // there's a positive balance to collect at approval - the whole
+    // point of the two-stage flow.
     if (!Number.isInteger(feeGbp) || feeGbp <= 0) {
-      throw new Error("Fee must be a positive whole-£ amount.");
+      throw new Error("Total fee must be a positive whole-£ amount.");
+    }
+    if (!Number.isInteger(depositGbp) || depositGbp <= 0) {
+      throw new Error("Deposit must be a positive whole-£ amount.");
+    }
+    if (depositGbp >= feeGbp) {
+      throw new Error(
+        "Deposit must be less than the total fee so there's a balance to collect on approval.",
+      );
     }
     const feePence = feeGbp * 100;
+    const depositPence = depositGbp * 100;
+    const balancePence = feePence - depositPence;
 
     const { data: enquiry, error: enquiryErr } = await admin
       .from("service_enquiries")
@@ -1110,6 +1126,9 @@ export async function createBespokeCaseFromEnquiryAction(
         segment: "limited_company_vat",
         tier: "vat_plus_accounts_bespoke",
         custom_fee_pence: feePence,
+        deposit_pence: depositPence,
+        balance_pence: balancePence,
+        balance_payment_status: "pending",
         accountant_id: accountantId,
         service_enquiry_id: enquiry.id,
         status: "draft",
@@ -1125,9 +1144,10 @@ export async function createBespokeCaseFromEnquiryAction(
 
     // Auto-close the enquiry — the quote replaces the "awaiting admin"
     // state. Note is appended to admin_notes if provided.
+    const quoteSummary = `[Quote £${feeGbp} (£${depositGbp} deposit + £${feeGbp - depositGbp} balance)]`;
     const closedNote = note?.trim()
-      ? `[Quote £${feeGbp}] ${note.trim()}`
-      : `[Quote £${feeGbp}] Case created.`;
+      ? `${quoteSummary} ${note.trim()}`
+      : `${quoteSummary} Case created.`;
     await admin
       .from("service_enquiries")
       .update({ status: "closed", admin_notes: closedNote })
@@ -1138,7 +1158,7 @@ export async function createBespokeCaseFromEnquiryAction(
       target_user_id: enquiry.client_id,
       admin_id: me.id,
       action: "warning", // reusing existing enum value; no bespoke-case enum yet
-      note: `Bespoke case ${caseId} created for £${feeGbp} assigned to accountant ${accountantId}.${
+      note: `Bespoke case ${caseId} created at £${feeGbp} total (£${depositGbp} deposit + £${feeGbp - depositGbp} balance) assigned to accountant ${accountantId}.${
         note?.trim() ? ` Note: ${note.trim()}` : ""
       }`,
     });
@@ -1148,6 +1168,7 @@ export async function createBespokeCaseFromEnquiryAction(
       clientId: enquiry.client_id,
       caseId,
       feeGbp,
+      depositGbp,
       serviceLabel: tier?.title ?? "bespoke engagement",
       note,
     }).catch((err) =>
@@ -1167,7 +1188,7 @@ export async function createBespokeCaseFromEnquiryAction(
       caseId,
       clientEmail: clientRow?.email ?? "A client",
       tierTitle: tier?.title ?? "bespoke engagement",
-      feeLabel: `£${feeGbp}`,
+      feeLabel: `£${feeGbp} total (£${depositGbp} deposit + £${feeGbp - depositGbp} balance)`,
       isBespoke: true,
     }).catch((err) =>
       console.error("[bespoke case admin notification] failed:", err),

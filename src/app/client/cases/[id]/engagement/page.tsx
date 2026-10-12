@@ -37,7 +37,7 @@ export default async function EngagementPage({
   const { data: caseRow } = await supabase
     .from("cases")
     .select(
-      "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence",
+      "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence, deposit_pence, balance_pence",
     )
     .eq("id", id)
     .single();
@@ -96,12 +96,17 @@ export default async function EngagementPage({
     timeZone: "Europe/London",
   });
 
-  const feeLabel = formatFeeGbp(
-    effectiveFeePence(
-      caseRow as unknown as { custom_fee_pence: number | null },
-      tier,
-    ),
-  );
+  const feeRow = caseRow as unknown as {
+    custom_fee_pence: number | null;
+    deposit_pence: number | null;
+    balance_pence: number | null;
+  };
+  const feeLabel = formatFeeGbp(effectiveFeePence(feeRow, tier));
+  const hasSplit =
+    feeRow.deposit_pence != null &&
+    feeRow.deposit_pence > 0 &&
+    feeRow.balance_pence != null &&
+    feeRow.balance_pence > 0;
   const previewHtml = renderEngagementLetterHtml({
     effectiveDate: todayLong,
     variant: isCompany ? "limited_company" : "personal",
@@ -112,6 +117,8 @@ export default async function EngagementPage({
     clientPhone: clientPhone || "-",
     serviceName: tier.title,
     totalFee: feeLabel,
+    depositFee: hasSplit ? formatFeeGbp(feeRow.deposit_pence!) : null,
+    balanceFee: hasSplit ? formatFeeGbp(feeRow.balance_pence!) : null,
     signatureDataUrl: null,
     signDate: null,
   });

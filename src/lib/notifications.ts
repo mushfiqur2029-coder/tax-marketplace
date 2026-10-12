@@ -664,13 +664,24 @@ export async function insertEnquiryQuotedNotification(params: {
   clientId: string;
   caseId: string;
   feeGbp: number;
+  /**
+   * Optional deposit (whole £). When set, the quote notification
+   * breaks the fee out as "£deposit deposit + £balance on approval"
+   * so the client isn't surprised when checkout only charges the
+   * deposit upfront. Omit for legacy single-fee bespoke cases.
+   */
+  depositGbp?: number;
   serviceLabel: string;
   note: string | null;
 }) {
   const admin = createAdminClient();
   const noteSuffix = params.note?.trim() ? ` Note: ${params.note.trim()}` : "";
+  const splitChunk =
+    typeof params.depositGbp === "number" && params.depositGbp > 0
+      ? ` (£${params.depositGbp} deposit payable now, £${params.feeGbp - params.depositGbp} balance on approval)`
+      : "";
   const message =
-    `Sterling Ledger has prepared a bespoke quote of £${params.feeGbp} for your ${params.serviceLabel} enquiry. ` +
+    `Sterling Ledger has prepared a bespoke quote of £${params.feeGbp}${splitChunk} for your ${params.serviceLabel} enquiry. ` +
     `Review and sign the engagement letter to continue.` +
     noteSuffix;
   const { error } = await admin.from("notifications").insert({

@@ -149,6 +149,7 @@ export default async function AdminEnquiriesPage() {
   const createCase = async (
     enquiryId: string,
     feeGbp: number,
+    depositGbp: number,
     accountantId: string,
     note: string | null,
   ) => {
@@ -156,6 +157,7 @@ export default async function AdminEnquiriesPage() {
     return createBespokeCaseFromEnquiryAction(
       enquiryId,
       feeGbp,
+      depositGbp,
       accountantId,
       note,
     );
@@ -285,6 +287,7 @@ async function EnquiryCard({
   createCase: (
     enquiryId: string,
     feeGbp: number,
+    depositGbp: number,
     accountantId: string,
     note: string | null,
   ) => Promise<import("@/lib/action-result").ActionResult<{ caseId: string }>>;

@@ -4,11 +4,14 @@ import {
   reconcilePaymentAction,
   approveAndFileAction,
   startAddonCheckoutAction,
+  startBalanceCheckoutAction,
   reconcileAddonPaymentAction,
+  reconcileBalancePaymentAction,
   getDocumentSignedUrl,
 } from "@/app/client/actions";
 import { ApproveAndFileButton } from "./approve-and-file-button";
 import { ApprovalReviewCard } from "./approval-review-card";
+import { BalancePayBanner } from "./balance-pay-banner";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
@@ -49,10 +52,14 @@ export default async function CaseDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ paid?: string; addon_paid?: string }>;
+  searchParams: Promise<{
+    paid?: string;
+    addon_paid?: string;
+    balance_paid?: string;
+  }>;
 }) {
   const { id } = await params;
-  const { paid, addon_paid } = await searchParams;
+  const { paid, addon_paid, balance_paid } = await searchParams;
 
   if (paid === "1") {
     try {
@@ -65,6 +72,12 @@ export default async function CaseDetailPage({
   if (addon_paid) {
     try {
       await reconcileAddonPaymentAction(addon_paid);
+    } catch {}
+  }
+  // Same page-load fallback for the bespoke balance payment.
+  if (balance_paid === "1") {
+    try {
+      await reconcileBalancePaymentAction(id);
     } catch {}
   }
 
@@ -252,6 +265,10 @@ export default async function CaseDetailPage({
     "use server";
     return startAddonCheckoutAction(addonId);
   };
+  const startBalanceCheckout = async (caseId: string) => {
+    "use server";
+    return startBalanceCheckoutAction(caseId);
+  };
   const signCaseDocUrl = async (path: string) => {
     "use server";
     return getDocumentSignedUrl(id, path);
@@ -347,6 +364,30 @@ export default async function CaseDetailPage({
           the moment they do, so you can upload the second-stage
           documents.
         </div>
+      ) : null}
+
+      {/* Bespoke two-stage balance due. Rendered BEFORE the Approve
+          card because the client's path is: Approve (which auto-opens
+          the balance checkout) -> pay -> status moves to Filed. If
+          they closed the Stripe tab mid-flow this banner lets them
+          retry without re-clicking Approve (the approval itself has
+          already been recorded by the ApprovalReview card's Approve
+          submit; the status flip to Filed only happens on balance
+          payment success via webhook). */}
+      {data.row.status === "client_approval" &&
+      data.me.status !== "suspended" &&
+      data.row.deposit_pence != null &&
+      data.row.deposit_pence > 0 &&
+      data.row.balance_pence != null &&
+      data.row.balance_pence > 0 &&
+      data.row.balance_payment_status !== "succeeded" ? (
+        <BalancePayBanner
+          caseId={id}
+          balancePence={data.row.balance_pence}
+          depositPence={data.row.deposit_pence}
+          totalPence={data.row.custom_fee_pence ?? 0}
+          startBalanceCheckout={startBalanceCheckout}
+        />
       ) : null}
 
       {data.row.status === "client_approval" && data.me.status !== "suspended" ? (

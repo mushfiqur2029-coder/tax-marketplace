@@ -208,7 +208,7 @@ export async function signEngagementAction(
     const { data: caseRow, error: caseErr } = await supabase
       .from("cases")
       .select(
-        "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence",
+        "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence, deposit_pence, balance_pence",
       )
       .eq("id", caseId)
       .single();
@@ -283,12 +283,19 @@ export async function signEngagementAction(
     // Build the HTML, render the PDF. Render failure is surfaced as a
     // clean error rather than storing a partial file.
     let pdfBytes: Uint8Array;
-    const feeLabel = formatFeeGbp(
-      effectiveFeePence(
-        caseRow as unknown as { custom_fee_pence: number | null },
-        tier,
-      ),
-    );
+    const feeRow = caseRow as unknown as {
+      custom_fee_pence: number | null;
+      deposit_pence: number | null;
+      balance_pence: number | null;
+    };
+    const feeLabel = formatFeeGbp(effectiveFeePence(feeRow, tier));
+    const hasSplit =
+      feeRow.deposit_pence != null &&
+      feeRow.deposit_pence > 0 &&
+      feeRow.balance_pence != null &&
+      feeRow.balance_pence > 0;
+    const depositFee = hasSplit ? formatFeeGbp(feeRow.deposit_pence!) : null;
+    const balanceFee = hasSplit ? formatFeeGbp(feeRow.balance_pence!) : null;
     const letterHtml = renderEngagementLetterHtml({
       effectiveDate: signDate,
       variant: isCompany ? "limited_company" : "personal",
@@ -299,6 +306,8 @@ export async function signEngagementAction(
       clientPhone: clientPhone || "-",
       serviceName: tier.title,
       totalFee: feeLabel,
+      depositFee,
+      balanceFee,
       signatureDataUrl,
       signDate,
     });

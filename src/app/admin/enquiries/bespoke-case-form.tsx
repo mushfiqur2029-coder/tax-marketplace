@@ -13,17 +13,21 @@ type Props = {
   createCase: (
     enquiryId: string,
     feeGbp: number,
+    depositGbp: number,
     accountantId: string,
     note: string | null,
   ) => Promise<ActionResult<{ caseId: string }>>;
 };
 
-// Admin-side form on the enquiry card. Captures a whole-£ fee + an
-// accountant + an optional note, then calls
-// createBespokeCaseFromEnquiryAction. Fee is whole £ only per the
-// product constraint; the server stores it as pence.
+// Admin-side form on the enquiry card. Captures a whole-£ total fee +
+// a whole-£ deposit + an accountant + an optional note, then calls
+// createBespokeCaseFromEnquiryAction. Deposit is paid upfront via
+// Stripe before work starts; the balance (total - deposit) is billed
+// at approval. Fees are whole £ only per the product constraint; the
+// server stores them as pence.
 export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
   const [fee, setFee] = useState<string>("");
+  const [deposit, setDeposit] = useState<string>("");
   const [accountantId, setAccountantId] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -65,11 +69,16 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
   }
 
   const feeNum = Number(fee);
-  const canSubmit =
-    accountantId !== "" &&
-    Number.isInteger(feeNum) &&
-    feeNum > 0 &&
-    !pending;
+  const depositNum = Number(deposit);
+  // Both whole £ > 0, deposit strictly less than total so the balance
+  // is at least £1. Server re-enforces the same rule.
+  const feeValid =
+    Number.isInteger(feeNum) && feeNum > 0;
+  const depositValid =
+    Number.isInteger(depositNum) && depositNum > 0;
+  const splitValid = feeValid && depositValid && depositNum < feeNum;
+  const canSubmit = accountantId !== "" && splitValid && !pending;
+  const balancePreview = splitValid ? feeNum - depositNum : null;
 
   const onSubmit = () => {
     setError(null);
@@ -77,6 +86,7 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
       const res = await createCase(
         enquiryId,
         feeNum,
+        depositNum,
         accountantId,
         note.trim() || null,
       );
@@ -96,13 +106,13 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
       >
         Create case from this enquiry
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr]">
         <label className="block">
           <span
             className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate"
             style={{ fontFamily: "var(--font-mono)" }}
           >
-            Fee (whole £)
+            Total fee (whole £)
           </span>
           <input
             type="number"
@@ -113,6 +123,25 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
             onChange={(e) => setFee(e.target.value)}
             placeholder="e.g. 1500"
             className="input-sl"
+          />
+        </label>
+        <label className="block">
+          <span
+            className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            Deposit (whole £, payable now)
+          </span>
+          <input
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="1"
+            value={deposit}
+            onChange={(e) => setDeposit(e.target.value)}
+            placeholder="e.g. 500"
+            className="input-sl"
+            aria-describedby="bespoke-balance-preview"
           />
         </label>
         <label className="block">
@@ -136,6 +165,25 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
           </select>
         </label>
       </div>
+      <p
+        id="bespoke-balance-preview"
+        className="mt-2 text-xs text-slate"
+      >
+        {balancePreview !== null ? (
+          <>
+            Balance on approval:{" "}
+            <strong className="text-ink">
+              £{balancePreview.toLocaleString("en-GB")}
+            </strong>
+          </>
+        ) : feeValid && depositValid && depositNum >= feeNum ? (
+          <span className="font-medium text-red-700">
+            Deposit must be less than total so there&rsquo;s a balance to collect at approval.
+          </span>
+        ) : (
+          "Deposit charged on sign; balance charged automatically when the client approves the prepared work."
+        )}
+      </p>
       <label className="mt-3 block">
         <span
           className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate"
@@ -171,8 +219,8 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
           {pending ? "Creating…" : "Create case"}
         </SLButton>
         <span className="text-xs text-slate">
-          Enquiry auto-closes. Fee can&rsquo;t be edited after creation. Cancel
-          and re-create if the number is wrong.
+          Enquiry auto-closes. Fee split can&rsquo;t be edited after creation. Cancel
+          and re-create if the numbers are wrong.
         </span>
       </div>
     </div>

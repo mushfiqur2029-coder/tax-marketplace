@@ -11,7 +11,11 @@ import {
   RETIRED_PERSONAL_TIER_IDS,
   type TierId,
 } from "@/lib/plans";
-import { effectiveFeePence } from "@/lib/case/pricing";
+import {
+  effectiveFeePence,
+  upfrontChargePence,
+  formatFeeGbp,
+} from "@/lib/case/pricing";
 import type Stripe from "stripe";
 import { stripe, siteUrl } from "@/lib/stripe";
 import { type ActionResult, fail } from "@/lib/action-result";
@@ -33,7 +37,7 @@ async function assertCaseOwner(caseId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("cases")
-    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status, deadline, is_urgent, urgent_fee_pence, custom_fee_pence, engagement_signed_at")
+    .select("id, client_id, segment, tier, status, intake_answers, stripe_payment_status, deadline, is_urgent, urgent_fee_pence, custom_fee_pence, deposit_pence, balance_pence, balance_payment_status, balance_stripe_checkout_session_id, engagement_signed_at")
     .eq("id", caseId)
     .single();
   if (error || !data) throw new Error("Case not found.");
@@ -234,9 +238,21 @@ export async function startCheckoutAction(
     }
 
     // Build Stripe line items. Plan always; urgent as a separate line so
-    // the receipt reads clearly.
+    // the receipt reads clearly. For bespoke two-stage cases the plan
+    // line is the DEPOSIT only (balance_pence is charged later via a
+    // second checkout fired when the client approves the prepared
+    // work); upfrontChargePence returns deposit_pence in that case
+    // and the full effective fee otherwise.
     const isUrgent = !!caseRow.is_urgent;
-    const planPence = effectiveFeePence(caseRow, tier);
+    const planPence = upfrontChargePence(caseRow, tier);
+    const totalFeePence = effectiveFeePence(caseRow, tier);
+    const isBespokeTwoStage =
+      caseRow.deposit_pence != null && caseRow.deposit_pence > 0;
+    const lineName =
+      isCompany || isPersonal ? tier.title : `${tier.title}. ${seg.title}`;
+    const lineDescription = isBespokeTwoStage
+      ? `Deposit for ${tier.title}. Balance of ${formatFeeGbp(totalFeePence - planPence)} on approval of the prepared work.`
+      : tier.tagline;
     const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
       {
         quantity: 1,
@@ -249,12 +265,11 @@ export async function startCheckoutAction(
             // (e.g. "Dormant company"); adding ". Personal" or
             // ". Limited company & VAT" would be redundant. Retired-
             // personal cases keep the "<tier>. <segment>" form so the
-            // old Stripe receipts stay recognizable.
-            name:
-              isCompany || isPersonal
-                ? tier.title
-                : `${tier.title}. ${seg.title}`,
-            description: tier.tagline,
+            // old Stripe receipts stay recognizable. Bespoke two-stage
+            // tacks "(deposit)" on so the Stripe receipt isn't
+            // mistaken for a full-fee charge.
+            name: isBespokeTwoStage ? `${lineName} (deposit)` : lineName,
+            description: lineDescription,
           },
         },
       },
@@ -347,6 +362,48 @@ export async function reconcilePaymentAction(caseId: string) {
     revalidatePath("/client");
   }
   // Suppress unused-var complaint on caseRow in some setups
+  void supabase;
+}
+
+// -------------------------------------------------------------------------
+// Fallback for the bespoke balance payment. Mirrors
+// reconcilePaymentAction: if the webhook is slow, this page-load
+// poll flips the case to filed. Idempotent via the same status
+// filter the webhook uses, so if the webhook has already fired this
+// is a no-op.
+// -------------------------------------------------------------------------
+export async function reconcileBalancePaymentAction(caseId: string) {
+  const { supabase, caseRow } = await assertCaseOwner(caseId);
+  // Already settled or not in a state that can be reconciled.
+  if (caseRow.status !== "client_approval") return;
+  if (caseRow.balance_payment_status === "succeeded") return;
+  if (!caseRow.balance_stripe_checkout_session_id) return;
+
+  const admin = createAdminClient();
+  const session = await stripe().checkout.sessions.retrieve(
+    caseRow.balance_stripe_checkout_session_id,
+  );
+  if (session.payment_status !== "paid") return;
+
+  await admin
+    .from("cases")
+    .update({
+      balance_payment_status: "succeeded",
+      balance_stripe_payment_id:
+        typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : (session.payment_intent?.id ?? null),
+      balance_paid_at: new Date().toISOString(),
+      status: "filed",
+    })
+    .eq("id", caseId)
+    .eq("status", "client_approval")
+    .neq("balance_payment_status", "succeeded");
+
+  revalidatePath(`/client/cases/${caseId}`);
+  revalidatePath("/client");
+  revalidatePath("/accountant");
+  revalidatePath(`/accountant/cases/${caseId}`);
   void supabase;
 }
 
@@ -504,9 +561,71 @@ export async function approveAndFileAction(
     if (caseRow.status !== "client_approval") {
       throw new Error("This case isn't awaiting your approval right now.");
     }
-    // .select().single() converts a 0-row RLS-filtered result into a
-    // PGRST116 error so we can't silently succeed if the policy blocks the
-    // update.
+
+    // Bespoke two-stage: approving the prepared work triggers the
+    // BALANCE Stripe checkout rather than flipping cases.status to
+    // 'filed' directly. The webhook (api/stripe/webhook) is what
+    // moves client_approval -> filed once the balance payment
+    // settles, same safety shape as the deposit at engagement time.
+    const needsBalance =
+      caseRow.deposit_pence != null &&
+      caseRow.deposit_pence > 0 &&
+      caseRow.balance_pence != null &&
+      caseRow.balance_pence > 0 &&
+      caseRow.balance_payment_status !== "succeeded";
+
+    if (needsBalance) {
+      const tier = await getTier(caseRow.tier);
+      if (!tier) throw new Error("Case is missing tier info.");
+      const base = siteUrl();
+      const session = await stripe().checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "gbp",
+              unit_amount: caseRow.balance_pence!,
+              product_data: {
+                name: `${tier.title} (balance)`,
+                description: `Balance due on approval. Deposit of ${formatFeeGbp(
+                  caseRow.deposit_pence!,
+                )} was paid at engagement.`,
+              },
+            },
+          },
+        ],
+        metadata: {
+          case_id: caseId,
+          payment_kind: "bespoke_balance",
+          tier: tier.id,
+        },
+        // On balance payment success Stripe redirects to the case
+        // page; webhook has already flipped status to 'filed' by
+        // the time the client lands. On cancel we send them back to
+        // the case page which still shows "Balance due" so they can
+        // retry.
+        success_url: `${base}/client/cases/${caseId}?balance_paid=1`,
+        cancel_url: `${base}/client/cases/${caseId}?balance_canceled=1`,
+      });
+
+      // Save session id for webhook reconciliation + the client-side
+      // Pay-balance banner so a late webhook doesn't leave the case
+      // stuck with a stale "pay now" prompt.
+      await supabase
+        .from("cases")
+        .update({ balance_stripe_checkout_session_id: session.id })
+        .eq("id", caseId);
+
+      if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
+      redirect(session.url);
+    }
+
+    // Non-bespoke flow: single-step approval. Transition straight to
+    // 'filed'. .select().single() converts a 0-row RLS-filtered
+    // result into a PGRST116 error so we can't silently succeed if
+    // the policy blocks the update.
     const { data, error } = await supabase
       .from("cases")
       .update({ status: "filed" })
@@ -523,6 +642,79 @@ export async function approveAndFileAction(
     return { ok: true };
   } catch (e) {
     return fail(e, "Approval failed.");
+  }
+}
+
+// -------------------------------------------------------------------------
+// Balance checkout retry. Fires from the "Pay balance" banner that
+// shows on the client case page while a bespoke two-stage case sits
+// at client_approval + balance_payment_status != 'succeeded'. First
+// path through the balance checkout runs inside approveAndFileAction
+// so the client never sees an intermediate screen; this action is
+// the second-chance route for a client who closed the Stripe tab
+// before paying.
+// -------------------------------------------------------------------------
+export async function startBalanceCheckoutAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const { me, supabase, caseRow } = await assertCaseOwner(caseId);
+    assertNotSuspended(me.status, "make payments");
+    if (caseRow.status !== "client_approval") {
+      throw new Error(
+        "This case isn't at the balance-due stage.",
+      );
+    }
+    if (
+      caseRow.balance_pence == null ||
+      caseRow.balance_pence <= 0 ||
+      caseRow.deposit_pence == null
+    ) {
+      throw new Error("This case has no balance to pay.");
+    }
+    if (caseRow.balance_payment_status === "succeeded") {
+      throw new Error("Balance already paid.");
+    }
+
+    const tier = await getTier(caseRow.tier);
+    if (!tier) throw new Error("Case is missing tier info.");
+    const base = siteUrl();
+    const session = await stripe().checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "gbp",
+            unit_amount: caseRow.balance_pence,
+            product_data: {
+              name: `${tier.title} (balance)`,
+              description: `Balance due on approval. Deposit of ${formatFeeGbp(
+                caseRow.deposit_pence,
+              )} was paid at engagement.`,
+            },
+          },
+        },
+      ],
+      metadata: {
+        case_id: caseId,
+        payment_kind: "bespoke_balance",
+        tier: tier.id,
+      },
+      success_url: `${base}/client/cases/${caseId}?balance_paid=1`,
+      cancel_url: `${base}/client/cases/${caseId}?balance_canceled=1`,
+    });
+
+    await supabase
+      .from("cases")
+      .update({ balance_stripe_checkout_session_id: session.id })
+      .eq("id", caseId);
+
+    if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
+    redirect(session.url);
+  } catch (e) {
+    return fail(e, "Could not open the balance payment.");
   }
 }
 

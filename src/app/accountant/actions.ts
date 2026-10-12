@@ -155,6 +155,33 @@ export async function updateCaseStatusAction(
       }
     }
 
+    // Belt-and-braces gate on filed -> complete: any unpaid add-ons
+    // on the case must settle before the accountant can mark it
+    // complete. Add-ons are normally cleared at prepareApprovalAction
+    // (the gate shipped in Item 5 of the previous batch); this
+    // repeat-check catches add-ons raised AFTER client_approval -
+    // uncommon but legal. Balance gate is enforced implicitly: the
+    // case can't reach 'filed' until the balance webhook fires.
+    if (next === "complete") {
+      const admin = createAdminClient();
+      const { data: unpaidAddons } = await admin
+        .from("case_addons")
+        .select("id, description, amount_pence, status")
+        .eq("case_id", caseId)
+        .in("status", ["pending_payment", "pending_admin"]);
+      if (unpaidAddons && unpaidAddons.length > 0) {
+        const list = unpaidAddons
+          .map(
+            (a) =>
+              `£${(a.amount_pence / 100).toFixed(2)} ${a.description} (${a.status === "pending_admin" ? "awaiting admin review" : "awaiting client payment"})`,
+          )
+          .join("; ");
+        throw new Error(
+          `Can't mark complete while add-ons are unpaid: ${list}.`,
+        );
+      }
+    }
+
     const { error } = await supabase
       .from("cases")
       .update({ status: next })

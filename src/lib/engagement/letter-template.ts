@@ -23,6 +23,12 @@ export type EngagementLetterFields = {
   clientPhone: string;
   serviceName: string;        // e.g. "VAT-registered company"
   totalFee: string;           // e.g. "£400"
+  // Bespoke two-stage split. When set the fee panel renders three
+  // lines: total + deposit (payable now) + balance (on approval).
+  // Omit (or null) for the single-line variant used by flat-fee
+  // cases and legacy single-fee bespoke engagements.
+  depositFee?: string | null;  // e.g. "£500"
+  balanceFee?: string | null;  // e.g. "£1,000"
   // Signature embedded in the PDF. Null for the pre-sign in-browser
   // preview, present after the client signs for the stored PDF.
   signatureDataUrl: string | null;
@@ -297,14 +303,28 @@ export function renderEngagementLetterHtml(
   ensuring compliance with applicable legislation.</p>
 
   <h2>5. Fees and Payment Terms</h2>
-  <p>Fees will be agreed through the Platform based on the selected
-  service. This is a one-time, fixed fee, payable in full before work
-  begins. Once paid, the fee is not billed again for this engagement.</p>
+  <p>${
+    f.depositFee && f.balanceFee
+      ? `This bespoke engagement is billed in two stages: a deposit payable now to begin work, and a balance payable at the point you approve the prepared work. The total fee is fixed and not billed again for this engagement once both stages have been paid.`
+      : `Fees will be agreed through the Platform based on the selected service. This is a one-time, fixed fee, payable in full before work begins. Once paid, the fee is not billed again for this engagement.`
+  }</p>
   <div class="fee-panel">
     <div class="row">
       <span>Service</span>
       <span><strong>${esc(f.serviceName)}</strong></span>
     </div>
+    ${
+      f.depositFee && f.balanceFee
+        ? `<div class="row">
+      <span>Deposit (payable now)</span>
+      <span>${esc(f.depositFee)}</span>
+    </div>
+    <div class="row">
+      <span>Balance (payable on approval)</span>
+      <span>${esc(f.balanceFee)}</span>
+    </div>`
+        : ""
+    }
     <div class="row total">
       <span>Total fee</span>
       <span>${esc(f.totalFee)}</span>

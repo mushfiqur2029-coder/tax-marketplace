@@ -362,6 +362,182 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      // Bespoke two-stage balance payment. The deposit used the main
+      // case path above (metadata.payment_kind absent → treat as the
+      // single-fee case charge); the balance is the SECOND payment
+      // on the same case, triggered when the client clicks Approve.
+      // Guarded on metadata.payment_kind so we never conflate the
+      // two for a case that has both.
+      if (session.metadata?.payment_kind === "bespoke_balance" && caseId) {
+        const paid = session.payment_status === "paid";
+        if (!paid) break;
+        const paymentIntentId =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : (session.payment_intent?.id ?? null);
+
+        // Idempotency: scope to the pending-balance window AND the
+        // client_approval status. A webhook retry after the first
+        // success-run can't double-flip because
+        // balance_payment_status will already be 'succeeded', and a
+        // crafted session carrying this kind for an unrelated case
+        // can't advance the status because the client_approval
+        // filter won't match.
+        const { data: flipped, error: flipErr } = await admin
+          .from("cases")
+          .update({
+            balance_payment_status: "succeeded",
+            balance_stripe_payment_id: paymentIntentId,
+            balance_stripe_checkout_session_id: session.id,
+            balance_paid_at: new Date().toISOString(),
+            status: "filed",
+          })
+          .eq("id", caseId)
+          .eq("status", "client_approval")
+          .neq("balance_payment_status", "succeeded")
+          .select("id, accountant_id, client_id");
+        if (flipErr) {
+          return NextResponse.json({ error: flipErr.message }, { status: 500 });
+        }
+
+        if (flipped && flipped.length > 0) {
+          // notify_case_change DB trigger (0013) fires on the
+          // client_approval -> filed status flip, so client +
+          // admins already get the "Case moved to Filed."
+          // notification. Nothing extra needed on the admin side.
+          // The accountant doesn't get status_change from that
+          // trigger (it only fans to client + admins) so push an
+          // explicit note here.
+          const accountantId = flipped[0]?.accountant_id as
+            | string
+            | null
+            | undefined;
+          if (accountantId) {
+            await admin.from("notifications").insert({
+              recipient_id: accountantId,
+              type: "case_status_change" as const,
+              case_id: caseId,
+              message:
+                "Bespoke balance paid and client approved. Case is now Filed. You can submit to HMRC / Companies House.",
+            });
+          }
+
+          // Balance receipt email + branded invoice PDF. Mirrors the
+          // deposit receipt email above; the only differences are the
+          // labels ("balance" instead of "deposit") and the invoice
+          // number (balance_invoice_number assigned by trigger
+          // added in migration 0066). Non-fatal: Stripe retries
+          // would re-fire the webhook but the status filter above
+          // keeps the DB flip idempotent, so a repeat email at
+          // worst means two receipts.
+          try {
+            const { data: freshRow } = await admin
+              .from("cases")
+              .select(
+                "id, client_id, segment, tier, custom_fee_pence, deposit_pence, balance_pence, balance_invoice_number, balance_paid_at, intake_answers",
+              )
+              .eq("id", caseId)
+              .single();
+            if (freshRow) {
+              const { data: client } = await admin
+                .from("users")
+                .select("email")
+                .eq("id", freshRow.client_id)
+                .single();
+              if (client?.email) {
+                const tier = await getTier(freshRow.tier);
+                const balancePence = freshRow.balance_pence ?? 0;
+                const totalFeePence = freshRow.custom_fee_pence ?? 0;
+                const depositPence = freshRow.deposit_pence ?? 0;
+                const balanceLabel = formatFeeGbp(balancePence);
+                const totalLabel = formatFeeGbp(totalFeePence);
+                const depositLabel = formatFeeGbp(depositPence);
+                const paymentReference =
+                  typeof session.payment_intent === "string"
+                    ? session.payment_intent
+                    : (session.payment_intent?.id ?? session.id);
+                const paymentMethod =
+                  await resolvePaymentMethodLabel(session);
+                const paidDateLabel = formatPaidDate(
+                  freshRow.balance_paid_at ?? new Date().toISOString(),
+                );
+                const caseUrl = `${siteUrl().replace(/\/$/, "")}/client/cases/${caseId}`;
+                const items = [
+                  {
+                    description: `${tier?.title ?? freshRow.tier} (balance)`,
+                    unitPricePence: balancePence,
+                  },
+                ];
+                const billing = await resolveInvoiceBillingLines(
+                  admin,
+                  freshRow.client_id,
+                  client.email,
+                  freshRow.segment,
+                  (freshRow.intake_answers ?? null) as Record<
+                    string,
+                    string
+                  > | null,
+                );
+                const invoiceAttachment = freshRow.balance_invoice_number
+                  ? await buildInvoiceAttachment({
+                      invoiceNumber: freshRow.balance_invoice_number,
+                      billingPrimary: billing.primary,
+                      billingSecondary: billing.secondary,
+                      paidDateLabel,
+                      paymentReference,
+                      paymentMethod,
+                      items,
+                    })
+                  : null;
+                if (!freshRow.balance_invoice_number) {
+                  console.error(
+                    `[webhook] case ${caseId} has no balance_invoice_number after balance paid; skipping attachment.`,
+                  );
+                }
+                const html =
+                  `<p>Hi,</p>` +
+                  `<p>Thanks. Your Sterling Ledger balance payment for <strong>${escapeHtml(
+                    tier?.title ?? freshRow.tier,
+                  )}</strong> has been received, and your case is now <strong>filed</strong>. Your accountant will submit it to HMRC / Companies House.</p>` +
+                  `<ul>` +
+                  `<li>Balance invoice no: ${escapeHtml(freshRow.balance_invoice_number ?? "(unavailable)")}</li>` +
+                  `<li>Service: ${escapeHtml(tier?.title ?? freshRow.tier)} (balance)</li>` +
+                  `<li>Balance paid: ${escapeHtml(balanceLabel)}</li>` +
+                  `<li>Deposit previously paid: ${escapeHtml(depositLabel)}</li>` +
+                  `<li>Total fee: ${escapeHtml(totalLabel)}</li>` +
+                  `<li>Reference: ${escapeHtml(paymentReference)}</li>` +
+                  `</ul>` +
+                  `<p>Your balance invoice is attached as a PDF.</p>` +
+                  `<p>You can track status any time at <a href="${caseUrl}">${caseUrl}</a>.</p>` +
+                  `<p>Sterling Ledger</p>`;
+                await sendEmail({
+                  to: client.email,
+                  bcc: slNotifyBcc(),
+                  subject: `Balance payment received · ${freshRow.balance_invoice_number ?? "your case"} · filed`,
+                  html,
+                  attachments: invoiceAttachment
+                    ? [
+                        {
+                          base64: invoiceAttachment.base64,
+                          filename: invoiceAttachment.filename,
+                          mimeType: "application/pdf",
+                        },
+                      ]
+                    : undefined,
+                  logCaseId: caseId,
+                });
+              }
+            }
+          } catch (mailErr) {
+            console.error(
+              "[webhook] balance receipt email threw:",
+              mailErr,
+            );
+          }
+        }
+        break;
+      }
+
       if (!caseId) break;
 
       // Only flip to paid+submitted on a fully-paid session.
@@ -422,7 +598,7 @@ export async function POST(req: NextRequest) {
           const { data: row } = await admin
             .from("cases")
             .select(
-              "id, client_id, segment, tier, custom_fee_pence, urgent_fee_pence, is_urgent, invoice_number, submitted_at, intake_answers",
+              "id, client_id, segment, tier, custom_fee_pence, deposit_pence, balance_pence, urgent_fee_pence, is_urgent, invoice_number, submitted_at, intake_answers",
             )
             .eq("id", caseId)
             .single();
@@ -434,16 +610,35 @@ export async function POST(req: NextRequest) {
               .single();
             if (client?.email) {
               const tier = await getTier(row.tier);
-              const feePence = effectiveFeePence(row, tier);
+              // Bespoke two-stage: THIS invoice is for the deposit
+              // only. upfrontChargePence returns deposit_pence when
+              // set, which was the actual Stripe charge amount.
+              // Non-bespoke / legacy bespoke: effectiveFeePence
+              // (same as deposit here because deposit_pence is null).
+              const feePence =
+                row.deposit_pence != null && row.deposit_pence > 0
+                  ? row.deposit_pence
+                  : effectiveFeePence(row, tier);
               const urgentFeePence = row.urgent_fee_pence ?? 0;
               const totalPence = feePence + urgentFeePence;
               const totalLabel = formatFeeGbp(totalPence);
+              const isBespokeDeposit =
+                row.deposit_pence != null &&
+                row.deposit_pence > 0 &&
+                row.balance_pence != null &&
+                row.balance_pence > 0;
+              const balanceLabel = isBespokeDeposit
+                ? formatFeeGbp(row.balance_pence!)
+                : null;
               const caseUrl = `${siteUrl().replace(/\/$/, "")}/client/cases/${caseId}`;
 
               // Build the invoice PDF. Line items mirror the user's
               // spec: the service name as the first line, then an
               // explicit "Urgent filing" line only when the case
               // was actually urgent — no empty "Adjustments" row.
+              // Bespoke two-stage deposit tags the service line with
+              // "(deposit)" so the client's PDF archive reads
+              // clearly across both invoices on the same case.
               const paymentReference =
                 typeof session.payment_intent === "string"
                   ? session.payment_intent
@@ -455,7 +650,9 @@ export async function POST(req: NextRequest) {
               );
               const items = [
                 {
-                  description: tier?.title ?? row.tier,
+                  description: isBespokeDeposit
+                    ? `${tier?.title ?? row.tier} (deposit)`
+                    : (tier?.title ?? row.tier),
                   unitPricePence: feePence,
                 },
               ];
@@ -491,21 +688,28 @@ export async function POST(req: NextRequest) {
 
               const html =
                 `<p>Hi,</p>` +
-                `<p>Thanks. Your Sterling Ledger payment for <strong>${escapeHtml(
+                `<p>Thanks. Your Sterling Ledger ${isBespokeDeposit ? "deposit " : ""}payment for <strong>${escapeHtml(
                   tier?.title ?? row.tier,
                 )}</strong> has been received, and your case is now <strong>submitted</strong>.</p>` +
                 `<ul>` +
                 `<li>Invoice no: ${escapeHtml(row.invoice_number ?? "(unavailable)")}</li>` +
-                `<li>Service: ${escapeHtml(tier?.title ?? row.tier)}</li>` +
-                `<li>Total paid: ${escapeHtml(totalLabel)}` +
+                `<li>Service: ${escapeHtml(tier?.title ?? row.tier)}${isBespokeDeposit ? " (deposit)" : ""}</li>` +
+                `<li>${isBespokeDeposit ? "Deposit paid" : "Total paid"}: ${escapeHtml(totalLabel)}` +
                 (row.is_urgent && urgentFeePence > 0
                   ? ` (includes urgent fee ${escapeHtml(formatFeeGbp(urgentFeePence))})`
                   : "") +
                 `</li>` +
+                (isBespokeDeposit && balanceLabel
+                  ? `<li>Balance due on approval: ${escapeHtml(balanceLabel)}</li>`
+                  : "") +
                 `<li>Reference: ${escapeHtml(paymentReference)}</li>` +
                 `</ul>` +
                 `<p>Your invoice is attached as a PDF for your records.</p>` +
-                `<p>Our accountants will pick up the case and reach out with the next step, usually a short list of documents to upload.</p>` +
+                `<p>Our accountants will pick up the case and reach out with the next step, usually a short list of documents to upload.${
+                  isBespokeDeposit
+                    ? ` The balance of ${balanceLabel} will be payable the moment you approve the prepared work.`
+                    : ""
+                }</p>` +
                 `<p>You can track status any time at ` +
                 `<a href="${caseUrl}">${caseUrl}</a>.</p>` +
                 `<p>Sterling Ledger</p>`;

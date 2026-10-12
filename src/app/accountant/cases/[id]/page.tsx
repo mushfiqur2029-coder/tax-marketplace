@@ -516,6 +516,44 @@ export default async function AccountantCaseDetailPage({
           main-content columns stack full-width — chat used to drop to
           ~400px at 1024 which was unusable, and the lg breakpoint fired
           too eagerly for a side-column layout. */}
+      {/* Bespoke two-stage balance due. Shows AFTER the client has
+          clicked Approve. The webhook flips cases.status to 'filed'
+          when the balance checkout succeeds, so this banner is the
+          "waiting on the client to pay their balance" state the
+          accountant sees in between. No action for the accountant;
+          they can't submit to HMRC / Companies House until the
+          webhook moves the status on. */}
+      {data.row.status === "client_approval" &&
+      data.row.deposit_pence != null &&
+      data.row.deposit_pence > 0 &&
+      data.row.balance_pence != null &&
+      data.row.balance_pence > 0 &&
+      data.row.balance_payment_status !== "succeeded" ? (
+        <div
+          className="mb-6 rounded-xl border p-5"
+          style={{
+            background: "rgba(220,38,38,0.08)",
+            borderColor: "rgba(220,38,38,0.45)",
+          }}
+          role="status"
+        >
+          <div
+            className="text-[11px] font-semibold uppercase tracking-widest"
+            style={{ fontFamily: "var(--font-mono)", color: "#B91C1C" }}
+          >
+            Balance unpaid, blocking submission
+          </div>
+          <div className="mt-1 text-sm font-semibold text-ink">
+            Client approved the prepared work but hasn&apos;t paid the balance of £
+            {(data.row.balance_pence / 100).toLocaleString("en-GB")} yet.
+          </div>
+          <p className="mt-1 text-xs text-slate">
+            You can&apos;t submit to HMRC / Companies House until the balance
+            payment lands. The client has a Pay button on their case page.
+          </p>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_1fr]">
         <div className="space-y-6">
           {data.row.engagement_signed_at ? (
