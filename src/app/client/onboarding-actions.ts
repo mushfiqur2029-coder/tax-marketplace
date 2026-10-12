@@ -101,21 +101,23 @@ export async function saveChecklistAnswersAction(
     let encryptPlain: string | null = null;
 
     for (const field of visibleFields) {
+      // "I don't have this" sibling flag — valid for every field
+      // kind, not just uploads. Lives as `{fieldId}_not_available`
+      // in the intake_answers JSONB. requiredFieldsForTierGiven in
+      // checklist.ts treats a field with `_not_available = "true"`
+      // as resolved rather than missing. Capture once up top so the
+      // kind-specific branches below only handle the actual value.
+      const naRaw = formData.get(`${field.id}_not_available`);
+      if (naRaw != null) {
+        const naVal = String(naRaw).trim();
+        patch[`${field.id}_not_available`] =
+          naVal === "true" ? "true" : "";
+      }
+
       if (field.kind === "upload") {
         // Uploads live in case_documents, so we don't write the field
-        // itself into intake_answers. BUT the client can tick
-        // "I don't have this" on an upload slot — that state lives
-        // as a sibling boolean key `{fieldId}_not_available` in the
-        // intake_answers JSONB. The required-missing calculations
-        // (see requiredFieldsForTierGiven in checklist.ts) treat a
-        // field with `_not_available = "true"` as resolved rather
-        // than missing.
-        const naRaw = formData.get(`${field.id}_not_available`);
-        if (naRaw != null) {
-          const naVal = String(naRaw).trim();
-          patch[`${field.id}_not_available`] =
-            naVal === "true" ? "true" : "";
-        }
+        // itself into intake_answers. The sibling not-available flag
+        // (captured above) is the only thing this branch produces.
         continue;
       }
 

@@ -295,6 +295,10 @@ export function OnboardingForm({
                 );
               }
               if (field.kind === "date") {
+                const notAvailable = isFieldMarkedNotAvailable(
+                  field.id,
+                  answers,
+                );
                 return (
                   <DateRow
                     key={field.id}
@@ -303,6 +307,19 @@ export function OnboardingForm({
                     value={answers[field.id] ?? ""}
                     saving={savingField === field.id}
                     error={fieldError[field.id] ?? null}
+                    notAvailable={notAvailable}
+                    onToggleNotAvailable={async (next) => {
+                      setAnswers((prev) => ({
+                        ...prev,
+                        [`${field.id}_not_available`]: next ? "true" : "",
+                      }));
+                      const fd = new FormData();
+                      fd.set(
+                        `${field.id}_not_available`,
+                        next ? "true" : "",
+                      );
+                      await saveAnswers(fd);
+                    }}
                     onChange={(v) =>
                       setAnswers((a) => ({ ...a, [field.id]: v }))
                     }
@@ -549,6 +566,8 @@ function DateRow({
   value,
   saving,
   error,
+  notAvailable,
+  onToggleNotAvailable,
   onChange,
   onBlurSave,
 }: {
@@ -557,19 +576,46 @@ function DateRow({
   value: string;
   saving: boolean;
   error: string | null;
+  // Parallel of the upload "I don't have this" mechanism, applied to
+  // date fields that the client may legitimately not know (e.g. VAT
+  // effective date on a company whose paperwork is misplaced). Ticking
+  // disables the input and marks the field resolved via the shared
+  // `{fieldId}_not_available` flag so missingRequiredBySection and the
+  // accountant panel's "Flagged as unavailable" pill treat it the same
+  // as an unticked upload.
+  notAvailable: boolean;
+  onToggleNotAvailable: (next: boolean) => void | Promise<void>;
   onChange: (v: string) => void;
   onBlurSave: (v: string) => void;
 }) {
   return (
-    <label className="block max-w-xs">
+    <div className="max-w-xs">
       <FieldLabel label={field.label} required={required} hint={field.hint} />
       <input
         type="date"
-        value={value}
+        value={notAvailable ? "" : value}
+        disabled={notAvailable}
         onChange={(e) => onChange(e.target.value)}
         onBlur={(e) => onBlurSave(e.target.value)}
-        className="input-sl mt-2"
+        className={
+          "input-sl mt-2 " + (notAvailable ? "opacity-60" : "")
+        }
       />
+      <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs text-slate">
+        <input
+          type="checkbox"
+          checked={notAvailable}
+          onChange={(e) => onToggleNotAvailable(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0"
+        />
+        <span>
+          <span className="font-semibold">I don&rsquo;t know this date</span>
+          <span className="mt-0.5 block">
+            Tick this if the date isn&rsquo;t to hand. Your accountant
+            will confirm it with you.
+          </span>
+        </span>
+      </label>
       {saving ? (
         <p className="mt-1 text-[11px] text-slate">Saving…</p>
       ) : null}
@@ -578,7 +624,7 @@ function DateRow({
           {error}
         </p>
       ) : null}
-    </label>
+    </div>
   );
 }
 
