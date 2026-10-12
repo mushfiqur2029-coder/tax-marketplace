@@ -134,6 +134,27 @@ export async function updateCaseStatusAction(
       throw new Error(`Can't go from ${current} to ${next}.`);
     }
 
+    // Attachment-required gate on prepared -> client_approval. The LC
+    // flow has prepareApprovalAction which enforces the two specific
+    // keys (ACCOUNTANT_ANNUAL_ACCOUNTS_KEY + ACCOUNTANT_CT600_KEY);
+    // this generic transition is what Personal tiers use, and without
+    // this check a client could be dropped into the approval screen
+    // with nothing concrete to review. Require at least one accountant-
+    // uploaded case_documents row before the status flip.
+    if (next === "client_approval") {
+      const { count: ownUploadCount, error: cntErr } = await supabase
+        .from("case_documents")
+        .select("id", { count: "exact", head: true })
+        .eq("case_id", caseId)
+        .eq("uploaded_by", me.id);
+      if (cntErr) throw new Error(cntErr.message);
+      if ((ownUploadCount ?? 0) === 0) {
+        throw new Error(
+          "Attach at least one document (the prepared return, the accounts, or whatever the client is approving) before sending for client approval. An empty approval screen has nothing to approve.",
+        );
+      }
+    }
+
     const { error } = await supabase
       .from("cases")
       .update({ status: next })
