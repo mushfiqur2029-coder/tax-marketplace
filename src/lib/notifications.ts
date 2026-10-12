@@ -518,7 +518,7 @@ export async function insertEnquiryStatusNotification(params: {
   const admin = createAdminClient();
   const message =
     params.status === "contacted"
-      ? `Someone from Sterling Ledger has picked up your ${params.serviceLabel} enquiry — look out for an email or call.`
+      ? `Someone from Sterling Ledger has picked up your ${params.serviceLabel} enquiry. Look out for an email or call.`
       : `Your ${params.serviceLabel} enquiry has been closed. If you weren't expecting that, reply to our last email and we'll take another look.`;
   const { error } = await admin.from("notifications").insert({
     recipient_id: params.clientId,
@@ -608,7 +608,7 @@ export async function insertCasePaymentStalledNotification(params: {
       ? "abandoned checkout"
       : "declined payment";
   const message =
-    `Payment stalled — ${params.clientName} <${params.clientEmail}> ` +
+    `Payment stalled: ${params.clientName} <${params.clientEmail}> ` +
     `${verb} on ${params.serviceLabel}. Case is still draft; will be ` +
     `swept by the stale-draft deletion if no retry.`;
   const { error } = await admin.from("notifications").insert(
@@ -659,7 +659,7 @@ export async function insertAddonPaymentStalledNotification(params: {
       ? params.addonDescription.slice(0, 57) + "..."
       : params.addonDescription;
   const message =
-    `Add-on payment stalled — ${params.clientName} ` +
+    `Add-on payment stalled: ${params.clientName} ` +
     `<${params.clientEmail}> ${verb} on ${money} ${short}.`;
   const { error } = await admin.from("notifications").insert(
     admins.map((a) => ({

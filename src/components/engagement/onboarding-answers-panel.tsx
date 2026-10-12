@@ -182,7 +182,7 @@ export function OnboardingAnswersPanel({
                 <span>
                   <strong>Not yet registered for a {utrNotRegistered}.</strong>{" "}
                   Consider adding a UTR-registration service as a chargeable
-                  add-on — the client is relying on us to get them set up with
+                  add-on. The client is relying on us to get them set up with
                   HMRC.
                 </span>
               </div>

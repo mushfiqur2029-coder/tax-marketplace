@@ -109,7 +109,7 @@ export default async function EngagementPage({
     companyNumber,
     clientName,
     clientEmail: me.email,
-    clientPhone: clientPhone || "—",
+    clientPhone: clientPhone || "-",
     serviceName: tier.title,
     totalFee: feeLabel,
     signatureDataUrl: null,
@@ -171,7 +171,7 @@ export default async function EngagementPage({
           }}
         >
           Your profile doesn&rsquo;t have a contact number yet. You can
-          still sign; the letter will show &ldquo;—&rdquo; for the number.
+          still sign; the letter will show a dash for the number.
           We&apos;d recommend adding one on your{" "}
           <Link
             href="/client/profile"

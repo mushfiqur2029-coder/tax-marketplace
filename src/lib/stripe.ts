@@ -60,7 +60,7 @@ export function siteUrl(): string {
   // localhost links to real inboxes.
   if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
     console.error(
-      "[siteUrl] NEXT_PUBLIC_SITE_URL unset in a Vercel deployment and VERCEL_URL also missing — falling back to localhost. Fix the env var before more emails go out.",
+      "[siteUrl] NEXT_PUBLIC_SITE_URL unset in a Vercel deployment and VERCEL_URL also missing. Falling back to localhost. Fix the env var before more emails go out.",
     );
   }
   return "http://localhost:3000";

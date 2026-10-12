@@ -408,7 +408,7 @@ export function renderInvoiceHtml(d: InvoiceData): string {
   </section>
 
   <div class="footer">
-    Thank you — this invoice is a receipt for a payment that has
+    Thank you. This invoice is a receipt for a payment that has
     already settled. No further action is required.
   </div>
 

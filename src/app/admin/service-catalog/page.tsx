@@ -27,7 +27,7 @@ export default async function AdminServiceCatalogPage() {
       <AdminPageHeader
         eyebrow="Admin console"
         title="Service catalog"
-        description="Edit the display copy + price for every service the client wizard and marketing site sells. New tiers still need a code change — this page only edits what's already here. Price edits do NOT affect existing cases: every case snapshots its fee at creation (cases.custom_fee_pence)."
+        description="Edit the display copy + price for every service the client wizard and marketing site sells. New tiers still need a code change. This page only edits what's already here. Price edits do NOT affect existing cases: every case snapshots its fee at creation (cases.custom_fee_pence)."
       />
 
       <div className="space-y-10">

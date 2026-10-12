@@ -296,7 +296,7 @@ export async function signEngagementAction(
       companyNumber,
       clientName,
       clientEmail: me.email,
-      clientPhone: clientPhone || "—",
+      clientPhone: clientPhone || "-",
       serviceName: tier.title,
       totalFee: feeLabel,
       signatureDataUrl,

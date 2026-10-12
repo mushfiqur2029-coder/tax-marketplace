@@ -33,7 +33,7 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
   if (accountants.length === 0) {
     return (
       <div className="mt-4 rounded-xl border border-dashed border-line bg-cloud/40 p-4 text-sm text-slate">
-        No approved accountants yet — approve one before quoting bespoke cases.
+        No approved accountants yet. Approve one before quoting bespoke cases.
       </div>
     );
   }
@@ -171,7 +171,7 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
           {pending ? "Creating…" : "Create case"}
         </SLButton>
         <span className="text-xs text-slate">
-          Enquiry auto-closes. Fee can&rsquo;t be edited after creation — cancel
+          Enquiry auto-closes. Fee can&rsquo;t be edited after creation. Cancel
           and re-create if the number is wrong.
         </span>
       </div>

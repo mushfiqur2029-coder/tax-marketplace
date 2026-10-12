@@ -175,7 +175,7 @@ export function EnquiryForm({
         </h2>
         <p className="mt-2 text-sm text-slate">
           After you submit, you&rsquo;ll be able to pick a 15-minute slot
-          with us right here — no leaving this page. You&rsquo;ll get a
+          with us right here, no leaving this page. You&rsquo;ll get a
           video call link and a calendar invite as soon as you book.
         </p>
       </section>
@@ -297,7 +297,7 @@ function ConfirmationCard({
                 {booked.meetLink}
               </a>
               <p className="mt-2 text-xs text-slate">
-                Save this link — it&rsquo;s what you&rsquo;ll use to join the
+                Save this link. It&rsquo;s what you&rsquo;ll use to join the
                 call at the booked time.
               </p>
             </div>
@@ -319,7 +319,7 @@ function ConfirmationCard({
             <strong className="text-ink">{serviceTitle}</strong>.{" "}
             {bookingEnabled ? (
               <>
-                Pick a 15-minute slot below — you&rsquo;ll see your video
+                Pick a 15-minute slot below. You&rsquo;ll see your video
                 call link right away and we&rsquo;ll follow up by email at{" "}
                 <strong>{contactEmail}</strong>.
               </>

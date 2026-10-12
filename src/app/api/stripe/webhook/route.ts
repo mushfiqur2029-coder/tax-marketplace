@@ -314,7 +314,7 @@ export async function POST(req: NextRequest) {
 
                 const html =
                   `<p>Hi,</p>` +
-                  `<p>Thanks — your Sterling Ledger add-on payment of ` +
+                  `<p>Thanks. Your Sterling Ledger add-on payment of ` +
                   `<strong>${escapeHtml(chargeLabel)}</strong> has been received.</p>` +
                   `<ul>` +
                   `<li>Invoice no: ${escapeHtml(paidAddon.invoice_number ?? "(unavailable)")}</li>` +
@@ -491,7 +491,7 @@ export async function POST(req: NextRequest) {
 
               const html =
                 `<p>Hi,</p>` +
-                `<p>Thanks — your Sterling Ledger payment for <strong>${escapeHtml(
+                `<p>Thanks. Your Sterling Ledger payment for <strong>${escapeHtml(
                   tier?.title ?? row.tier,
                 )}</strong> has been received, and your case is now <strong>submitted</strong>.</p>` +
                 `<ul>` +
@@ -505,7 +505,7 @@ export async function POST(req: NextRequest) {
                 `<li>Reference: ${escapeHtml(paymentReference)}</li>` +
                 `</ul>` +
                 `<p>Your invoice is attached as a PDF for your records.</p>` +
-                `<p>Our accountants will pick up the case and reach out with the next step — usually a short list of documents to upload.</p>` +
+                `<p>Our accountants will pick up the case and reach out with the next step, usually a short list of documents to upload.</p>` +
                 `<p>You can track status any time at ` +
                 `<a href="${caseUrl}">${caseUrl}</a>.</p>` +
                 `<p>Sterling Ledger</p>`;
@@ -677,7 +677,7 @@ export async function POST(req: NextRequest) {
             `<p>Hi,</p>` +
             `<p>${headline}. Your case for <strong>${escapeHtml(
               serviceLabel,
-            )}</strong> is still a <strong>draft</strong> — nothing has been charged to your card.</p>` +
+            )}</strong> is still a <strong>draft</strong>. Nothing has been charged to your card.</p>` +
             `<p>You can retry payment any time at ` +
             `<a href="${caseUrl}">${caseUrl}</a>.</p>` +
             `<p><strong>Heads up:</strong> if payment isn't completed within ` +
@@ -690,8 +690,8 @@ export async function POST(req: NextRequest) {
             bcc: slNotifyBcc(),
             subject:
               reason === "expired"
-                ? `Checkout expired — your ${serviceLabel} case is still draft`
-                : `Payment didn't go through — your ${serviceLabel} case is still draft`,
+                ? `Checkout expired. Your ${serviceLabel} case is still draft`
+                : `Payment didn't go through. Your ${serviceLabel} case is still draft`,
             html,
             logCaseId: caseId,
           });

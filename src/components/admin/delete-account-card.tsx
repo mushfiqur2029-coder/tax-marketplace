@@ -182,7 +182,7 @@ export function DeleteAccountCard({
             </h3>
             <p className="mt-2 text-sm text-slate">
               This permanently deletes{" "}
-              <strong className="text-ink">{targetEmail}</strong> — auth
+              <strong className="text-ink">{targetEmail}</strong>: auth
               record, {roleLabel} profile, and everything cascading from
               the user row.
             </p>

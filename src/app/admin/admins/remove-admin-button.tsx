@@ -101,7 +101,7 @@ export function RemoveAdminButton({
         </h3>
         <p className="mt-2 text-sm text-slate">
           This permanently deletes{" "}
-          <strong className="text-ink">{targetEmail}</strong> — auth record,
+          <strong className="text-ink">{targetEmail}</strong>: auth record,
           admin profile, and all admin history. The audit trail of actions
           they took is preserved (attributed to a deleted user).
         </p>

@@ -414,14 +414,14 @@ function CompanyIdentityReadonly({
       {hasAny ? (
         <>
           <div className="mt-1 text-base font-semibold text-ink">
-            {name || "—"}
+            {name || "-"}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate">
             <span
               className="rounded bg-cloud px-1.5 py-0.5 font-semibold text-ink"
               style={{ fontFamily: "var(--font-mono)" }}
             >
-              {number || "—"}
+              {number || "-"}
             </span>
             {statusLabel ? (
               <span

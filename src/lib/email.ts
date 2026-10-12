@@ -363,14 +363,14 @@ export async function sendEmailViaGmail(
   const hasScope = await hasGmailSendScope();
   if (!hasScope) {
     console.error(
-      `[email] gmail skipped (stored token has no gmail.send scope — reconsent required) to=${params.to}` +
+      `[email] gmail skipped (stored token has no gmail.send scope, reconsent required) to=${params.to}` +
         (params.logCaseId ? ` case=${params.logCaseId}` : ""),
     );
     return {
       ok: true,
       skipped: true,
       reason:
-        "stored OAuth token has no gmail.send scope — reconsent via /api/auth/google/connect",
+        "stored OAuth token has no gmail.send scope. Reconsent via /api/auth/google/connect",
     };
   }
   const token = await readRefreshToken();

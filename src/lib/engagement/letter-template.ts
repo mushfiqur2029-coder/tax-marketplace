@@ -81,7 +81,7 @@ export function renderEngagementLetterHtml(
     ? `<img class="signature" alt="Client signature" src="${esc(f.signatureDataUrl)}" />`
     : `<div class="signature-placeholder">Awaiting signature</div>`;
 
-  const signDateBlock = f.signDate ? esc(f.signDate) : "—";
+  const signDateBlock = f.signDate ? esc(f.signDate) : "-";
 
   const variant: EngagementLetterVariant = f.variant ?? "limited_company";
   // Parties block differs by variant. Personal has no company name /
@@ -99,8 +99,8 @@ export function renderEngagementLetterHtml(
     <dt>Platform (legal name)</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
     <dt>Platform trading name</dt><dd>Sterling Ledger</dd>`
       : `
-    <dt>Company Name</dt><dd>${esc(f.companyName) || "—"}</dd>
-    <dt>Company Number</dt><dd>${esc(f.companyNumber) || "—"}</dd>
+    <dt>Company Name</dt><dd>${esc(f.companyName) || "-"}</dd>
+    <dt>Company Number</dt><dd>${esc(f.companyNumber) || "-"}</dd>
     <dt>Director Name</dt><dd>${esc(f.clientName)}</dd>
     <dt>Director Email</dt><dd>${esc(f.clientEmail)}</dd>
     <dt>Director Number</dt><dd>${esc(f.clientPhone)}</dd>

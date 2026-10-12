@@ -604,7 +604,7 @@ export async function deleteStaleDraftCaseAction(
     }
     if (row.stripe_payment_status === "succeeded") {
       throw new Error(
-        "This draft shows a succeeded payment on record. Refusing to delete — reconcile the payment first.",
+        "This draft shows a succeeded payment on record. Refusing to delete. Reconcile the payment first.",
       );
     }
 

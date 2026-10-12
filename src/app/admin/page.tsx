@@ -444,7 +444,7 @@ function StaleDraftIntro({ callerIsPrimary }: { callerIsPrimary: boolean }) {
         color: "#8a5c05",
       }}
     >
-      <strong className="font-semibold">Stale drafts</strong> — cases started
+      <strong className="font-semibold">Stale drafts</strong>: cases started
       more than {STALE_DRAFT_DAYS} days ago that never completed payment.
       {callerIsPrimary ? (
         <>

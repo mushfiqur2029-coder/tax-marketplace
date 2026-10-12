@@ -318,7 +318,7 @@ function ProfileRow({
         {label}
       </dt>
       <dd className={"text-ink " + (multiline ? "whitespace-pre-line" : "")}>
-        {value?.trim() ? value : <span className="text-slate italic">—</span>}
+        {value?.trim() ? value : <span className="text-slate italic">-</span>}
       </dd>
     </div>
   );
