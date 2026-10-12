@@ -716,6 +716,36 @@ export function visibleFieldsForTier(
   return fieldsForTier(tier).filter((f) => fieldIsVisible(f, answers, tier));
 }
 
+// Is a single field "resolved" for the purposes of the per-field
+// red/green indicator on the client form AND the per-section badge
+// math below? A field is resolved when:
+//   - upload: at least one case_documents row at this requirement_key, OR
+//     the client ticked "I don't have this"
+//   - encrypted auth code: the encrypted blob is set on the case row
+//   - text/select/date: a non-empty answer, OR "I don't have this"/
+//     "I don't know" ticked
+// Not-required fields always count as resolved (there's no red state
+// to signal). Mirrors the inner loop of missingRequiredBySection, kept
+// as a standalone helper so client-form row components can show the
+// same per-field green check / red dot without re-deriving the rule.
+export function isFieldResolved(opts: {
+  field: ChecklistField;
+  tier: TierId;
+  answers: Record<string, string> | null | undefined;
+  uploadedKeysForSection: Set<string> | undefined;
+  authCodeSet: boolean;
+}): boolean {
+  const { field, tier, answers, uploadedKeysForSection, authCodeSet } = opts;
+  if (!isFieldRequired(tier, field)) return true;
+  if (isFieldMarkedNotAvailable(field.id, answers)) return true;
+  if (field.kind === "upload") {
+    return uploadedKeysForSection?.has(field.id) ?? false;
+  }
+  if (field.id === ENCRYPTED_FIELD_ID) return authCodeSet;
+  const v = answers?.[field.id];
+  return !!v && v.trim().length > 0;
+}
+
 // Per-section missing-required count. Admin / accountant case views
 // render a red "incomplete" badge when a section has any required
 // field still unresolved (no upload, no non-empty answer, and the

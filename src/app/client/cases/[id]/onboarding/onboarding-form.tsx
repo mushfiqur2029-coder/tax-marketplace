@@ -13,7 +13,10 @@ import {
   fieldIsVisible,
   isFieldRequired,
   isFieldMarkedNotAvailable,
+  isFieldResolved,
+  missingRequiredBySection,
   type ChecklistField,
+  type ChecklistSection,
   type ChecklistSectionDef,
 } from "@/lib/engagement/checklist";
 
@@ -78,6 +81,11 @@ export function OnboardingForm({
   // this" (via DocumentUploader's checkbox → {fieldId}_not_available
   // in answers) are considered resolved: they don't count towards
   // required-missing, so the submit button isn't blocked by them.
+  //
+  // Per-section + per-question badges below reuse the same math as
+  // the accountant panel (missingRequiredBySection) so what the
+  // client sees as missing is exactly what will show as missing to
+  // the accountant on submit.
   const visibleFields = fields.filter((f) => fieldIsVisible(f, answers, tierId));
   const requiredFields = visibleFields.filter((f) => {
     if (!isFieldRequired(tierId, f)) return false;
@@ -92,6 +100,32 @@ export function OnboardingForm({
     return !!v && v.trim().length > 0;
   }).length;
   const pct = requiredCount === 0 ? 100 : Math.round((doneCount / requiredCount) * 100);
+
+  // Per-section + per-question resolution math. uploadedBySection is
+  // keyed by section letter and groups the uploaded requirement_keys
+  // for that section — missingRequiredBySection + isFieldResolved
+  // read from this shape.
+  const uploadedBySection: Record<string, Set<string>> = {};
+  for (const f of fields) uploadedBySection[f.section] ??= new Set();
+  for (const [key, docs] of Object.entries(docsByKey)) {
+    if (docs.length === 0) continue;
+    const f = fields.find((x) => x.id === key);
+    if (f) uploadedBySection[f.section]?.add(key);
+  }
+  const missingBySection = missingRequiredBySection(
+    tierId,
+    answers,
+    uploadedBySection,
+    authCodeSet,
+  );
+  const resolvedFor = (field: ChecklistField) =>
+    isFieldResolved({
+      field,
+      tier: tierId,
+      answers,
+      uploadedKeysForSection: uploadedBySection[field.section],
+      authCodeSet,
+    });
 
   // Legacy driving-licence uploads: before the Passport vs Driving-
   // licence branch landed, the Driving licence slot had a single
@@ -181,7 +215,10 @@ export function OnboardingForm({
         </div>
       </div>
 
-      {sections.map((section) => (
+      {sections.map((section) => {
+        const sectionMissing =
+          missingBySection[section.key as ChecklistSection] ?? 0;
+        return (
         <section key={section.key} className="card-sl p-6 sm:p-8">
           <div className="mb-4 flex items-baseline justify-between gap-3">
             <h2
@@ -192,6 +229,30 @@ export function OnboardingForm({
                 ? section.title
                 : `Section ${section.key}: ${section.title}`}
             </h2>
+            {sectionMissing > 0 ? (
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                style={{
+                  background: "rgba(220,38,38,0.10)",
+                  color: "#B91C1C",
+                  fontFamily: "var(--font-mono)",
+                }}
+                title="Required items still needed"
+              >
+                {sectionMissing} to do
+              </span>
+            ) : (
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                style={{
+                  background: "rgba(19,217,160,0.14)",
+                  color: "#0E9E77",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                Complete
+              </span>
+            )}
           </div>
           <div className="space-y-5">
             {/* Section A opens with the Company identity captured at
@@ -227,6 +288,7 @@ export function OnboardingForm({
                     key={field.id}
                     field={field}
                     required={required}
+                    resolved={resolvedFor(field)}
                     docs={docsByKey[field.id] ?? []}
                     notAvailable={notAvailable}
                     onToggleNotAvailable={async (next) => {
@@ -270,6 +332,7 @@ export function OnboardingForm({
                       key={field.id}
                       field={field}
                       required={required}
+                      resolved={resolvedFor(field)}
                       alreadySet={authCodeSet}
                       draft={authCodeDraft}
                       setDraft={setAuthCodeDraft}
@@ -284,6 +347,7 @@ export function OnboardingForm({
                     key={field.id}
                     field={field}
                     required={required}
+                    resolved={resolvedFor(field)}
                     value={answers[field.id] ?? ""}
                     saving={savingField === field.id}
                     error={fieldError[field.id] ?? null}
@@ -304,6 +368,7 @@ export function OnboardingForm({
                     key={field.id}
                     field={field}
                     required={required}
+                    resolved={resolvedFor(field)}
                     value={answers[field.id] ?? ""}
                     saving={savingField === field.id}
                     error={fieldError[field.id] ?? null}
@@ -333,6 +398,7 @@ export function OnboardingForm({
                   key={field.id}
                   field={field}
                   required={required}
+                  resolved={resolvedFor(field)}
                   value={answers[field.id] ?? ""}
                   otherValue={answers[`${field.id}_other`] ?? ""}
                   saving={savingField === field.id}
@@ -370,7 +436,8 @@ export function OnboardingForm({
             ) : null}
           </div>
         </section>
-      ))}
+        );
+      })}
 
       <p className="rounded-xl border border-line bg-paper p-4 text-sm text-slate">
         {footer}
@@ -487,10 +554,16 @@ function FieldLabel({
   label,
   required,
   hint,
+  resolved,
 }: {
   label: string;
   required: boolean;
   hint?: string;
+  // Per-question indicator next to the Required pill. Only shown
+  // when the field is required: green check means resolved (uploaded,
+  // answered, or "I don't have this" ticked); red dot means still
+  // needed. Optional fields have no dot — nothing to signal.
+  resolved?: boolean;
 }) {
   return (
     <div>
@@ -510,6 +583,26 @@ function FieldLabel({
         >
           {required ? "Required" : "Optional"}
         </span>
+        {required && resolved === true ? (
+          <span
+            aria-label="Done"
+            title="Done"
+            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+            style={{ background: "rgba(19,217,160,0.18)", color: "#0E9E77" }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </span>
+        ) : null}
+        {required && resolved === false ? (
+          <span
+            aria-label="Still needed"
+            title="Still needed"
+            className="inline-block h-2 w-2 shrink-0 rounded-full"
+            style={{ background: "#B91C1C" }}
+          />
+        ) : null}
       </div>
       {hint ? <p className="mt-0.5 text-xs text-slate">{hint}</p> : null}
     </div>
@@ -519,6 +612,7 @@ function FieldLabel({
 function TextRow({
   field,
   required,
+  resolved,
   value,
   saving,
   error,
@@ -527,6 +621,7 @@ function TextRow({
 }: {
   field: ChecklistField;
   required: boolean;
+  resolved: boolean;
   value: string;
   saving: boolean;
   error: string | null;
@@ -535,7 +630,7 @@ function TextRow({
 }) {
   return (
     <label className="block">
-      <FieldLabel label={field.label} required={required} hint={field.hint} />
+      <FieldLabel label={field.label} required={required} hint={field.hint} resolved={resolved} />
       <input
         type="text"
         value={value}
@@ -563,6 +658,7 @@ function TextRow({
 function DateRow({
   field,
   required,
+  resolved,
   value,
   saving,
   error,
@@ -573,6 +669,7 @@ function DateRow({
 }: {
   field: ChecklistField;
   required: boolean;
+  resolved: boolean;
   value: string;
   saving: boolean;
   error: string | null;
@@ -590,7 +687,7 @@ function DateRow({
 }) {
   return (
     <div className="max-w-xs">
-      <FieldLabel label={field.label} required={required} hint={field.hint} />
+      <FieldLabel label={field.label} required={required} hint={field.hint} resolved={resolved} />
       <input
         type="date"
         value={notAvailable ? "" : value}
@@ -631,6 +728,7 @@ function DateRow({
 function SelectRow({
   field,
   required,
+  resolved,
   value,
   otherValue,
   saving,
@@ -641,6 +739,7 @@ function SelectRow({
 }: {
   field: ChecklistField;
   required: boolean;
+  resolved: boolean;
   value: string;
   otherValue: string;
   saving: boolean;
@@ -653,7 +752,7 @@ function SelectRow({
   const showOther = field.showOtherOn && value === field.showOtherOn;
   return (
     <div>
-      <FieldLabel label={field.label} required={required} hint={field.hint} />
+      <FieldLabel label={field.label} required={required} hint={field.hint} resolved={resolved} />
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -691,6 +790,7 @@ function SelectRow({
 function AuthCodeRow({
   field,
   required,
+  resolved,
   alreadySet,
   draft,
   setDraft,
@@ -700,6 +800,7 @@ function AuthCodeRow({
 }: {
   field: ChecklistField;
   required: boolean;
+  resolved: boolean;
   alreadySet: boolean;
   draft: string;
   setDraft: (v: string) => void;
@@ -709,7 +810,7 @@ function AuthCodeRow({
 }) {
   return (
     <div>
-      <FieldLabel label={field.label} required={required} hint={field.hint} />
+      <FieldLabel label={field.label} required={required} hint={field.hint} resolved={resolved} />
       {alreadySet ? (
         <p className="mt-2 flex items-center gap-2 text-sm text-ink">
           <span
@@ -832,6 +933,7 @@ function LegacyDrivingLicenceBlock({
 function UploadRow({
   field,
   required,
+  resolved,
   docs,
   notAvailable,
   onToggleNotAvailable,
@@ -842,6 +944,7 @@ function UploadRow({
 }: {
   field: ChecklistField;
   required: boolean;
+  resolved: boolean;
   docs: UploadedDoc[];
   notAvailable: boolean;
   onToggleNotAvailable: (next: boolean) => void | Promise<void>;
@@ -921,7 +1024,7 @@ function UploadRow({
 
   return (
     <div>
-      <FieldLabel label={field.label} required={required} hint={field.hint} />
+      <FieldLabel label={field.label} required={required} hint={field.hint} resolved={resolved} />
       {uploaderHidden ? null : (
         <div className="mt-2">
           <DocumentUploader

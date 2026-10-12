@@ -115,14 +115,55 @@ export function PeriodDocsForm({
       </div>
 
       <section className="card-sl p-6 sm:p-8">
+        <div className="mb-4 flex items-baseline justify-between gap-3">
+          <h2
+            className="text-lg font-semibold text-ink"
+            style={{ fontFamily: "var(--font-heading)" }}
+          >
+            Upload period documents
+          </h2>
+          {requiredCount === 0 || doneCount >= requiredCount ? (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{
+                background: "rgba(19,217,160,0.14)",
+                color: "#0E9E77",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              Complete
+            </span>
+          ) : (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{
+                background: "rgba(220,38,38,0.10)",
+                color: "#B91C1C",
+                fontFamily: "var(--font-mono)",
+              }}
+              title="Required items still needed"
+            >
+              {requiredCount - doneCount} to do
+            </span>
+          )}
+        </div>
         <div className="space-y-5">
-          {fields.map((field) => (
+          {fields.map((field) => {
+            const required = isFieldRequired(tierId, field);
+            const notAvailable = isFieldMarkedNotAvailable(field.id, answers);
+            const docCount = docsByKey[field.id]?.length ?? 0;
+            // Mirrors the inner resolution logic for upload rows in
+            // requiredPeriodDocFieldsForCase: resolved when uploaded OR
+            // marked not-available. Only shown when field is required.
+            const resolved = required && (docCount > 0 || notAvailable);
+            return (
             <PeriodUploadRow
               key={field.id}
               field={field}
-              required={isFieldRequired(tierId, field)}
+              required={required}
+              resolved={resolved}
               docs={docsByKey[field.id] ?? []}
-              notAvailable={isFieldMarkedNotAvailable(field.id, answers)}
+              notAvailable={notAvailable}
               onToggleNotAvailable={async (next) => {
                 // Optimistic update so the drop zone fades
                 // immediately; the server catches up in parallel.
@@ -149,7 +190,8 @@ export function PeriodDocsForm({
               uploadDoc={uploadDoc}
               removeDoc={removeDoc}
             />
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -187,6 +229,7 @@ export function PeriodDocsForm({
 function PeriodUploadRow({
   field,
   required,
+  resolved,
   docs,
   notAvailable,
   onToggleNotAvailable,
@@ -197,6 +240,7 @@ function PeriodUploadRow({
 }: {
   field: ChecklistField;
   required: boolean;
+  resolved: boolean;
   docs: UploadedDoc[];
   notAvailable: boolean;
   onToggleNotAvailable: (next: boolean) => void | Promise<void>;
@@ -277,6 +321,26 @@ function PeriodUploadRow({
           >
             {required ? "Required" : "Optional"}
           </span>
+          {required && resolved ? (
+            <span
+              aria-label="Done"
+              title="Done"
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+              style={{ background: "rgba(19,217,160,0.18)", color: "#0E9E77" }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </span>
+          ) : null}
+          {required && !resolved ? (
+            <span
+              aria-label="Still needed"
+              title="Still needed"
+              className="inline-block h-2 w-2 shrink-0 rounded-full"
+              style={{ background: "#B91C1C" }}
+            />
+          ) : null}
         </div>
         {field.hint ? (
           <p className="mt-0.5 text-xs text-slate">{field.hint}</p>
