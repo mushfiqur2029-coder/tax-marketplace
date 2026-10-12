@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "@/lib/action-result";
+import { CameraCaptureModal } from "@/components/case/camera-capture-modal";
 
 type Props = {
   action: (fd: FormData) => Promise<ActionResult>;
@@ -107,13 +108,26 @@ export function DocumentUploader({
   hideNotAvailableToggle = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // Second hidden input for the camera-capture button. Separate from
-  // the file picker so the attribute (`capture="environment"`) stays
-  // local to that button — otherwise desktop users see weird camera
-  // prompts and mobile users don't get both choices.
+  // Second hidden input for the camera-capture button. Only used on
+  // browsers where getUserMedia isn't available (older iOS Safari,
+  // locked-down work laptops). Modern paths route through
+  // CameraCaptureModal below, which gets a real webcam preview on
+  // desktop and the normal mobile rear camera on phones.
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<PendingItem[]>([]);
   const [dragDepth, setDragDepth] = useState(0);
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  // Feature-detect getUserMedia on mount. Can't detect at render
+  // (SSR has no navigator) so we start false and flip to true in an
+  // effect. False means we route through the hidden file-input
+  // fallback that already works on every mobile browser.
+  const [canUseGetUserMedia, setCanUseGetUserMedia] = useState(false);
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCanUseGetUserMedia(true);
+    }
+  }, []);
 
   const addFiles = useCallback(
     (files: File[]) => {
@@ -300,13 +314,17 @@ export function DocumentUploader({
           </button>
           <button
             type="button"
-            onClick={() => cameraRef.current?.click()}
+            onClick={() => {
+              // Modal path for anywhere getUserMedia works (every
+              // modern desktop + mobile browser over https/localhost).
+              // The hidden <input capture="environment"> fallback
+              // handles the rest — older iOS Safari, embedded
+              // webviews, restricted work browsers.
+              if (canUseGetUserMedia) setCameraModalOpen(true);
+              else cameraRef.current?.click();
+            }}
             className="btn-sl btn-sl-outline"
             disabled={anyUploading || dropZoneDisabled}
-            // On mobile, this opens the camera. On desktop, it opens
-            // the file picker (any image). The label matches the
-            // mobile-first interpretation since that's where it earns
-            // its keep.
             aria-label="Take a photo of this document"
           >
             {/* camera icon */}
@@ -440,6 +458,12 @@ export function DocumentUploader({
           </p>
         </div>
       ) : null}
+
+      <CameraCaptureModal
+        open={cameraModalOpen}
+        onClose={() => setCameraModalOpen(false)}
+        onCapture={(file) => addFiles([file])}
+      />
     </div>
   );
 }

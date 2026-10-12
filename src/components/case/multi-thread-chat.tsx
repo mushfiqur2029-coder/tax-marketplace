@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { SLButton } from "@/components/sl-button";
+import { CameraCaptureModal } from "@/components/case/camera-capture-modal";
 import { formatTime } from "@/lib/format";
 import type { MessageChannel } from "@/app/messages";
 import type { ActionResult } from "@/lib/action-result";
@@ -289,13 +290,23 @@ function ChatView({
   const [dragDepth, setDragDepth] = useState(0);
   const [pending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  // Second file input for the camera-capture button. Separate from
-  // the general attach input so capture="environment" stays local to
-  // that button; a shared input would prompt desktop users for a
-  // camera even when they just wanted to pick a file.
+  // Fallback-only file input for the camera-capture button. When
+  // getUserMedia is available (every modern browser over https or
+  // localhost) we open CameraCaptureModal below instead so the user
+  // gets a real live preview on desktop. This input is only reached
+  // on older iOS Safari, embedded webviews, or locked-down work
+  // browsers that don't expose mediaDevices.
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const [canUseGetUserMedia, setCanUseGetUserMedia] = useState(false);
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCanUseGetUserMedia(true);
+    }
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -538,7 +549,10 @@ function ChatView({
           </button>
           <button
             type="button"
-            onClick={() => cameraInputRef.current?.click()}
+            onClick={() => {
+              if (canUseGetUserMedia) setCameraModalOpen(true);
+              else cameraInputRef.current?.click();
+            }}
             aria-label="Take a photo"
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line text-navy-deep hover:border-sky/50 hover:bg-sky/5"
           >
@@ -584,6 +598,11 @@ function ChatView({
           </p>
         </div>
       ) : null}
+      <CameraCaptureModal
+        open={cameraModalOpen}
+        onClose={() => setCameraModalOpen(false)}
+        onCapture={(file) => addFiles([file])}
+      />
     </div>
   );
 }
