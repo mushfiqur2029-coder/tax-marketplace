@@ -19,7 +19,10 @@ import {
   URGENT_FEE_PENCE,
   validateDeadline,
 } from "@/lib/working-days";
-import { insertAddonPaidNotification } from "@/lib/notifications";
+import {
+  insertAddonPaidNotification,
+  insertCaseCreatedAdminNotification,
+} from "@/lib/notifications";
 
 export type { ActionResult };
 
@@ -159,6 +162,17 @@ export async function createCaseAction(
       .single();
 
     if (error || !data) throw new Error(error?.message ?? "Could not create case.");
+
+    // Admin visibility on new case. Fire-and-forget - a notification
+    // failure must not block the client from reaching the engagement
+    // letter.
+    await insertCaseCreatedAdminNotification({
+      caseId: data.id,
+      clientEmail: me.email ?? "A client",
+      tierTitle: tierDef.title,
+      feeLabel: `£${(quotedFeePence / 100).toFixed(0)}`,
+      isBespoke: false,
+    });
 
     revalidatePath("/client");
     // Both Personal and Limited Company go through the engagement letter

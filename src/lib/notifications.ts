@@ -25,7 +25,9 @@ export type NotificationType =
   | "enquiry_closed"
   | "enquiry_quoted"
   | "case_payment_stalled"
-  | "addon_payment_stalled";
+  | "addon_payment_stalled"
+  | "case_created"
+  | "onboarding_submitted";
 
 export type NotificationRow = {
   id: string;
@@ -92,6 +94,16 @@ function logNotifyError(
 
 // Server-side notification writes used by the entry points that don't have a
 // DB trigger (profile change submissions and withdrawal flows).
+
+// Fetches admin user ids once per call. Used to fan out any admin-
+// facing notification. Separate helper so every call site shares the
+// same shape and we don't drift query details across the file.
+async function listAdminIds(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<string[]> {
+  const { data } = await admin.from("users").select("id").eq("role", "admin");
+  return (data ?? []).map((a: { id: string }) => a.id);
+}
 
 export async function insertProfileChangeNotifications(params: {
   submitterEmail: string;
@@ -322,13 +334,90 @@ export async function insertAddonPaidNotification(params: {
     params.description.length > 60
       ? params.description.slice(0, 57) + "..."
       : params.description;
-  const { error } = await admin.from("notifications").insert({
-    recipient_id: params.accountantId,
-    type: "addon_paid" as const,
-    case_id: params.caseId,
-    message: `Client paid £${(params.amountPence / 100).toFixed(2)} for ${short}.`,
-  });
+  const adminIds = await listAdminIds(admin);
+  const money = `£${(params.amountPence / 100).toFixed(2)}`;
+  const rows = [
+    {
+      recipient_id: params.accountantId,
+      type: "addon_paid" as const,
+      case_id: params.caseId,
+      message: `Client paid ${money} for ${short}.`,
+    },
+    ...adminIds.map((id) => ({
+      recipient_id: id,
+      type: "addon_paid" as const,
+      case_id: params.caseId,
+      message: `Client paid ${money} for ${short}.`,
+    })),
+  ];
+  const { error } = await admin.from("notifications").insert(rows);
   logNotifyError({ type: "addon_paid", caseId: params.caseId }, error);
+}
+
+// Admin visibility on new cases. Fires on both the self-serve wizard
+// (createCaseAction) and the admin-created bespoke flow
+// (createBespokeCaseFromEnquiryAction) so admin sees the case the
+// moment it exists, not only when payment lands and the DB trigger's
+// status_changed branch kicks in.
+export async function insertCaseCreatedAdminNotification(params: {
+  caseId: string;
+  clientEmail: string;
+  tierTitle: string;
+  feeLabel: string | null;
+  isBespoke: boolean;
+}) {
+  const admin = createAdminClient();
+  const adminIds = await listAdminIds(admin);
+  if (adminIds.length === 0) return;
+  const feeChunk = params.feeLabel ? ` at ${params.feeLabel}` : "";
+  const sourceChunk = params.isBespoke ? " (bespoke engagement)" : "";
+  const { error } = await admin.from("notifications").insert(
+    adminIds.map((id) => ({
+      recipient_id: id,
+      type: "case_created" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} opened a new ${params.tierTitle} case${feeChunk}${sourceChunk}.`,
+    })),
+  );
+  logNotifyError(
+    {
+      type: "case_created",
+      caseId: params.caseId,
+      recipientCount: adminIds.length,
+    },
+    error,
+  );
+}
+
+// Admin visibility on the onboarding-submitted milestone. The DB
+// trigger only fires on cases.status changes; writing
+// onboarding_submitted_at by itself doesn't flip status, so admin
+// would otherwise learn about the submission only when the
+// accountant moves the case on.
+export async function insertOnboardingSubmittedAdminNotification(params: {
+  caseId: string;
+  clientEmail: string;
+  tierTitle: string;
+}) {
+  const admin = createAdminClient();
+  const adminIds = await listAdminIds(admin);
+  if (adminIds.length === 0) return;
+  const { error } = await admin.from("notifications").insert(
+    adminIds.map((id) => ({
+      recipient_id: id,
+      type: "onboarding_submitted" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} submitted onboarding for their ${params.tierTitle} case.`,
+    })),
+  );
+  logNotifyError(
+    {
+      type: "onboarding_submitted",
+      caseId: params.caseId,
+      recipientCount: adminIds.length,
+    },
+    error,
+  );
 }
 
 // Fires when the accountant enters the accounting period dates on a
@@ -361,12 +450,22 @@ export async function insertPeriodDocsSubmittedNotification(params: {
   clientEmail: string;
 }) {
   const admin = createAdminClient();
-  const { error } = await admin.from("notifications").insert({
-    recipient_id: params.accountantId,
-    type: "period_docs_submitted" as const,
-    case_id: params.caseId,
-    message: `${params.clientEmail} uploaded their period documents. Ready for accounts prep.`,
-  });
+  const adminIds = await listAdminIds(admin);
+  const rows = [
+    {
+      recipient_id: params.accountantId,
+      type: "period_docs_submitted" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} uploaded their period documents. Ready for accounts prep.`,
+    },
+    ...adminIds.map((id) => ({
+      recipient_id: id,
+      type: "period_docs_submitted" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} submitted period documents.`,
+    })),
+  ];
+  const { error } = await admin.from("notifications").insert(rows);
   logNotifyError(
     { type: "period_docs_submitted", caseId: params.caseId },
     error,
@@ -401,12 +500,22 @@ export async function insertVatDocsSubmittedNotification(params: {
   periodLabel: string;
 }) {
   const admin = createAdminClient();
-  const { error } = await admin.from("notifications").insert({
-    recipient_id: params.accountantId,
-    type: "vat_docs_submitted" as const,
-    case_id: params.caseId,
-    message: `${params.clientEmail} submitted VAT documents for ${params.periodLabel}. Ready to prepare the return.`,
-  });
+  const adminIds = await listAdminIds(admin);
+  const rows = [
+    {
+      recipient_id: params.accountantId,
+      type: "vat_docs_submitted" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} submitted VAT documents for ${params.periodLabel}. Ready to prepare the return.`,
+    },
+    ...adminIds.map((id) => ({
+      recipient_id: id,
+      type: "vat_docs_submitted" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} submitted VAT documents for ${params.periodLabel}.`,
+    })),
+  ];
+  const { error } = await admin.from("notifications").insert(rows);
   logNotifyError(
     { type: "vat_docs_submitted", caseId: params.caseId },
     error,
@@ -438,12 +547,22 @@ export async function insertVatFiledNotification(params: {
   periodLabel: string;
 }) {
   const admin = createAdminClient();
-  const { error } = await admin.from("notifications").insert({
-    recipient_id: params.accountantId,
-    type: "vat_filed" as const,
-    case_id: params.caseId,
-    message: `${params.clientEmail} approved and filed VAT for ${params.periodLabel}. Next cycle is open.`,
-  });
+  const adminIds = await listAdminIds(admin);
+  const rows = [
+    {
+      recipient_id: params.accountantId,
+      type: "vat_filed" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} approved and filed VAT for ${params.periodLabel}. Next cycle is open.`,
+    },
+    ...adminIds.map((id) => ({
+      recipient_id: id,
+      type: "vat_filed" as const,
+      case_id: params.caseId,
+      message: `${params.clientEmail} approved and filed VAT for ${params.periodLabel}.`,
+    })),
+  ];
+  const { error } = await admin.from("notifications").insert(rows);
   logNotifyError({ type: "vat_filed", caseId: params.caseId }, error);
 }
 

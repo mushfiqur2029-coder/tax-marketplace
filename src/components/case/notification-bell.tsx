@@ -476,5 +476,9 @@ function typeLabel(t: NotificationType): string {
     case "case_payment_stalled":
     case "addon_payment_stalled":
       return "Payment stall";
+    case "case_created":
+      return "New case";
+    case "onboarding_submitted":
+      return "Onboarding";
   }
 }

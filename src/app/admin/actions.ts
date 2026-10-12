@@ -10,6 +10,7 @@ import {
   insertAccountantApprovalNotification,
   insertAddonReadyToPayNotification,
   insertAddonReviewDecisionNotification,
+  insertCaseCreatedAdminNotification,
   insertEnquiryQuotedNotification,
 } from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
@@ -1151,6 +1152,25 @@ export async function createBespokeCaseFromEnquiryAction(
       note,
     }).catch((err) =>
       console.error("[bespoke case notification] failed:", err),
+    );
+    // Admin fan-out for the created case (the quote-to-client
+    // notification above goes only to the client). The acting admin
+    // sees their own notification too, which is intentional - the
+    // audit trail is more useful if every admin sees every case
+    // creation, regardless of who created it.
+    const { data: clientRow } = await admin
+      .from("users")
+      .select("email")
+      .eq("id", enquiry.client_id)
+      .maybeSingle();
+    await insertCaseCreatedAdminNotification({
+      caseId,
+      clientEmail: clientRow?.email ?? "A client",
+      tierTitle: tier?.title ?? "bespoke engagement",
+      feeLabel: `£${feeGbp}`,
+      isBespoke: true,
+    }).catch((err) =>
+      console.error("[bespoke case admin notification] failed:", err),
     );
 
     revalidatePath("/admin/enquiries");

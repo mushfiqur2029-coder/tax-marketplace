@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
 import { type TierId } from "@/lib/plans";
 import { getTier } from "@/lib/service-catalog";
+import { insertOnboardingSubmittedAdminNotification } from "@/lib/notifications";
 import {
   CHECKLIST_FIELDS,
   ENCRYPTED_FIELD_ID,
@@ -359,7 +360,7 @@ export async function submitChecklistAction(
   caseId: string,
 ): Promise<ActionResult> {
   try {
-    const { supabase, admin, caseRow, tier } = await assertCaseInOnboarding(
+    const { me, supabase, admin, caseRow, tier } = await assertCaseInOnboarding(
       caseId,
     );
 
@@ -433,6 +434,21 @@ export async function submitChecklistAction(
         "Submit didn't take. The database refused the write. Reload the page and try again.",
       );
     }
+
+    // Admin fan-out. The DB trigger notify_case_change only fires on
+    // cases.status changes; this UPDATE only writes a timestamp, so
+    // admins would otherwise learn about the submission only when the
+    // accountant moves the case on. Fire-and-forget: a notify failure
+    // must not undo a legit submission.
+    const tierRecord = await getTier(tier);
+    const tierTitle = tierRecord?.title ?? caseRow.tier;
+    await insertOnboardingSubmittedAdminNotification({
+      caseId,
+      clientEmail: me.email ?? "A client",
+      tierTitle,
+    }).catch((err) =>
+      console.error("[onboarding submitted admin notification] failed:", err),
+    );
 
     revalidatePath(`/client/cases/${caseId}`);
     revalidatePath(`/client/cases/${caseId}/onboarding`);
