@@ -15,19 +15,15 @@ import type { ChecklistField } from "@/lib/engagement/checklist";
 
 export const PERIOD_DOC_FIELDS: ChecklistField[] = [
   {
-    id: "period_bank_statements_pdf",
+    // Single bank-statements slot — PDF statements and/or
+    // CSV/XLSX/XLS transaction exports both land here. Previously
+    // split into _pdf and _csv ids which forced the client to sort
+    // files into two drop zones; a crafted upload could also hit
+    // the wrong slot. Merged in 0064.
+    id: "period_bank_statements",
     section: "A",
-    label: "Company bank statements for the full period (PDF)",
-    hint: "Statements covering every day of the accounting period.",
-    kind: "upload",
-    requiredFor: ["non_vat_reg", "vat_reg"],
-    multi: true,
-  },
-  {
-    id: "period_bank_statements_csv",
-    section: "A",
-    label: "Company bank statements for the full period (CSV)",
-    hint: "The same statements as transaction data, so your accountant can categorise lines fast.",
+    label: "Company bank statements for the full period",
+    hint: "Statements covering every day of the accounting period. Drop PDFs and/or CSV, XLSX, or XLS transaction exports here. Multiple files welcome.",
     kind: "upload",
     requiredFor: ["non_vat_reg", "vat_reg"],
     multi: true,

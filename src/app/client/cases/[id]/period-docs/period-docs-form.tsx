@@ -333,18 +333,14 @@ function PeriodUploadRow({
   );
 }
 
-// Per-slot accept + hint for the period-docs section. The two bank-
-// statement slots are restricted strictly to their format — a PDF
-// uploaded into the CSV slot (or vice versa) would stall accounts
-// prep later, so we filter at upload time rather than discover it in
-// review. Server-side enforcement in uploadPeriodDocumentAction
-// mirrors these.
+// Per-slot accept + hint for the period-docs section. The bank-
+// statement slot accepts PDF statements and/or CSV/XLSX/XLS
+// transaction exports in the same drop zone — merged in 0064 after
+// the split proved error-prone (clients sorting files twice, and a
+// crafted upload hit the wrong slot).
 function acceptForPeriodDocSlot(fieldId: string): string | undefined {
-  if (fieldId === "period_bank_statements_pdf") {
-    return ".pdf,application/pdf";
-  }
-  if (fieldId === "period_bank_statements_csv") {
-    return ".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (fieldId === "period_bank_statements") {
+    return ".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   }
   return undefined;
 }
@@ -355,11 +351,8 @@ function hintForPeriodDocSlot(
 ): string {
   const limit = "up to 50 MB each";
   const suffix = allowMultiple ? ` · multiple files ok` : "";
-  if (fieldId === "period_bank_statements_pdf") {
-    return `PDF only · ${limit}${suffix}`;
-  }
-  if (fieldId === "period_bank_statements_csv") {
-    return `CSV or spreadsheet (XLSX / XLS) · ${limit}${suffix}`;
+  if (fieldId === "period_bank_statements") {
+    return `PDF, CSV, XLSX, or XLS · ${limit}${suffix}`;
   }
   return allowMultiple
     ? `PDF, image, or spreadsheet · ${limit}${suffix}`
