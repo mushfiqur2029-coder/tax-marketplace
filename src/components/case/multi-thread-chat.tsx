@@ -289,6 +289,11 @@ function ChatView({
   const [dragDepth, setDragDepth] = useState(0);
   const [pending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Second file input for the camera-capture button. Separate from
+  // the general attach input so capture="environment" stays local to
+  // that button; a shared input would prompt desktop users for a
+  // camera even when they just wanted to pick a file.
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -504,6 +509,23 @@ function ChatView({
               if (e.target) e.target.value = "";
             }}
           />
+          {/* Camera-capture input. accept="image/*" + capture="environment"
+              opens the rear camera on mobile; desktop ignores capture and
+              falls back to a photo-picker (OS native camera on some
+              platforms, file picker on others). The real-webcam modal
+              that works everywhere is a follow-up item. */}
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              addFiles(files);
+              if (e.target) e.target.value = "";
+            }}
+          />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -512,6 +534,17 @@ function ChatView({
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            aria-label="Take a photo"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line text-navy-deep hover:border-sky/50 hover:bg-sky/5"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
             </svg>
           </button>
           <SLButton
