@@ -5899,3 +5899,39 @@
   box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
   font-family: var(--font-mono);
 }
+
+/* Prose styling for /terms and /privacy. Long-form text layout; keeps
+   the marketing header + footer intact. */
+.legal-body h2 {
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-ink, #0f172a);
+  font-family: var(--font-heading);
+  letter-spacing: -0.01em;
+}
+.legal-body h3 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-ink, #0f172a);
+}
+.legal-body p {
+  color: #475569;
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+.legal-body ul {
+  color: #475569;
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+.legal-body strong {
+  color: var(--color-ink, #0f172a);
+  font-weight: 600;
+}
+.legal-body a {
+  color: var(--color-navy-deep, #0f2345);
+}
