@@ -207,7 +207,7 @@ export function MultiThreadChat({
   const activeMessages = messagesByChannel[activeThread.channel] ?? [];
 
   return (
-    <div className="flex h-[560px] flex-col">
+    <div className="flex h-[70vh] max-h-[560px] min-h-[360px] flex-col sm:h-[560px]">
       {threads.length > 1 ? (
         <div className="mb-3 inline-flex rounded-full border border-line bg-paper p-1 self-start">
           {threads.map((t) => {
