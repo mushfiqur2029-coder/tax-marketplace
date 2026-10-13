@@ -16,7 +16,13 @@ export function ReassignForm({
   caseId: string;
   current: string | null;
   options: Option[];
-  reassign: (accountantId: string, note: string | null) => Promise<ActionResult>;
+  // null = clear the assignment (back to the queue). The form passes
+  // null when the user deliberately picks "Unassigned" (empty select
+  // value); the server action handles the two cases distinctly.
+  reassign: (
+    accountantId: string | null,
+    note: string | null,
+  ) => Promise<ActionResult>;
 }) {
   void caseId;
   const router = useRouter();
@@ -32,16 +38,22 @@ export function ReassignForm({
       action={() => {
         setError(null);
         setSaved(false);
-        if (!selected) {
-          setError("Pick an accountant.");
-          return;
-        }
-        if (selected === current) {
-          setError("Already assigned to that accountant.");
+        // Empty-string selected = "Unassigned" explicitly chosen -
+        // this is a valid clear-the-assignment action, NOT a missing
+        // input. Only treat it as unchanged when it matches the
+        // current assignment (both null, or both the same id).
+        const nextId: string | null = selected === "" ? null : selected;
+        const currentId: string | null = current ?? null;
+        if (nextId === currentId) {
+          setError(
+            currentId === null
+              ? "Case is already unassigned."
+              : "Already assigned to that accountant.",
+          );
           return;
         }
         start(async () => {
-          const res = await reassign(selected, note || null);
+          const res = await reassign(nextId, note || null);
           if (res.ok) {
             setSaved(true);
             // The "· current" marker in the select next to the newly

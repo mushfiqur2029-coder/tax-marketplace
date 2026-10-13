@@ -673,7 +673,10 @@ export async function deleteStaleDraftCaseAction(
 // -------------------------------------------------------------------------
 export async function reassignCaseAction(
   caseId: string,
-  newAccountantId: string,
+  // null = clear the assignment and send the case back to the queue.
+  // Any non-null value must correspond to an approved, not-suspended
+  // accountant - checked below.
+  newAccountantId: string | null,
   note: string | null,
 ): Promise<ActionResult> {
   try {
@@ -689,32 +692,34 @@ export async function reassignCaseAction(
 
   const prevAccountantId = current.accountant_id;
 
-  // Server-side guard: the dropdown already filters to approved +
-  // not-suspended accountants (see admin/cases/[id]/page.tsx), but a
+  // When reassigning to a real accountant, re-check approval +
+  // suspension server-side. The dropdown filters to approved +
+  // not-suspended in the UI (see admin/cases/[id]/page.tsx), but a
   // crafted POST straight to this action could supply any user id.
-  // Re-check both approval_status and user suspension here so the
-  // check isn't just a UI convention.
-  const { data: targetAcc, error: targetErr } = await supabase
-    .from("accountant_profiles")
-    .select("user_id, approval_status, users!inner(id, status)")
-    .eq("user_id", newAccountantId)
-    .maybeSingle();
-  if (targetErr) throw new Error(targetErr.message);
-  if (!targetAcc) {
-    throw new Error("That user isn't an accountant.");
-  }
-  if (targetAcc.approval_status !== "approved") {
-    throw new Error(
-      "Can't assign to a non-approved accountant. Approve them first.",
-    );
-  }
-  const targetUser = (targetAcc as unknown as {
-    users: { id: string; status: string };
-  }).users;
-  if (targetUser.status === "suspended") {
-    throw new Error(
-      "Can't assign to a suspended accountant. Lift the suspension first.",
-    );
+  // null means "unassign to queue" which skips this check entirely.
+  if (newAccountantId !== null) {
+    const { data: targetAcc, error: targetErr } = await supabase
+      .from("accountant_profiles")
+      .select("user_id, approval_status, users!inner(id, status)")
+      .eq("user_id", newAccountantId)
+      .maybeSingle();
+    if (targetErr) throw new Error(targetErr.message);
+    if (!targetAcc) {
+      throw new Error("That user isn't an accountant.");
+    }
+    if (targetAcc.approval_status !== "approved") {
+      throw new Error(
+        "Can't assign to a non-approved accountant. Approve them first.",
+      );
+    }
+    const targetUser = (targetAcc as unknown as {
+      users: { id: string; status: string };
+    }).users;
+    if (targetUser.status === "suspended") {
+      throw new Error(
+        "Can't assign to a suspended accountant. Lift the suspension first.",
+      );
+    }
   }
 
   // Historical behaviour promoted draft/submitted cases to in_review on
@@ -744,10 +749,16 @@ export async function reassignCaseAction(
       target_user_id: prevAccountantId,
       admin_id: me.id,
       action: "warning",
-      note: `Case ${caseId} reassigned to another accountant${reason}`,
+      note:
+        newAccountantId === null
+          ? `Case ${caseId} unassigned from you (returned to queue)${reason}`
+          : `Case ${caseId} reassigned to another accountant${reason}`,
     });
   }
-  if (newAccountantId !== prevAccountantId) {
+  // Only log an "assigned to you" row when there's an actual new
+  // assignee. The unassign-to-queue path (newAccountantId === null)
+  // writes only the "unassigned from you" row above.
+  if (newAccountantId !== null && newAccountantId !== prevAccountantId) {
     rows.push({
       target_user_id: newAccountantId,
       admin_id: me.id,

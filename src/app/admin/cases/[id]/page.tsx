@@ -289,7 +289,10 @@ export default async function AdminCasePage({
     "use server";
     return getMessageAttachmentSignedUrl(path);
   };
-  const reassign = async (accountantId: string, note: string | null) => {
+  const reassign = async (
+    accountantId: string | null,
+    note: string | null,
+  ) => {
     "use server";
     return reassignCaseAction(id, accountantId, note);
   };

@@ -191,7 +191,10 @@ export async function insertReassignmentNotifications(params: {
       recipient_id: params.prevAccountantId,
       type: "case_reassigned",
       case_id: params.caseId,
-      message: `A case was reassigned away from you${reason}.`,
+      message:
+        params.newAccountantId === null
+          ? `A case was unassigned from you and returned to the queue${reason}.`
+          : `A case was reassigned away from you${reason}.`,
     });
   }
   if (
