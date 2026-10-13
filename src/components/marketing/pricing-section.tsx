@@ -112,7 +112,12 @@ function PersonalCompactCard({ tier: t }: { tier: PlanTier }) {
         className="mt-4 flex items-baseline gap-1"
         style={{ fontFamily: "var(--font-heading)" }}
       >
-        <span className="text-2xl font-bold text-ink">£{t.priceGbp}</span>
+        <span
+          className="text-2xl font-bold text-ink"
+          data-tier-price={t.id}
+        >
+          £{t.priceGbp}
+        </span>
         <span className="text-[11px] font-semibold uppercase tracking-widest text-slate">
           one-off
         </span>
@@ -133,7 +138,7 @@ function BusinessCard({ tier: t }: { tier: PlanTier }) {
       {t.featured ? <span className="price-badge">Most chosen</span> : null}
       <h3>{t.title}</h3>
       {t.tagline ? <p className="tier-sub">{t.tagline}</p> : null}
-      <div className="price">
+      <div className="price" data-tier-price={t.id}>
         {/* priceDisplay wins when set — the Bespoke LC tier uses it
             to render "Bespoke" instead of "£0", since priceGbp is 0
             (billed outside the flat-fee flow). */}
