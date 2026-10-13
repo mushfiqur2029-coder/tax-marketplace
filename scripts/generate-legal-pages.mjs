@@ -155,7 +155,50 @@ const PRIVACY_BODY = `
 <p>We update this policy when the service changes materially. The current version is always at this URL. Material changes are emailed to active users.</p>
 `;
 
+const CONTACT_BODY = `
+<p class="text-base text-slate" style="margin-top:1.25rem">Got a question before you start, or just want to speak to someone? Send a message and we&rsquo;ll be back to you within one working day.</p>
+
+<form data-contact-form class="mt-10 space-y-5" novalidate>
+  <div class="contact-grid">
+    <label class="contact-field">
+      <span class="contact-label">Name</span>
+      <input type="text" name="name" autocomplete="name" required class="contact-input"/>
+    </label>
+    <label class="contact-field">
+      <span class="contact-label">Phone <span class="contact-label-aux">optional</span></span>
+      <input type="tel" name="phone" autocomplete="tel" class="contact-input"/>
+    </label>
+  </div>
+  <label class="contact-field">
+    <span class="contact-label">Email</span>
+    <input type="email" name="email" autocomplete="email" required class="contact-input"/>
+  </label>
+  <label class="contact-field">
+    <span class="contact-label">Message</span>
+    <textarea name="message" rows="6" required class="contact-input contact-textarea"></textarea>
+  </label>
+  <div class="flex flex-wrap items-center gap-3">
+    <button type="submit" class="btn-sl btn-sl-primary">Send message</button>
+    <span class="text-xs text-slate">Or email <a class="underline underline-offset-4 hover:text-sky" href="mailto:info@sterlingledger.co.uk">info@sterlingledger.co.uk</a> directly.</span>
+  </div>
+  <p data-contact-status class="contact-status" hidden></p>
+</form>
+
+<div class="mt-14 border-t border-line pt-6 text-xs text-slate">
+<p>We only use what you send us to answer your question. Nothing is shared with third parties. See the <a class="underline underline-offset-4 hover:text-sky" href="/privacy">privacy policy</a> for details.</p>
+</div>
+`;
+
 const PAGES = [
+  {
+    slug: "contact",
+    title: "Contact Sterling Ledger. Get in touch with a real accountant.",
+    description:
+      "Send Sterling Ledger a question or book a consultation call. UK-qualified accountants, replies within one working day.",
+    eyebrow: "Contact",
+    heading: "Get in touch",
+    body: CONTACT_BODY,
+  },
   {
     slug: "terms",
     title: "Terms of Service. Sterling Ledger.",

@@ -5935,3 +5935,73 @@
 .legal-body a {
   color: var(--color-navy-deep, #0f2345);
 }
+
+/* Contact form — matches the overall marketing design language.
+   Used on /contact and anywhere else we embed a Sterling Ledger
+   contact form via [data-contact-form]. */
+.contact-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .contact-grid { grid-template-columns: 1fr 1fr; }
+}
+.contact-field { display: block; }
+.contact-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  font-family: var(--font-mono);
+}
+.contact-label-aux {
+  margin-left: 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: #94a3b8;
+}
+.contact-input {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  background: #fff;
+  color: #0f172a;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.contact-input:focus {
+  outline: none;
+  border-color: var(--color-sky, #199cd9);
+  box-shadow: 0 0 0 3px rgba(25, 156, 217, 0.2);
+}
+.contact-textarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.contact-status {
+  margin-top: 0.5rem;
+  padding: 0.7rem 0.95rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.contact-status.ok {
+  background: rgba(16, 185, 129, 0.12);
+  color: #065f46;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.contact-status.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #991b1b;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
