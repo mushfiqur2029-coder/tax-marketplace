@@ -736,11 +736,14 @@ export async function reassignCaseAction(
     .eq("id", caseId);
   if (updateErr) throw new Error(updateErr.message);
 
-  // Log to admin_actions for both the old and new accountant.
+  // Log to admin_actions for both the old and new accountant. Both
+  // rows carry action='case_reassigned' (0075) so the audit log can
+  // be filtered by actual action type; the note text differentiates
+  // "unassigned from you" vs "assigned to you".
   const rows: Array<{
     target_user_id: string;
     admin_id: string;
-    action: "warning";
+    action: "case_reassigned";
     note: string;
   }> = [];
   const reason = note?.trim() ? `. ${note.trim()}` : "";
@@ -748,7 +751,7 @@ export async function reassignCaseAction(
     rows.push({
       target_user_id: prevAccountantId,
       admin_id: me.id,
-      action: "warning",
+      action: "case_reassigned",
       note:
         newAccountantId === null
           ? `Case ${caseId} unassigned from you (returned to queue)${reason}`
@@ -762,7 +765,7 @@ export async function reassignCaseAction(
     rows.push({
       target_user_id: newAccountantId,
       admin_id: me.id,
-      action: "warning",
+      action: "case_reassigned",
       note: `Case ${caseId} assigned to you${reason}`,
     });
   }
@@ -1328,7 +1331,7 @@ export async function createBespokeCaseFromEnquiryAction(
     await admin.from("admin_actions").insert({
       target_user_id: enquiry.client_id,
       admin_id: me.id,
-      action: "warning", // reusing existing enum value; no bespoke-case enum yet
+      action: "bespoke_case_created",
       note: `Bespoke case ${caseId} created at £${feeGbp} total (£${depositGbp} deposit + £${feeGbp - depositGbp} balance), accountant commission £${commissionGbp}, assigned to accountant ${accountantId}.${
         note?.trim() ? ` Note: ${note.trim()}` : ""
       }`,
