@@ -681,7 +681,7 @@ function AttachmentChip({
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${item.file.name}`}
-        className="ml-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-slate hover:bg-slate/10 hover:text-navy-deep"
+        className="-mr-2 ml-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate hover:bg-slate/10 hover:text-navy-deep sm:-mr-1 sm:h-8 sm:w-8"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
           <line x1="18" y1="6" x2="6" y2="18" />
