@@ -774,6 +774,13 @@ export async function prepareApprovalAction(
 // -------------------------------------------------------------------------
 // Signed URL for an accountant to download a document on a case they own.
 // -------------------------------------------------------------------------
+// TTL is 10 min, not the previous 60s. A client-period doc the accountant
+// opens in a new tab can sit in the background for a few minutes before
+// they switch to it; a 60s expiry had them hitting a cryptic Supabase
+// storage 400 on first click. 10 min is still short enough that a URL
+// forwarded by accident is useless by the time it leaves the thread.
+const DOC_SIGNED_URL_TTL_SECONDS = 600;
+
 export async function getDocSignedUrlForAccountant(
   caseId: string,
   filePath: string,
@@ -785,7 +792,7 @@ export async function getDocSignedUrlForAccountant(
     }
     const { data, error } = await supabase.storage
       .from("case-documents")
-      .createSignedUrl(filePath, 60);
+      .createSignedUrl(filePath, DOC_SIGNED_URL_TTL_SECONDS);
     if (error || !data) throw new Error(error?.message ?? "Sign URL failed.");
     return { ok: true, data: data.signedUrl };
   } catch (e) {
