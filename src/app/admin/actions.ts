@@ -1101,10 +1101,35 @@ export async function createBespokeCaseFromEnquiryAction(
 
     const { data: enquiry, error: enquiryErr } = await admin
       .from("service_enquiries")
-      .select("id, client_id, service_key, company_name, company_number")
+      .select("id, client_id, service_key, status, company_name, company_number")
       .eq("id", enquiryId)
       .maybeSingle();
     if (enquiryErr || !enquiry) throw new Error("Enquiry not found.");
+
+    // Guard against double-create: a 'closed' enquiry has already
+    // been converted to a case (createBespokeCaseFromEnquiryAction
+    // flips the enquiry status on success), and even a 'contacted'
+    // or 'new' enquiry may already have an associated case if an
+    // earlier conversion partially succeeded. Checking both the
+    // enquiry status AND an explicit cases.service_enquiry_id lookup
+    // means the user sees a clear "already created" message instead
+    // of the raw cases_service_enquiry_id_key unique-violation from
+    // the DB (migration 0070).
+    if (enquiry.status === "closed") {
+      throw new Error(
+        "This enquiry is already closed - a case has already been created from it. Open the existing case rather than creating a new one.",
+      );
+    }
+    const { data: existingCase } = await admin
+      .from("cases")
+      .select("id")
+      .eq("service_enquiry_id", enquiryId)
+      .maybeSingle();
+    if (existingCase) {
+      throw new Error(
+        `A case already exists for this enquiry (case ${existingCase.id}). Open it from Cases rather than creating another.`,
+      );
+    }
 
     // Only the bespoke tier currently flows through this action. If a
     // future surface needs a different enquiry → case shape, add its
