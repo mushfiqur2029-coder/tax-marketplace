@@ -36,6 +36,16 @@ const IN_PROGRESS_STATUSES = new Set([
   "filed",
 ]);
 
+// Case list cap on the admin dashboard. The dashboard shows the
+// most recent N cases; counts across all buckets still fire as
+// head-only COUNT queries so metrics stay accurate even past this
+// cap. If the business ever needs to scroll past the first page
+// we'll want keyset pagination (cursor on created_at) rather than
+// OFFSET - but at the volume this product sees today, a 100-row
+// most-recent page is the right amount of information for the
+// at-a-glance dashboard.
+const DASHBOARD_CASE_LIMIT = 100;
+
 export default async function AdminDashboard({
   searchParams,
 }: {
@@ -65,7 +75,8 @@ export default async function AdminDashboard({
       .select(
         "id, segment, tier, status, stripe_payment_status, created_at, submitted_at, deadline, client_id, accountant_id, is_urgent, intake_answers, custom_fee_pence",
       )
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(DASHBOARD_CASE_LIMIT),
     admin.from("users").select("id", { count: "exact", head: true }).eq("role", "client"),
     admin.from("users").select("id", { count: "exact", head: true }).eq("role", "accountant"),
     admin
@@ -74,24 +85,13 @@ export default async function AdminDashboard({
   ]);
 
   const allCases = cases ?? [];
-  const totalCases = allCases.length;
-  const paidCases = allCases.filter(
-    (c) => c.stripe_payment_status === "succeeded",
-  ).length;
-  const assignedCases = allCases.filter((c) => c.accountant_id).length;
-  const unassignedPaid = allCases.filter(
-    (c) =>
-      c.accountant_id === null &&
-      c.status === "submitted" &&
-      c.stripe_payment_status === "succeeded",
-  ).length;
-
   // Stale drafts: eligibility for the primary-admin-only delete flow.
   // Mirrors the server-side STALE_DRAFT_DAYS threshold; the server
   // action re-checks before actually deleting, so this is purely a
   // display filter.
   // eslint-disable-next-line react-hooks/purity -- server component; one Date.now per request is fine.
   const staleCutoffMs = Date.now() - STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
+  const staleCutoffIso = new Date(staleCutoffMs).toISOString();
   const isStaleDraft = (c: {
     status: string;
     stripe_payment_status: string;
@@ -101,12 +101,67 @@ export default async function AdminDashboard({
     c.stripe_payment_status !== "succeeded" &&
     new Date(c.created_at).getTime() < staleCutoffMs;
 
+  // Count queries hit COUNT indexes directly - no row payload, so
+  // these stay fast even as the cases table grows past the dashboard
+  // display cap. Previously the dashboard filtered the full-table
+  // row set in-memory to get these numbers, which stopped scaling.
+  const inProgressStatuses = Array.from(IN_PROGRESS_STATUSES);
+  const [
+    { count: allCount },
+    { count: inProgressCount },
+    { count: completedCount },
+    { count: pendingCount },
+    { count: staleDraftsCount },
+    { count: paidCount },
+    { count: assignedCount },
+    { count: unassignedPaidCount },
+  ] = await Promise.all([
+    admin.from("cases").select("id", { count: "exact", head: true }),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .in("status", inProgressStatuses),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "complete"),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "draft"),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "draft")
+      .neq("stripe_payment_status", "succeeded")
+      .lt("created_at", staleCutoffIso),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("stripe_payment_status", "succeeded"),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .not("accountant_id", "is", null),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .is("accountant_id", null)
+      .eq("status", "submitted")
+      .eq("stripe_payment_status", "succeeded"),
+  ]);
+
+  const totalCases = allCount ?? 0;
+  const paidCases = paidCount ?? 0;
+  const assignedCases = assignedCount ?? 0;
+  const unassignedPaid = unassignedPaidCount ?? 0;
+
   const caseCounts: AdminCaseCounts = {
-    all: allCases.length,
-    in_progress: allCases.filter((c) => IN_PROGRESS_STATUSES.has(c.status)).length,
-    completed: allCases.filter((c) => c.status === "complete").length,
-    pending: allCases.filter((c) => c.status === "draft").length,
-    stale_drafts: allCases.filter(isStaleDraft).length,
+    all: allCount ?? 0,
+    in_progress: inProgressCount ?? 0,
+    completed: completedCount ?? 0,
+    pending: pendingCount ?? 0,
+    stale_drafts: staleDraftsCount ?? 0,
   };
 
   const tierMap = new Map(

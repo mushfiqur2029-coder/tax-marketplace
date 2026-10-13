@@ -19,24 +19,67 @@ type UserRow = {
   status: "active" | "warned" | "suspended";
 };
 
-export default async function AdminClientsPage() {
+// Page size for the clients list. 25 is small enough that the
+// in-memory group-by (active vs suspended) stays trivial and large
+// enough that admin isn't paginating constantly for the common case.
+const PAGE_SIZE = 25;
+
+export default async function AdminClientsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; q?: string }>;
+}) {
   await requireRole("admin");
   const admin = createAdminClient();
 
-  const [{ data: users }, { data: profiles }, { data: cases }] =
-    await Promise.all([
-      admin
-        .from("users")
-        .select("id, email, status, created_at")
-        .eq("role", "client")
-        .order("created_at", { ascending: false }),
-      admin
-        .from("client_profiles")
-        .select("user_id, name, contact_number, avatar_path"),
-      admin
-        .from("cases")
-        .select("client_id"),
-    ]);
+  const { page: pageRaw, q: qRaw } = await searchParams;
+  const pageParam = Number(pageRaw ?? "1");
+  const page =
+    Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
+  // Trim and cap search length defensively; ilike with a huge needle
+  // just wastes DB time. 100 chars is more than any real email.
+  const q = (qRaw ?? "").trim().slice(0, 100);
+
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
+  // Build the users query. Email ilike for search; the client_profiles
+  // name search would require a two-step round trip and the email is
+  // sufficient for admin triage (clients are listed by their account
+  // identity on the auth side). If name search becomes essential we'd
+  // add a text-search index on client_profiles.name and query it
+  // separately for the first page's user ids.
+  let usersQuery = admin
+    .from("users")
+    .select("id, email, status, created_at", { count: "exact" })
+    .eq("role", "client");
+  if (q) {
+    usersQuery = usersQuery.ilike("email", `%${q}%`);
+  }
+  const { data: users, count: totalCount } = await usersQuery
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  const rows = (users ?? []) as UserRow[];
+  const total = totalCount ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const visibleIds = rows.map((r) => r.id);
+
+  // Only fetch profiles + case counts for the users actually on this
+  // page. Previously these were full-table pulls (every profile row,
+  // every case row), which stops being free as the data grows.
+  const [{ data: profiles }, { data: cases }] = visibleIds.length
+    ? await Promise.all([
+        admin
+          .from("client_profiles")
+          .select("user_id, name, contact_number, avatar_path")
+          .in("user_id", visibleIds),
+        admin
+          .from("cases")
+          .select("client_id")
+          .in("client_id", visibleIds),
+      ])
+    : [{ data: [] as ProfileRow[] }, { data: [] as { client_id: string }[] }];
 
   const profileById = new Map<string, ProfileRow>(
     (profiles ?? []).map((p) => [p.user_id, p as ProfileRow]),
@@ -49,11 +92,14 @@ export default async function AdminClientsPage() {
     );
   }
 
-  const rows = (users ?? []) as UserRow[];
   const groups = {
     active: rows.filter((r) => r.status !== "suspended"),
     suspended: rows.filter((r) => r.status === "suspended"),
   };
+
+  const qParam = q ? `&q=${encodeURIComponent(q)}` : "";
+  const prevHref = page > 1 ? `?page=${page - 1}${qParam}` : null;
+  const nextHref = page < pageCount ? `?page=${page + 1}${qParam}` : null;
 
   return (
     <>
@@ -62,9 +108,43 @@ export default async function AdminClientsPage() {
         title="Clients"
         description="Every client on the platform. Click through for full profile, case history, and payments."
       />
+
+      <form className="mb-6 flex flex-wrap items-center gap-2" method="get">
+        <input
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="Search by email."
+          className="input-sl flex-1 min-w-0 sm:max-w-xs"
+          aria-label="Search clients by email"
+        />
+        <button
+          type="submit"
+          className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink hover:border-sky/50"
+        >
+          Search
+        </button>
+        {q ? (
+          <Link
+            href="?"
+            className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-slate hover:border-sky/50"
+          >
+            Clear
+          </Link>
+        ) : null}
+      </form>
+
+      <p className="mb-3 text-xs text-slate">
+        {total === 0
+          ? q
+            ? `No clients match "${q}".`
+            : "No clients yet."
+          : `Showing ${from + 1}–${Math.min(to + 1, total)} of ${total}${q ? ` for "${q}"` : ""}.`}
+      </p>
+
       <Section
         title={`Active (${groups.active.length})`}
-        emptyLine="No active clients."
+        emptyLine="No active clients on this page."
       >
         {groups.active.map((r) => (
           <RowCard
@@ -90,6 +170,37 @@ export default async function AdminClientsPage() {
             />
           ))}
         </Section>
+      ) : null}
+
+      {pageCount > 1 ? (
+        <nav
+          className="mt-6 flex items-center justify-between gap-3"
+          aria-label="Pagination"
+        >
+          {prevHref ? (
+            <Link
+              href={prevHref}
+              className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink hover:border-sky/50"
+            >
+              &larr; Prev
+            </Link>
+          ) : (
+            <span />
+          )}
+          <span className="text-xs text-slate">
+            Page {page} of {pageCount}
+          </span>
+          {nextHref ? (
+            <Link
+              href={nextHref}
+              className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink hover:border-sky/50"
+            >
+              Next &rarr;
+            </Link>
+          ) : (
+            <span />
+          )}
+        </nav>
       ) : null}
     </>
   );
@@ -167,8 +278,8 @@ function RowCard({
           </div>
           <div className="mt-1 text-xs text-slate">
             {user.email}
-            {profile?.contact_number ? <> · {profile.contact_number}</> : null}
-            <> · {caseCount} case{caseCount === 1 ? "" : "s"}</>
+            {profile?.contact_number ? <> &middot; {profile.contact_number}</> : null}
+            <> &middot; {caseCount} case{caseCount === 1 ? "" : "s"}</>
           </div>
         </div>
       </div>
