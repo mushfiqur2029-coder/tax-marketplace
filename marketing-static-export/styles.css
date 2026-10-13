@@ -6037,3 +6037,206 @@
 @media (max-width: 640px) {
   .contact-booking iframe { height: 600px; }
 }
+
+/* Contact page: 3-step flow visuals. Horizontal indicator at the top
+   of the flow, animated transitions between steps, clean iframe
+   wrapper that hides Google chrome via overflow + negative margin
+   cropping. Mobile: indicator stacks compactly, iframe height tuned
+   for touch. */
+.step-indicator {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  margin: 2.5rem 0 2rem;
+  list-style: none;
+  counter-reset: step;
+}
+.step-indicator-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.step-indicator-item + .step-indicator-item::before {
+  content: "";
+  position: absolute;
+  top: 15px;
+  right: 50%;
+  left: calc(-50% + 20px);
+  height: 2px;
+  background: #e2e8f0;
+  z-index: 0;
+}
+.step-indicator-item.done + .step-indicator-item::before,
+.step-indicator-item.active + .step-indicator-item::before {
+  background: linear-gradient(90deg, #0b3b7a, #199cd9);
+}
+.step-indicator-dot {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #fff;
+  color: #94a3b8;
+  border: 2px solid #e2e8f0;
+  font-weight: 700;
+  font-size: 0.85rem;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.step-indicator-item.active .step-indicator-dot {
+  background: linear-gradient(135deg, #0b3b7a, #199cd9);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(11, 59, 122, 0.25);
+}
+.step-indicator-item.done .step-indicator-dot {
+  background: #0e9e77;
+  color: #fff;
+  border-color: transparent;
+}
+.step-indicator-item.done .step-indicator-dot::before {
+  content: "\2713";
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.step-indicator-item.done .step-indicator-dot {
+  font-size: 0;
+}
+.step-indicator-item.active .step-indicator-label,
+.step-indicator-item.done .step-indicator-label {
+  color: #0f172a;
+}
+@media (max-width: 480px) {
+  .step-indicator { gap: 0; }
+  .step-indicator-label { font-size: 0.65rem; }
+}
+
+.contact-step {
+  animation: contact-step-in 0.35s ease-out;
+}
+@keyframes contact-step-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.step-head {
+  margin-bottom: 1.25rem;
+}
+.step-head h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  letter-spacing: -0.01em;
+  color: #0f172a;
+  margin: 0;
+}
+.step-head p {
+  margin-top: 0.5rem;
+  color: #64748b;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.step-fallback {
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+.step-fallback a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.step-fallback a:hover {
+  color: #199cd9;
+}
+
+/* Google Calendar iframe wrapper. The appointment-schedule page
+   shows a Google header at the top; crop it visually by giving the
+   iframe a negative top margin inside an overflow-hidden container.
+   The embed should feel native to the Sterling Ledger card system. */
+.contact-booking {
+  position: relative;
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+.contact-booking iframe {
+  display: block;
+  width: 100%;
+  height: 760px;
+  border: 0;
+  margin-top: -60px;        /* crop Google header strip */
+  margin-bottom: -30px;     /* crop Google footer strip */
+  background: #fff;
+}
+@media (max-width: 640px) {
+  .contact-booking iframe {
+    height: 680px;
+    margin-top: -40px;
+    margin-bottom: -20px;
+  }
+}
+
+/* "You're all set" confirmation card. Centered content, large check,
+   soft shadow. */
+.step-done-card {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+.step-done-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 1.25rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #10b981, #0e9e77);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+}
+.step-done-card h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.015em;
+}
+.step-done-body {
+  max-width: 32rem;
+  margin: 0.85rem auto 0;
+  color: #64748b;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+.step-done-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}

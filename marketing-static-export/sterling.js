@@ -42,26 +42,66 @@
     var body = new URLSearchParams(fields);
     fetch(CONTACT_FORM_URL, { method: "POST", mode: "no-cors", body: body })
       .then(function () {
-        // no-cors response is opaque; if we got here without throwing,
-        // the request reached Apps Script and doPost ran. Confirm with
-        // a success message.
-        form.reset();
-        setStatus(
-          statusEl,
-          "Thanks — we've got your message. We'll be in touch within one working day.",
-          "ok",
-        );
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Send message"; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Continue"; }
+        advanceStep(form, 2);
       })
       .catch(function () {
         setStatus(
           statusEl,
-          "Couldn't send that just now. Try again in a minute, or email us at info@sterlingledger.co.uk.",
+          "Could not send that just now. Try again in a minute, or email us at info@sterlingledger.co.uk.",
           "error",
         );
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Send message"; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Continue"; }
       });
   });
+
+  // --- Contact flow step transitions ------------------------------
+  // 3-step flow: 1 details, 2 booking, 3 done. Form submit (handler
+  // above) advances 1 to 2 on successful POST. "I have booked" or
+  // "Skip" button advances 2 to 3. No reload between steps; animated
+  // via the .active class.
+  document.addEventListener("click", function (e) {
+    var next = e.target.closest && e.target.closest("[data-step-done],[data-step-skip]");
+    if (!next) return;
+    advanceStep(next, 3);
+  });
+
+  function advanceStep(fromEl, targetStep) {
+    var flow = fromEl.closest ? fromEl.closest("[data-contact-flow]") : null;
+    if (!flow) return;
+    flow.querySelectorAll("[data-step]").forEach(function (section) {
+      section.hidden = String(section.getAttribute("data-step")) !== String(targetStep);
+    });
+    var indicator = flow.parentElement ? flow.parentElement.querySelector("[data-step-indicator]") : null;
+    if (indicator) {
+      indicator.querySelectorAll("[data-step-marker]").forEach(function (li) {
+        var n = parseInt(li.getAttribute("data-step-marker"), 10);
+        li.classList.toggle("done", n < targetStep);
+        li.classList.toggle("active", n === targetStep);
+      });
+    }
+    // Scroll the new step into view smoothly.
+    var newStep = flow.querySelector('[data-step="' + targetStep + '"]');
+    if (newStep && newStep.scrollIntoView) {
+      newStep.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  // On page load, mark step 1 as the active indicator step so the
+  // visual starts clean.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initStepIndicator);
+  } else {
+    initStepIndicator();
+  }
+  function initStepIndicator() {
+    var items = document.querySelectorAll("[data-step-marker]");
+    if (!items.length) return;
+    items.forEach(function (li) {
+      var n = parseInt(li.getAttribute("data-step-marker"), 10);
+      li.classList.toggle("active", n === 1);
+    });
+  }
 
   function setStatus(el, text, kind) {
     if (!el) return;

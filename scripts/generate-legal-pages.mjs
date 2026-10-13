@@ -156,46 +156,78 @@ const PRIVACY_BODY = `
 `;
 
 const CONTACT_BODY = `
-<p class="text-base text-slate" style="margin-top:1.25rem">Got a question before you start, or just want to speak to someone? Send a message and we&rsquo;ll be back to you within one working day.</p>
+<p class="text-base text-slate" style="margin-top:1.25rem">Send us the question in your own words, pick a time to talk if you want to, and we&rsquo;ll take it from there.</p>
 
-<form data-contact-form class="mt-10 space-y-5" novalidate>
-  <div class="contact-grid">
-    <label class="contact-field">
-      <span class="contact-label">Name</span>
-      <input type="text" name="name" autocomplete="name" required class="contact-input"/>
-    </label>
-    <label class="contact-field">
-      <span class="contact-label">Phone <span class="contact-label-aux">optional</span></span>
-      <input type="tel" name="phone" autocomplete="tel" class="contact-input"/>
-    </label>
-  </div>
-  <label class="contact-field">
-    <span class="contact-label">Email</span>
-    <input type="email" name="email" autocomplete="email" required class="contact-input"/>
-  </label>
-  <label class="contact-field">
-    <span class="contact-label">Message</span>
-    <textarea name="message" rows="6" required class="contact-input contact-textarea"></textarea>
-  </label>
-  <div class="flex flex-wrap items-center gap-3">
-    <button type="submit" class="btn-sl btn-sl-primary">Send message</button>
-    <span class="text-xs text-slate">Or email <a class="underline underline-offset-4 hover:text-sky" href="mailto:info@sterlingledger.co.uk">info@sterlingledger.co.uk</a> directly.</span>
-  </div>
-  <p data-contact-status class="contact-status" hidden></p>
-</form>
+<ol data-step-indicator class="step-indicator mt-10">
+  <li class="step-indicator-item" data-step-marker="1"><span class="step-indicator-dot">1</span><span class="step-indicator-label">Your details</span></li>
+  <li class="step-indicator-item" data-step-marker="2"><span class="step-indicator-dot">2</span><span class="step-indicator-label">Pick a time</span></li>
+  <li class="step-indicator-item" data-step-marker="3"><span class="step-indicator-dot">3</span><span class="step-indicator-label">All set</span></li>
+</ol>
 
-<div class="mt-14 border-t border-line pt-6 text-xs text-slate">
+<div data-contact-flow>
+
+  <section data-step="1" class="contact-step">
+    <form data-contact-form class="space-y-5" novalidate>
+      <div class="contact-grid">
+        <label class="contact-field">
+          <span class="contact-label">Name</span>
+          <input type="text" name="name" autocomplete="name" required class="contact-input"/>
+        </label>
+        <label class="contact-field">
+          <span class="contact-label">Phone <span class="contact-label-aux">optional</span></span>
+          <input type="tel" name="phone" autocomplete="tel" class="contact-input"/>
+        </label>
+      </div>
+      <label class="contact-field">
+        <span class="contact-label">Email</span>
+        <input type="email" name="email" autocomplete="email" required class="contact-input"/>
+      </label>
+      <label class="contact-field">
+        <span class="contact-label">Message</span>
+        <textarea name="message" rows="5" required class="contact-input contact-textarea" placeholder="A sentence or two is enough. Your accountant will come prepared."></textarea>
+      </label>
+      <div class="flex flex-wrap items-center gap-3 pt-1">
+        <button type="submit" class="btn-sl btn-sl-primary">Continue</button>
+        <span class="text-xs text-slate">Or email <a class="underline underline-offset-4 hover:text-sky" href="mailto:info@sterlingledger.co.uk">info@sterlingledger.co.uk</a>.</span>
+      </div>
+      <p data-contact-status class="contact-status" hidden></p>
+    </form>
+  </section>
+
+  <section data-step="2" class="contact-step" hidden>
+    <div class="step-head">
+      <h2>Pick a 30-minute slot</h2>
+      <p>Pick any time that works for you. Your accountant will join by phone or video.</p>
+    </div>
+    <div class="contact-booking">
+      <iframe src="https://calendar.app.google/XrzpFp1NbH4QjdLF6" title="Pick a consultation slot" loading="lazy"></iframe>
+    </div>
+    <div class="step-actions">
+      <button type="button" data-step-done="2" class="btn-sl btn-sl-primary">I&rsquo;ve booked my time</button>
+      <button type="button" data-step-skip="2" class="btn-sl btn-sl-ghost">Skip this for now</button>
+    </div>
+    <p class="step-fallback">Calendar not loading in the frame? <a href="https://calendar.app.google/XrzpFp1NbH4QjdLF6" target="_blank" rel="noopener">Open it in a new tab</a>.</p>
+  </section>
+
+  <section data-step="3" class="contact-step" hidden>
+    <div class="step-done-card">
+      <div class="step-done-check" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 10 18 20 6"></polyline></svg>
+      </div>
+      <h2>You&rsquo;re all set.</h2>
+      <p class="step-done-body">We&rsquo;ve got your message. If you booked a call you&rsquo;ll get a Google Calendar invite with the meeting link. We reply to messages inside one working day.</p>
+      <div class="step-done-actions">
+        <a href="/" class="btn-sl btn-sl-primary">Back to homepage</a>
+        <a href="/guides" class="btn-sl btn-sl-ghost">Read the guides</a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="mt-16 border-t border-line pt-6 text-xs text-slate">
 <p>We only use what you send us to answer your question. Nothing is shared with third parties. See the <a class="underline underline-offset-4 hover:text-sky" href="/privacy">privacy policy</a> for details.</p>
 </div>
-
-<section id="booking" class="mt-20">
-<h2 class="text-2xl sm:text-3xl" style="font-family:var(--font-heading)">Prefer to talk it through? Book a call.</h2>
-<p class="mt-3 text-base text-slate">Pick a 30-minute slot with a UK-qualified accountant &mdash; same calendar the consultation flow uses. No charge for the call itself.</p>
-<div class="contact-booking mt-6">
-<iframe src="https://calendar.app.google/XrzpFp1NbH4QjdLF6" title="Book a consultation call" loading="lazy"></iframe>
-</div>
-<p class="mt-4 text-xs text-slate">Calendar not loading? <a class="underline underline-offset-4 hover:text-sky" href="https://calendar.app.google/XrzpFp1NbH4QjdLF6" target="_blank" rel="noopener">Open it in a new tab</a>.</p>
-</section>
 `;
 
 const PAGES = [
