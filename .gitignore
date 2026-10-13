@@ -42,3 +42,8 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# Build artifacts and one-shot debug scripts
+sterling-marketing.zip
+_pw_reset_check.mjs
+_*.mjs
