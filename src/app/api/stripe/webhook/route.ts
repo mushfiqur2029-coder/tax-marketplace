@@ -166,6 +166,19 @@ async function buildInvoiceAttachment(
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Stripe gives webhook handlers up to a response and retries on
+// timeout. The receipt-email path here renders a branded PDF via
+// Puppeteer / @sparticuz/chromium, which has non-trivial cold-start
+// latency on Vercel; a cold hit plus the Chromium launch plus the
+// PDF generation itself can push past the default 10s function
+// limit. Stripe then retries, but by the time it does the DB flip
+// has already committed, so the webhook's status-filter guards
+// correctly skip the re-send and the client email is silently
+// dropped. 60s here matches Vercel Pro's max; Hobby ignores
+// values above 10s so if the project is on Hobby this is a hint,
+// not a change (and Hobby would need the Pro upgrade for this fix
+// to actually work).
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const signature = req.headers.get("stripe-signature");
