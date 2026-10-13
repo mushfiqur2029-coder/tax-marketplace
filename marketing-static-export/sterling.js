@@ -124,6 +124,10 @@
     document.querySelectorAll("[data-pricing-panel]").forEach(function (p) {
       p.hidden = p.getAttribute("data-pricing-panel") !== mode;
     });
+    // Slide the knob. CSS rule .pt-switch.on .pt-knob positions the
+    // knob on the right. .on === business mode, no class === personal.
+    var sw = document.querySelector(".pt-switch");
+    if (sw) sw.classList.toggle("on", mode === "business");
   });
 
   // --- Live pricing fetcher --------------------------------------
