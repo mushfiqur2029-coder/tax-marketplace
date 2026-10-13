@@ -182,11 +182,30 @@ export async function updateCaseStatusAction(
       }
     }
 
-    const { error } = await supabase
+    // Concurrency guard: scope the UPDATE to the status we read
+    // moments ago, and refuse if zero rows match. Without this a
+    // second tab (or two accountants racing on a reassigned case)
+    // could both read status='in_review', both click "Send for
+    // approval", and both appear to succeed - the row would end up
+    // at whichever UPDATE committed last with no error on the other.
+    // .select("id").single() turns a 0-row match into a PGRST116
+    // which we convert into a loud, specific error. Mirrors the
+    // pattern already used in takeCaseAction above.
+    const { data: flipped, error } = await supabase
       .from("cases")
       .update({ status: next })
-      .eq("id", caseId);
-    if (error) throw new Error(error.message);
+      .eq("id", caseId)
+      .eq("status", current)
+      .select("id")
+      .single();
+    if (error && (error as { code?: string }).code !== "PGRST116") {
+      throw new Error(error.message);
+    }
+    if (!flipped) {
+      throw new Error(
+        `Case moved on while you were working. It's no longer at ${current} - reload the page.`,
+      );
+    }
 
     revalidatePath(`/accountant/cases/${caseId}`);
     revalidatePath(`/accountant`);
@@ -710,14 +729,33 @@ export async function prepareApprovalAction(
       prepared_by: me.id,
     };
 
-    const { error: updateErr } = await supabase
+    // Concurrency guard: scope the UPDATE to the status we read at
+    // the top (row.status - one of in_review or prepared), and
+    // refuse if zero rows match. Protects against two tabs or two
+    // reassignment-racing accountants both clicking Send and
+    // overwriting each other's approval_payload. .select("id").single()
+    // turns a 0-row match into PGRST116 which we convert into a loud
+    // error. Same pattern as the updateCaseStatusAction fix above
+    // and takeCaseAction below.
+    const readStatus = row.status as CaseStatus;
+    const { data: flipped, error: updateErr } = await supabase
       .from("cases")
       .update({
         approval_payload: payload,
         status: "client_approval",
       })
-      .eq("id", caseId);
-    if (updateErr) throw new Error(updateErr.message);
+      .eq("id", caseId)
+      .eq("status", readStatus)
+      .select("id")
+      .single();
+    if (updateErr && (updateErr as { code?: string }).code !== "PGRST116") {
+      throw new Error(updateErr.message);
+    }
+    if (!flipped) {
+      throw new Error(
+        `Case moved on while you were preparing - it's no longer at ${readStatus}. Reload the page and try again.`,
+      );
+    }
 
     // Status change already triggers notify_case_change → client gets a
     // "Case moved to Awaiting your approval" notification. No new one
