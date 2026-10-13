@@ -82,13 +82,7 @@ export function RevealBankButton({
   );
 }
 
-// Mask helper exported so the server component on the withdrawals
-// page can render consistent "....1234" strings without duplicating
-// the padding logic. Takes the full account number as stored
-// (typically 8 digits for a UK bank account); returns the last 4
-// digits with a 4-char dot prefix.
-export function maskAccountNumber(raw: string): string {
-  const trimmed = raw.replace(/\s/g, "");
-  if (trimmed.length <= 4) return trimmed;
-  return "...." + trimmed.slice(-4);
-}
+// maskAccountNumber lives in ./mask.ts (plain TS, no "use client")
+// so the server component on the withdrawals page can import it at
+// render time. Client-exported functions can't be invoked from a
+// server component - that's what crashed first-pass.

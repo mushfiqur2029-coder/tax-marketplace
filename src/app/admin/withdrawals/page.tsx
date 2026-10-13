@@ -10,10 +10,8 @@ import {
 import { PayoutForm } from "./payout-form";
 import { ReceiptLink } from "@/app/accountant/wallet/receipt-link";
 import { formatDateTime } from "@/lib/format";
-import {
-  RevealBankButton,
-  maskAccountNumber,
-} from "./reveal-bank-button";
+import { RevealBankButton } from "./reveal-bank-button";
+import { maskAccountNumber } from "./mask";
 
 export const dynamic = "force-dynamic";
 
