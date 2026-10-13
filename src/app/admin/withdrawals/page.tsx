@@ -5,10 +5,15 @@ import { RealtimeRefresh } from "@/components/realtime-refresh";
 import {
   markWithdrawalPaidAction,
   getReceiptSignedUrl,
+  revealWithdrawalBankAction,
 } from "@/app/admin/actions";
 import { PayoutForm } from "./payout-form";
 import { ReceiptLink } from "@/app/accountant/wallet/receipt-link";
 import { formatDateTime } from "@/lib/format";
+import {
+  RevealBankButton,
+  maskAccountNumber,
+} from "./reveal-bank-button";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +51,10 @@ export default async function AdminWithdrawalsPage() {
     "use server";
     return getReceiptSignedUrl(path);
   };
+  const revealBank = async (requestId: string) => {
+    "use server";
+    return revealWithdrawalBankAction(requestId);
+  };
 
   return (
     <>
@@ -79,10 +88,20 @@ export default async function AdminWithdrawalsPage() {
                       {formatMoney(r.amount_pence)}. {emailById.get(r.accountant_id) ?? r.accountant_id}
                     </div>
                     <dl className="mt-2 text-xs text-slate">
-                      <div><span className="font-semibold text-ink">{r.account_name}</span></div>
-                      <div>Sort code: {r.sort_code}</div>
-                      <div>Account: {r.account_number}</div>
-                      <div className="mt-1">Requested {formatDateTime(r.requested_at)}</div>
+                      <div>
+                        <span className="font-semibold text-ink">
+                          {r.account_name}
+                        </span>
+                      </div>
+                      <RevealBankButton
+                        requestId={r.id}
+                        maskedAccountNumber={maskAccountNumber(r.account_number)}
+                        sortCode={r.sort_code}
+                        reveal={revealBank}
+                      />
+                      <div className="mt-1">
+                        Requested {formatDateTime(r.requested_at)}
+                      </div>
                     </dl>
                   </div>
                   <PayoutForm requestId={r.id} markPaid={markPaid} />
@@ -113,8 +132,19 @@ export default async function AdminWithdrawalsPage() {
                     {formatMoney(r.amount_pence)}. {emailById.get(r.accountant_id) ?? r.accountant_id}
                   </div>
                   <div className="text-xs text-slate">
-                    {r.account_name} · {r.sort_code} · {r.account_number}
-                    {r.paid_at ? <> · Paid {formatDateTime(r.paid_at)}</> : null}
+                    {r.account_name} &middot; {r.sort_code} &middot;{" "}
+                    <span className="font-mono">
+                      {maskAccountNumber(r.account_number)}
+                    </span>
+                    {r.paid_at ? <> &middot; Paid {formatDateTime(r.paid_at)}</> : null}
+                  </div>
+                  <div className="mt-1">
+                    <RevealBankButton
+                      requestId={r.id}
+                      maskedAccountNumber={maskAccountNumber(r.account_number)}
+                      sortCode={r.sort_code}
+                      reveal={revealBank}
+                    />
                   </div>
                 </div>
                 {r.receipt_path ? (

@@ -791,6 +791,56 @@ export async function reassignCaseAction(
 // Receipt goes to case-documents/receipts/{requestId}/... via admin client
 // (server-only, no RLS complexity for a rarely-used bucket subfolder).
 // -------------------------------------------------------------------------
+// Reveal the full account_number on a withdrawal request + log who
+// did it. The admin page displays account_number masked to the last
+// 4 digits by default (RevealBankButton); this action is called
+// when the admin clicks Reveal. Each call writes an admin_actions
+// row with action='withdrawal_bank_revealed' (migration 0073) so
+// we have "who saw this and when". Admins only; service role role
+// filter + the admin_actions insert fail closed on anything else.
+export async function revealWithdrawalBankAction(
+  requestId: string,
+): Promise<ActionResult<{ accountName: string; sortCode: string; accountNumber: string }>> {
+  try {
+    const me = await requireRole("admin");
+    const admin = createAdminClient();
+
+    const { data: req, error } = await admin
+      .from("withdrawal_requests")
+      .select(
+        "id, accountant_id, amount_pence, account_name, sort_code, account_number",
+      )
+      .eq("id", requestId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!req) throw new Error("Withdrawal request not found.");
+
+    // Fire-and-forget would hide a failure to log, which is the
+    // whole point here, so we DO wait on the insert. If audit
+    // logging itself can't complete, the reveal doesn't happen -
+    // same as the Company Authentication Code reveal flow's
+    // fail-closed shape.
+    const { error: logErr } = await admin.from("admin_actions").insert({
+      target_user_id: req.accountant_id,
+      admin_id: me.id,
+      action: "withdrawal_bank_revealed",
+      note: `Revealed bank details on withdrawal_request ${req.id} (£${(req.amount_pence / 100).toFixed(2)}).`,
+    });
+    if (logErr) throw new Error(`Audit log failed: ${logErr.message}`);
+
+    return {
+      ok: true,
+      data: {
+        accountName: req.account_name,
+        sortCode: req.sort_code,
+        accountNumber: req.account_number,
+      },
+    };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function markWithdrawalPaidAction(
   requestId: string,
   formData: FormData,
