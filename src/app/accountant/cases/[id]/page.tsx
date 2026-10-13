@@ -510,6 +510,45 @@ export default async function AccountantCaseDetailPage({
         </div>
       ) : null}
 
+      {/* Admin-set accountant commission on bespoke cases. Shown as
+          soon as the accountant is assigned (data.isMine), so they
+          know what they'll be paid for this engagement well before
+          case complete. Only renders when the admin actually set a
+          commission on this case - legacy bespoke rows (pre-0067
+          with accountant_commission_pence null) and every non-
+          bespoke case stay silent. Deliberately shows ONLY the
+          accountant payout, not the client's total fee; matches
+          the existing visibility convention where the accountant
+          dashboard list shows client fees but the per-case page
+          does not. */}
+      {data.isMine &&
+      data.row.accountant_commission_pence != null &&
+      data.row.accountant_commission_pence > 0 ? (
+        <div
+          className="mb-6 rounded-xl border p-5"
+          style={{
+            background: "rgba(19,217,160,0.08)",
+            borderColor: "rgba(19,217,160,0.40)",
+          }}
+          role="status"
+        >
+          <div
+            className="text-[11px] font-semibold uppercase tracking-widest"
+            style={{ fontFamily: "var(--font-mono)", color: "#0E9E77" }}
+          >
+            Your commission for this engagement
+          </div>
+          <div className="mt-1 text-base font-semibold text-ink">
+            £{(data.row.accountant_commission_pence / 100).toLocaleString("en-GB")}
+          </div>
+          <p className="mt-1 text-xs text-slate">
+            Credited to your wallet when the case is marked complete. Agreed
+            with you by admin at engagement time; set per bespoke case rather
+            than a share of the client fee.
+          </p>
+        </div>
+      ) : null}
+
       {/* Case detail: two-column at xl+ where there's genuine room for a
           side chat panel. Below xl (which covers phones, tablets, and
           even typical laptops at 1024-1280px wide) the chat and

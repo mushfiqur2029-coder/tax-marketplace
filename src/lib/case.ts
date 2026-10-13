@@ -41,6 +41,11 @@ export type CaseRow = {
   balance_pence: number | null;
   balance_payment_status: "pending" | "succeeded" | null;
   balance_paid_at: string | null;
+  // Admin-set flat payout to the accountant on case complete
+  // (migration 0067). Only populated on bespoke engagements. NULL
+  // falls back to the custom_fee_pence / 2 behavior for pre-0067
+  // bespoke rows, and to the tier catalogue for everything else.
+  accountant_commission_pence: number | null;
   // Audit trail link back to the originating enquiry row, if the case
   // was created from one. Null on self-serve wizard cases.
   service_enquiry_id: string | null;

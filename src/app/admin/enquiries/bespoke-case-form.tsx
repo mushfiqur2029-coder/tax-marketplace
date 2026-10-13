@@ -14,20 +14,25 @@ type Props = {
     enquiryId: string,
     feeGbp: number,
     depositGbp: number,
+    commissionGbp: number,
     accountantId: string,
     note: string | null,
   ) => Promise<ActionResult<{ caseId: string }>>;
 };
 
 // Admin-side form on the enquiry card. Captures a whole-£ total fee +
-// a whole-£ deposit + an accountant + an optional note, then calls
-// createBespokeCaseFromEnquiryAction. Deposit is paid upfront via
-// Stripe before work starts; the balance (total - deposit) is billed
-// at approval. Fees are whole £ only per the product constraint; the
-// server stores them as pence.
+// a whole-£ deposit + a whole-£ accountant commission + an accountant
+// + an optional note, then calls createBespokeCaseFromEnquiryAction.
+// Deposit is paid upfront via Stripe before work starts; the balance
+// (total - deposit) is billed at approval. Commission is the direct £
+// amount the accountant earns for this engagement on completion -
+// NOT a percentage of anything, admin decides it per engagement.
+// Fees are whole £ only per the product constraint; the server
+// stores them as pence.
 export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
   const [fee, setFee] = useState<string>("");
   const [deposit, setDeposit] = useState<string>("");
+  const [commission, setCommission] = useState<string>("");
   const [accountantId, setAccountantId] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -70,14 +75,23 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
 
   const feeNum = Number(fee);
   const depositNum = Number(deposit);
-  // Both whole £ > 0, deposit strictly less than total so the balance
-  // is at least £1. Server re-enforces the same rule.
+  const commissionNum = Number(commission);
+  // Fee + deposit: both whole £ > 0, deposit strictly less than total
+  // so the balance is at least £1. Commission: whole £ > 0, must not
+  // exceed total (accountant can't earn more than the client pays) -
+  // but is otherwise a free admin figure, not tied to any formula.
+  // Server re-enforces every rule.
   const feeValid =
     Number.isInteger(feeNum) && feeNum > 0;
   const depositValid =
     Number.isInteger(depositNum) && depositNum > 0;
+  const commissionValid =
+    Number.isInteger(commissionNum) && commissionNum > 0;
   const splitValid = feeValid && depositValid && depositNum < feeNum;
-  const canSubmit = accountantId !== "" && splitValid && !pending;
+  const commissionWithinFee =
+    feeValid && commissionValid && commissionNum <= feeNum;
+  const allValid = splitValid && commissionWithinFee;
+  const canSubmit = accountantId !== "" && allValid && !pending;
   const balancePreview = splitValid ? feeNum - depositNum : null;
 
   const onSubmit = () => {
@@ -87,6 +101,7 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
         enquiryId,
         feeNum,
         depositNum,
+        commissionNum,
         accountantId,
         note.trim() || null,
       );
@@ -106,7 +121,7 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
       >
         Create case from this enquiry
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr]">
+      <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span
             className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate"
@@ -149,6 +164,25 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
             className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate"
             style={{ fontFamily: "var(--font-mono)" }}
           >
+            Accountant commission (whole £)
+          </span>
+          <input
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="1"
+            value={commission}
+            onChange={(e) => setCommission(e.target.value)}
+            placeholder="e.g. 800"
+            className="input-sl"
+            aria-describedby="bespoke-commission-note"
+          />
+        </label>
+        <label className="block">
+          <span
+            className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
             Accountant
           </span>
           <select
@@ -182,6 +216,18 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
           </span>
         ) : (
           "Deposit charged on sign; balance charged automatically when the client approves the prepared work."
+        )}
+      </p>
+      <p
+        id="bespoke-commission-note"
+        className="mt-1 text-xs text-slate"
+      >
+        {commissionValid && feeValid && commissionNum > feeNum ? (
+          <span className="font-medium text-red-700">
+            Commission can&rsquo;t exceed the total fee the client pays.
+          </span>
+        ) : (
+          "Flat payout to the accountant on case complete. Not a percentage of the fee; set it per engagement."
         )}
       </p>
       <label className="mt-3 block">

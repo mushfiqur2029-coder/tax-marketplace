@@ -150,6 +150,7 @@ export default async function AdminEnquiriesPage() {
     enquiryId: string,
     feeGbp: number,
     depositGbp: number,
+    commissionGbp: number,
     accountantId: string,
     note: string | null,
   ) => {
@@ -158,6 +159,7 @@ export default async function AdminEnquiriesPage() {
       enquiryId,
       feeGbp,
       depositGbp,
+      commissionGbp,
       accountantId,
       note,
     );
@@ -288,6 +290,7 @@ async function EnquiryCard({
     enquiryId: string,
     feeGbp: number,
     depositGbp: number,
+    commissionGbp: number,
     accountantId: string,
     note: string | null,
   ) => Promise<import("@/lib/action-result").ActionResult<{ caseId: string }>>;

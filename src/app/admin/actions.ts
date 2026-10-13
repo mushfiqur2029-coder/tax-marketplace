@@ -1055,6 +1055,7 @@ export async function createBespokeCaseFromEnquiryAction(
   enquiryId: string,
   feeGbp: number,
   depositGbp: number,
+  commissionGbp: number,
   accountantId: string,
   note: string | null,
 ): Promise<ActionResult<{ caseId: string }>> {
@@ -1062,12 +1063,18 @@ export async function createBespokeCaseFromEnquiryAction(
     const me = await requireRole("admin");
     const admin = createAdminClient();
 
-    // Whole-£ inputs per the admin-UI constraint; both integers.
+    // Whole-£ inputs per the admin-UI constraint; all integers.
     // Deposit paid up front via Stripe before work starts; balance
     // (total - deposit) is charged automatically the moment the
     // client approves the prepared work. 0 < deposit < total so
     // there's a positive balance to collect at approval - the whole
     // point of the two-stage flow.
+    //
+    // Commission is the direct £ payout to the accountant on case
+    // complete, set per engagement by admin. NOT a percentage of
+    // anything (the trigger in 0067 uses it as the full v_amount, no
+    // halving). Must be <= total so the accountant can't earn more
+    // than the client paid.
     if (!Number.isInteger(feeGbp) || feeGbp <= 0) {
       throw new Error("Total fee must be a positive whole-£ amount.");
     }
@@ -1079,9 +1086,18 @@ export async function createBespokeCaseFromEnquiryAction(
         "Deposit must be less than the total fee so there's a balance to collect on approval.",
       );
     }
+    if (!Number.isInteger(commissionGbp) || commissionGbp <= 0) {
+      throw new Error("Accountant commission must be a positive whole-£ amount.");
+    }
+    if (commissionGbp > feeGbp) {
+      throw new Error(
+        "Accountant commission can't exceed the total fee the client pays.",
+      );
+    }
     const feePence = feeGbp * 100;
     const depositPence = depositGbp * 100;
     const balancePence = feePence - depositPence;
+    const commissionPence = commissionGbp * 100;
 
     const { data: enquiry, error: enquiryErr } = await admin
       .from("service_enquiries")
@@ -1129,6 +1145,7 @@ export async function createBespokeCaseFromEnquiryAction(
         deposit_pence: depositPence,
         balance_pence: balancePence,
         balance_payment_status: "pending",
+        accountant_commission_pence: commissionPence,
         accountant_id: accountantId,
         service_enquiry_id: enquiry.id,
         status: "draft",
@@ -1144,7 +1161,7 @@ export async function createBespokeCaseFromEnquiryAction(
 
     // Auto-close the enquiry — the quote replaces the "awaiting admin"
     // state. Note is appended to admin_notes if provided.
-    const quoteSummary = `[Quote £${feeGbp} (£${depositGbp} deposit + £${feeGbp - depositGbp} balance)]`;
+    const quoteSummary = `[Quote £${feeGbp} (£${depositGbp} deposit + £${feeGbp - depositGbp} balance, £${commissionGbp} accountant commission)]`;
     const closedNote = note?.trim()
       ? `${quoteSummary} ${note.trim()}`
       : `${quoteSummary} Case created.`;
@@ -1158,7 +1175,7 @@ export async function createBespokeCaseFromEnquiryAction(
       target_user_id: enquiry.client_id,
       admin_id: me.id,
       action: "warning", // reusing existing enum value; no bespoke-case enum yet
-      note: `Bespoke case ${caseId} created at £${feeGbp} total (£${depositGbp} deposit + £${feeGbp - depositGbp} balance) assigned to accountant ${accountantId}.${
+      note: `Bespoke case ${caseId} created at £${feeGbp} total (£${depositGbp} deposit + £${feeGbp - depositGbp} balance), accountant commission £${commissionGbp}, assigned to accountant ${accountantId}.${
         note?.trim() ? ` Note: ${note.trim()}` : ""
       }`,
     });
