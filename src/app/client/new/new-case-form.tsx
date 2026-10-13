@@ -483,10 +483,19 @@ function OrderSummary({
         ) : (
           <>
             <dl className="mt-4 space-y-2.5 text-sm">
-              <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline justify-between gap-2">
                 <dt className="text-ink">{selectedTier.title}</dt>
-                <dd className="font-semibold text-ink">
-                  £{selectedTier.priceGbp}
+                <dd className="font-semibold text-ink flex items-baseline gap-1.5">
+                  {selectedTier.salePriceGbp != null ? (
+                    <>
+                      <span className="text-xs font-medium text-slate line-through">
+                        £{selectedTier.priceGbp}
+                      </span>
+                      <span>£{selectedTier.salePriceGbp}</span>
+                    </>
+                  ) : (
+                    <>£{selectedTier.priceGbp}</>
+                  )}
                 </dd>
               </div>
               {urgentAddon > 0 ? (
@@ -506,7 +515,7 @@ function OrderSummary({
                   className="text-lg font-bold text-ink"
                   style={{ fontFamily: "var(--font-heading)" }}
                 >
-                  £{selectedTier.priceGbp + urgentAddon}
+                  £{(selectedTier.salePriceGbp ?? selectedTier.priceGbp) + urgentAddon}
                 </dd>
               </div>
             </dl>
@@ -547,13 +556,31 @@ function TierCardBody({ tier: t }: { tier: PlanTier }) {
         className="mt-4 flex items-baseline gap-2"
         style={{ fontFamily: "var(--font-heading)" }}
       >
-        {t.originalGbp && t.originalGbp !== t.priceGbp ? (
+        {t.salePriceGbp != null ? (
+          <span className="text-lg font-semibold text-slate line-through decoration-slate/60">
+            £{t.priceGbp}
+          </span>
+        ) : t.originalGbp && t.originalGbp !== t.priceGbp ? (
           <span className="text-lg font-semibold text-slate line-through decoration-slate/60">
             £{t.originalGbp}
           </span>
         ) : null}
         {t.priceDisplay ? (
           <span className="text-3xl font-bold text-ink">{t.priceDisplay}</span>
+        ) : t.salePriceGbp != null ? (
+          <>
+            <span className="text-3xl font-bold text-ink">£{t.salePriceGbp}</span>
+            <span
+              className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
+              style={{
+                background: "linear-gradient(135deg, #ef4444, #f97316)",
+                fontFamily: "var(--font-mono)",
+                boxShadow: "0 2px 6px rgba(239, 68, 68, 0.25)",
+              }}
+            >
+              Sale
+            </span>
+          </>
         ) : (
           <span className="text-3xl font-bold text-ink">£{t.priceGbp}</span>
         )}

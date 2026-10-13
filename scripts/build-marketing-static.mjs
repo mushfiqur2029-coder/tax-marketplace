@@ -456,10 +456,13 @@ const STERLING_JS = `// Vanilla replacements for the three bits that need JS onc
       return;
     }
     if (tier.salePriceGbp != null) {
-      // was/now: wrap originals in <s> and bold the sale.
+      // was/now with Sale badge. CSS classes (.price-was, .price-now,
+      // .price-sale-badge) are defined at the end of styles.css so the
+      // utility classes on the parent element still cascade correctly.
       el.innerHTML =
-        '<span class="price-was">£' + tier.priceGbp + '</span> ' +
-        '<span class="price-now">£' + tier.salePriceGbp + '</span>';
+        '<span class="price-was">£' + tier.priceGbp + '</span>' +
+        '<span class="price-now">£' + tier.salePriceGbp + '</span>' +
+        '<span class="price-sale-badge">Sale</span>';
     } else {
       el.textContent = "£" + tier.priceGbp;
     }

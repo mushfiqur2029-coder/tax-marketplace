@@ -78,10 +78,11 @@
       return;
     }
     if (tier.salePriceGbp != null) {
-      // was/now: wrap originals in <s> and bold the sale.
+      // was/now with Sale badge. CSS lives at the end of styles.css.
       el.innerHTML =
-        '<span class="price-was">£' + tier.priceGbp + '</span> ' +
-        '<span class="price-now">£' + tier.salePriceGbp + '</span>';
+        '<span class="price-was">£' + tier.priceGbp + '</span>' +
+        '<span class="price-now">£' + tier.salePriceGbp + '</span>' +
+        '<span class="price-sale-badge">Sale</span>';
     } else {
       el.textContent = "£" + tier.priceGbp;
     }
