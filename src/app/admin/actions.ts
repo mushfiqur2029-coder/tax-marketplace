@@ -1127,6 +1127,41 @@ export async function createAddonCatalogAction(input: {
   }
 }
 
+// -------------------------------------------------------------------------
+// Admin editor for the custom-add-on cap. The cap lives on the addon_catalog
+// sentinel row (__custom_max__, migration 0076). This action targets only
+// that row and only edits amount_pence - no name/description/active churn.
+// Rejecting zero/negative/non-finite values here keeps the fallback logic in
+// getCustomAddonCapPence from ever triggering on a bad admin edit.
+// -------------------------------------------------------------------------
+export async function setCustomAddonCapAction(
+  amountPence: number,
+): Promise<ActionResult> {
+  try {
+    await requireRole("admin");
+    const admin = createAdminClient();
+
+    const rounded = Math.round(amountPence);
+    if (!Number.isFinite(rounded) || rounded <= 0) {
+      throw new Error("Cap must be greater than zero.");
+    }
+    if (rounded > 100_000_000) {
+      throw new Error("Cap looks unreasonably high. Double-check the pence.");
+    }
+
+    const { error } = await admin
+      .from("addon_catalog")
+      .update({ amount_pence: rounded, updated_at: new Date().toISOString() })
+      .eq("key", "__custom_max__");
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/addon-catalog");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function updateAddonCatalogAction(
   key: string,
   input: {

@@ -3,10 +3,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createAddonCatalogAction,
   updateAddonCatalogAction,
+  setCustomAddonCapAction,
 } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { CatalogRow } from "./catalog-row";
 import { AddCatalogItemForm } from "./add-catalog-item-form";
+import { CustomCapCard } from "./custom-cap-card";
+import {
+  CUSTOM_ADDON_CAP_FALLBACK_PENCE,
+  CUSTOM_ADDON_CAP_KEY,
+} from "@/lib/addon-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +50,20 @@ export default async function AdminAddonCatalogPage() {
     return updateAddonCatalogAction(key, input);
   };
 
-  const active = (rows ?? []).filter((r) => r.active);
-  const inactive = (rows ?? []).filter((r) => !r.active);
+  // Sentinel rows (keys prefixed __) are config, not pickable add-ons.
+  // Pull them out so the Active / Deactivated lists only show real
+  // add-ons; the config rows get their own dedicated cards above.
+  const presets = (rows ?? []).filter((r) => !r.key.startsWith("__"));
+  const customCapRow = (rows ?? []).find(
+    (r) => r.key === CUSTOM_ADDON_CAP_KEY,
+  );
+  const active = presets.filter((r) => r.active);
+  const inactive = presets.filter((r) => !r.active);
+
+  const saveCustomCap = async (amountPence: number) => {
+    "use server";
+    return setCustomAddonCapAction(amountPence);
+  };
 
   return (
     <>
@@ -54,6 +72,14 @@ export default async function AdminAddonCatalogPage() {
         title="Add-on catalog"
         description="Preset add-ons accountants can offer clients mid-case. Edits do not change historical add-ons. Existing case rows snapshot the price they were sold at."
       />
+      <div className="mb-6">
+        <CustomCapCard
+          initialPence={
+            customCapRow?.amount_pence ?? CUSTOM_ADDON_CAP_FALLBACK_PENCE
+          }
+          save={saveCustomCap}
+        />
+      </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
         <div className="space-y-8">
           <section>

@@ -12,6 +12,7 @@ import {
   insertVatApprovalReadyNotification,
 } from "@/lib/notifications";
 import { type ActionResult, fail } from "@/lib/action-result";
+import { getCustomAddonCapPence } from "@/lib/addon-catalog";
 import { periodDocsApplyToTier } from "@/lib/engagement/period-docs";
 import {
   ACCOUNTANT_ANNUAL_ACCOUNTS_KEY,
@@ -311,9 +312,16 @@ export async function requestCustomAddonAction(input: {
     if (!Number.isFinite(amountPence) || amountPence <= 0) {
       throw new Error("Amount must be greater than zero.");
     }
-    // Sanity cap so a stray decimal doesn't slip through as £100k.
-    if (amountPence > 500_000) {
-      throw new Error("Custom add-ons over £5,000 need to go through support.");
+    // Sanity cap so a stray decimal doesn't slip through as £100k. The
+    // ceiling is admin-editable via addon_catalog.__custom_max__ (0076);
+    // getCustomAddonCapPence falls back to the pre-migration 500_000
+    // if the sentinel row is missing.
+    const capPence = await getCustomAddonCapPence(supabase);
+    if (amountPence > capPence) {
+      const capGbp = (capPence / 100).toFixed(0);
+      throw new Error(
+        `Custom add-ons over £${capGbp} need to go through support.`,
+      );
     }
 
     const { data: caseRow, error: caseErr } = await supabase
