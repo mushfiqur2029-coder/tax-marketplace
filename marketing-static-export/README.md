@@ -33,7 +33,7 @@ public_html/
 Each page has its own `<head>` with a tuned `<title>` + meta
 description for SEO. Prices are populated at build time as a fallback
 and refreshed live on page load from the admin-edited catalog at
-`https://api.sterlingledger.co.uk/api/public/pricing`.
+`https://apisterlingledger.co.uk/api/public/pricing`.
 
 ## Live pricing — how it works
 
@@ -50,7 +50,7 @@ price stays visible — users never see a blank price card.
 ## Internal links
 
 All login / register / dashboard / case-flow links go to
-`https://api.sterlingledger.co.uk/*`. The marketing site itself only
+`https://apisterlingledger.co.uk/*`. The marketing site itself only
 serves this folder.
 
 ## Rebuilding

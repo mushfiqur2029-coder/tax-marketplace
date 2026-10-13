@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var API_PRICING_URL = "https://api.sterlingledger.co.uk/api/public/pricing";
+  var API_PRICING_URL = "https://apisterlingledger.co.uk/api/public/pricing";
 
   // --- Mobile nav toggle -----------------------------------------
   // Looks for a button with [data-mobile-menu-toggle] and a target

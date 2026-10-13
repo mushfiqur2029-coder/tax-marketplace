@@ -29,7 +29,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
 const BASE = "http://localhost:3000";
 const OUT = join(PROJECT_ROOT, "marketing-static-export");
-const APP_HOST = "https://api.sterlingledger.co.uk";
+const APP_HOST = "https://apisterlingledger.co.uk";
 
 // Routes that become static pages. Each one gets its own tuned
 // <title> + <meta description> for SEO. Path is relative to OUT and
@@ -151,7 +151,7 @@ const PAGES = [
 ];
 
 // Any href starting with one of these paths is an app route and gets
-// rewritten to the absolute api.sterlingledger.co.uk URL during export.
+// rewritten to the absolute apisterlingledger.co.uk URL during export.
 const APP_PATH_PREFIXES = [
   "/login",
   "/register",
@@ -363,7 +363,7 @@ const STERLING_JS = `// Vanilla replacements for the three bits that need JS onc
 (function () {
   "use strict";
 
-  var API_PRICING_URL = "https://api.sterlingledger.co.uk/api/public/pricing";
+  var API_PRICING_URL = "https://apisterlingledger.co.uk/api/public/pricing";
 
   // --- Mobile nav toggle -----------------------------------------
   // Looks for a button with [data-mobile-menu-toggle] and a target
@@ -505,7 +505,7 @@ public_html/
 Each page has its own \`<head>\` with a tuned \`<title>\` + meta
 description for SEO. Prices are populated at build time as a fallback
 and refreshed live on page load from the admin-edited catalog at
-\`https://api.sterlingledger.co.uk/api/public/pricing\`.
+\`https://apisterlingledger.co.uk/api/public/pricing\`.
 
 ## Live pricing — how it works
 
@@ -522,7 +522,7 @@ price stays visible — users never see a blank price card.
 ## Internal links
 
 All login / register / dashboard / case-flow links go to
-\`https://api.sterlingledger.co.uk/*\`. The marketing site itself only
+\`https://apisterlingledger.co.uk/*\`. The marketing site itself only
 serves this folder.
 
 ## Rebuilding

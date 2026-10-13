@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 
-// This subdomain (api.sterlingledger.co.uk) hosts the portals + API only.
-// Marketing content lives at the apex sterlingledger.co.uk as static
-// files. Hitting the bare `/` here always redirects:
+// This host (apisterlingledger.co.uk) serves the portals + API only.
+// Marketing content lives at sterlingledger.co.uk as static files.
+// Hitting the bare `/` here always redirects:
 //   • signed-in users -> /{role}  (their portal landing)
 //   • everyone else   -> the marketing domain
 // Nothing on this URL path should render content.
