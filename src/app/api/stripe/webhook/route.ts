@@ -1,5 +1,5 @@
 import "server-only";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, after } from "next/server";
 import type Stripe from "stripe";
 import { stripe, stripeWebhookSecret, siteUrl } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -257,9 +257,17 @@ export async function POST(req: NextRequest) {
             description: addon.description,
           });
 
-          // Client receipt email + SL inbox BCC. Non-fatal: a failed
-          // send can't 500 the webhook (Stripe would retry and we'd
-          // have already flipped the row).
+          // Client receipt email + SL inbox BCC. Moved OFF the
+          // synchronous webhook path via Next 16's after(): Chromium
+          // PDF render + SMTP round-trip can comfortably exceed
+          // Vercel Hobby's 10s function cap, which caused Stripe to
+          // retry a successful payment and the retry's idempotency
+          // guard then silently skipped the resend. after() keeps
+          // the invocation alive after the 200 response, so the
+          // email can take as long as it needs without blocking
+          // Stripe. Failures land in post_payment_delivery_failures
+          // (migration 0072) so a bad render doesn't go silent.
+          after(async () => {
           try {
             // Re-select the add-on so the invoice_number assigned
             // by the DB trigger (migration 0061) is in hand before
@@ -369,8 +377,23 @@ export async function POST(req: NextRequest) {
               }
             }
           } catch (mailErr) {
-            console.error("[webhook] addon receipt email threw:", mailErr);
+            const msg =
+              mailErr instanceof Error ? mailErr.message : String(mailErr);
+            console.error(
+              `[webhook] addon receipt email failed for case ${addon.case_id} addon ${addonId}: ${msg}`,
+            );
+            await admin.from("post_payment_delivery_failures").insert({
+              case_id: addon.case_id,
+              stage: "addon_email",
+              error_message: msg,
+              context: {
+                addon_id: addonId,
+                session_id: session.id,
+                payment_intent: paymentIntentId,
+              },
+            });
           }
+          });
         }
         break;
       }
@@ -468,10 +491,11 @@ export async function POST(req: NextRequest) {
           // deposit receipt email above; the only differences are the
           // labels ("balance" instead of "deposit") and the invoice
           // number (balance_invoice_number assigned by trigger
-          // added in migration 0066). Non-fatal: Stripe retries
-          // would re-fire the webhook but the status filter above
-          // keeps the DB flip idempotent, so a repeat email at
-          // worst means two receipts.
+          // added in migration 0066). Moved off the synchronous
+          // webhook path via after(): same reason as the add-on and
+          // deposit branches, Vercel Hobby's 10s cap can't afford
+          // the Chromium render + SMTP step on top of the DB flip.
+          after(async () => {
           try {
             const { data: freshRow } = await admin
               .from("cases")
@@ -593,6 +617,7 @@ export async function POST(req: NextRequest) {
               },
             });
           }
+          });
         }
         break;
       }
@@ -644,10 +669,13 @@ export async function POST(req: NextRequest) {
       // automatically (if enabled in dashboard); this is the business
       // follow-up — "your case is submitted, here's what happens
       // next". The native receipt and this email are complementary,
-      // not duplicates. Non-fatal: a bad send must not 500 the
-      // webhook (Stripe would retry and we'd re-flip nothing but
-      // potentially send twice).
+      // not duplicates. Moved off the synchronous webhook path via
+      // after(): Chromium PDF + SMTP comfortably exceeds Vercel
+      // Hobby's 10s cap, and the pre-after sync version was timing
+      // out and Stripe retries were being silently skipped by the
+      // idempotency guard (DB flip already committed).
       if (paid && flipped && flipped.length > 0) {
+        after(async () => {
         try {
           // Pull the row AFTER the update so the DB trigger has
           // populated invoice_number. Trigger lives in migration
@@ -801,8 +829,25 @@ export async function POST(req: NextRequest) {
             }
           }
         } catch (mailErr) {
-          console.error("[webhook] case receipt email threw:", mailErr);
+          const msg =
+            mailErr instanceof Error ? mailErr.message : String(mailErr);
+          console.error(
+            `[webhook] case receipt email failed for case ${caseId}: ${msg}`,
+          );
+          await admin.from("post_payment_delivery_failures").insert({
+            case_id: caseId,
+            stage: "deposit_email",
+            error_message: msg,
+            context: {
+              session_id: session.id,
+              payment_intent:
+                typeof session.payment_intent === "string"
+                  ? session.payment_intent
+                  : (session.payment_intent?.id ?? null),
+            },
+          });
         }
+        });
       }
       break;
     }
