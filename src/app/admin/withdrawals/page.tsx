@@ -12,6 +12,7 @@ import { ReceiptLink } from "@/app/accountant/wallet/receipt-link";
 import { formatDateTime } from "@/lib/format";
 import { RevealBankButton } from "./reveal-bank-button";
 import { maskAccountNumber } from "./mask";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,14 @@ export default async function AdminWithdrawalsPage() {
         title="Withdrawal requests"
         description="Pay from your own banking, then upload the receipt to close the request."
       />
+      <div className="mb-6 text-sm">
+        <Link
+          href="/admin/withdrawals/reveals"
+          className="font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
+        >
+          View reveal audit log →
+        </Link>
+      </div>
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
