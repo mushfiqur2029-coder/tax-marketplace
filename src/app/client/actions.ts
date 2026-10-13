@@ -612,11 +612,24 @@ export async function approveAndFileAction(
 
       // Save session id for webhook reconciliation + the client-side
       // Pay-balance banner so a late webhook doesn't leave the case
-      // stuck with a stale "pay now" prompt.
-      await supabase
+      // stuck with a stale "pay now" prompt. .select("id").single()
+      // converts a 0-row RLS-filtered result into a PGRST116 error
+      // so we don't silently succeed if the policy
+      // cases_client_update_balance_checkout (migration 0071)
+      // blocks the write. Mirrors the pattern used for the main
+      // approve + filed flip below.
+      const { data: saved, error: saveErr } = await supabase
         .from("cases")
         .update({ balance_stripe_checkout_session_id: session.id })
-        .eq("id", caseId);
+        .eq("id", caseId)
+        .select("id")
+        .single();
+      if (saveErr) throw new Error(saveErr.message);
+      if (!saved) {
+        throw new Error(
+          "Could not open balance payment: the database refused the write. Reload and try again.",
+        );
+      }
 
       if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
       redirect(session.url);
@@ -706,10 +719,22 @@ export async function startBalanceCheckoutAction(
       cancel_url: `${base}/client/cases/${caseId}?balance_canceled=1`,
     });
 
-    await supabase
+    // Same pattern as the inline write in approveAndFileAction:
+    // .select("id").single() so a 0-row RLS block raises rather
+    // than silently succeeding. Policy cases_client_update_balance_checkout
+    // (migration 0071) is what permits this.
+    const { data: saved, error: saveErr } = await supabase
       .from("cases")
       .update({ balance_stripe_checkout_session_id: session.id })
-      .eq("id", caseId);
+      .eq("id", caseId)
+      .select("id")
+      .single();
+    if (saveErr) throw new Error(saveErr.message);
+    if (!saved) {
+      throw new Error(
+        "Could not open balance payment: the database refused the write. Reload and try again.",
+      );
+    }
 
     if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
     redirect(session.url);
