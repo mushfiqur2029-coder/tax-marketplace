@@ -28,6 +28,7 @@ type Row = {
   footer_line: string | null;
   hero_line: string | null;
   price_gbp: number;
+  sale_price_gbp: number | null;
   original_gbp: number | null;
   save_gbp: number | null;
   price_display: string | null;
@@ -48,6 +49,7 @@ function rowToTier(row: Row): PlanTier {
     title: row.title,
     tagline: row.tagline,
     priceGbp: row.price_gbp,
+    salePriceGbp: row.sale_price_gbp ?? undefined,
     originalGbp: row.original_gbp ?? undefined,
     saveGbp: row.save_gbp ?? undefined,
     priceGbpSubtitle: row.price_gbp_subtitle ?? undefined,
@@ -160,6 +162,7 @@ export type ServiceCatalogPatch = {
   footer_line?: string | null;
   hero_line?: string | null;
   price_gbp?: number;
+  sale_price_gbp?: number | null;
   original_gbp?: number | null;
   save_gbp?: number | null;
   price_display?: string | null;

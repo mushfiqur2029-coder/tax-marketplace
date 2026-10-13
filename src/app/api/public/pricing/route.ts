@@ -72,9 +72,11 @@ export async function GET(req: Request) {
     footerLine: t.footerLine ?? null,
     heroLine: t.heroLine ?? null,
     priceGbp: t.priceGbp,
+    // When salePriceGbp is non-null, the marketing site renders
+    // "was £priceGbp now £salePriceGbp" strike-through styling.
+    salePriceGbp: t.salePriceGbp ?? null,
     // originalGbp / saveGbp are legacy fields currently unused by the
-    // marketing UI. Surfacing them for forward-compat; the authoritative
-    // "was/now" price field will land in Stage 3 as salePriceGbp.
+    // marketing UI. Kept in the response for forward-compat.
     originalGbp: t.originalGbp ?? null,
     saveGbp: t.saveGbp ?? null,
     priceDisplay: t.priceDisplay ?? null,

@@ -27,6 +27,9 @@ export function ServiceCatalogRow({
   const [title, setTitle] = useState(tier.title);
   const [tagline, setTagline] = useState(tier.tagline);
   const [priceGbp, setPriceGbp] = useState(String(tier.priceGbp));
+  const [salePriceGbp, setSalePriceGbp] = useState(
+    tier.salePriceGbp != null ? String(tier.salePriceGbp) : "",
+  );
   const [description, setDescription] = useState(tier.description ?? "");
   const [featuresText, setFeaturesText] = useState(
     (tier.features ?? []).join("\n"),
@@ -43,6 +46,7 @@ export function ServiceCatalogRow({
     setTitle(tier.title);
     setTagline(tier.tagline);
     setPriceGbp(String(tier.priceGbp));
+    setSalePriceGbp(tier.salePriceGbp != null ? String(tier.salePriceGbp) : "");
     setDescription(tier.description ?? "");
     setFeaturesText((tier.features ?? []).join("\n"));
     setFooterLine(tier.footerLine ?? "");
@@ -60,6 +64,23 @@ export function ServiceCatalogRow({
       setError("Price must be a whole number of pounds (0 or more).");
       return;
     }
+    // Sale price: blank = clear. When set, must be a positive whole
+    // number strictly less than the regular price. Server + DB check
+    // this too; this early return is just friendlier error text.
+    let parsedSale: number | null = null;
+    const trimmedSale = salePriceGbp.trim();
+    if (trimmedSale !== "") {
+      const n = Number(trimmedSale);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+        setError("Sale price must be a whole number of pounds greater than zero, or blank.");
+        return;
+      }
+      if (n >= Math.round(parsedPrice)) {
+        setError("Sale price must be lower than the regular price.");
+        return;
+      }
+      parsedSale = n;
+    }
     const features = featuresText
       .split("\n")
       .map((l) => l.trim())
@@ -69,6 +90,7 @@ export function ServiceCatalogRow({
         title: title.trim(),
         tagline: tagline.trim(),
         price_gbp: Math.round(parsedPrice),
+        sale_price_gbp: parsedSale,
         description: description.trim() || null,
         features: features.length > 0 ? features : null,
         footer_line: footerLine.trim() || null,
@@ -148,8 +170,29 @@ export function ServiceCatalogRow({
           className="text-sm font-semibold text-ink"
           style={{ fontFamily: "var(--font-heading)" }}
         >
-          {tier.priceDisplay ?? `£${tier.priceGbp}`}
+          {tier.priceDisplay ?? (
+            tier.salePriceGbp != null ? (
+              <>
+                <span className="text-slate line-through">£{tier.priceGbp}</span>
+                <span className="ml-1.5">£{tier.salePriceGbp}</span>
+              </>
+            ) : (
+              <>£{tier.priceGbp}</>
+            )
+          )}
         </span>
+        {tier.salePriceGbp != null ? (
+          <span
+            className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+            style={{
+              background: "rgba(220,38,38,0.14)",
+              color: "#B01E1E",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            On sale
+          </span>
+        ) : null}
         <span
           className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
           style={{
@@ -217,6 +260,13 @@ export function ServiceCatalogRow({
             type="number"
             value={priceGbp}
             onChange={setPriceGbp}
+          />
+          <Field
+            label="Sale price (£, optional)"
+            type="number"
+            value={salePriceGbp}
+            onChange={setSalePriceGbp}
+            placeholder="Blank = no sale. Must be less than the regular price."
           />
           <Field
             label="Price display override (optional)"

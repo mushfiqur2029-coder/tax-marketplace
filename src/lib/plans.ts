@@ -63,6 +63,11 @@ export type PlanTier = {
   title: string;
   tagline: string;              // sub-heading under title
   priceGbp: number;             // current price (used for Stripe amount)
+  // Optional discounted price. When present, marketing renders
+  // "was £priceGbp now £salePriceGbp" styling. Server-side payment
+  // paths still charge priceGbp — the sale display is marketing-only
+  // until we wire checkout to prefer the sale amount.
+  salePriceGbp?: number;
   originalGbp?: number;         // struck-through original price (personal only)
   saveGbp?: number;             // shown next to price (personal only)
   priceGbpSubtitle?: string;    // small footer under the price

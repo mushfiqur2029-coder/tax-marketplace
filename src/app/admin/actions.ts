@@ -1436,6 +1436,7 @@ export async function updateServiceCatalogAction(
     copy("footer_line");
     copy("hero_line");
     copy("price_gbp");
+    copy("sale_price_gbp");
     copy("original_gbp");
     copy("save_gbp");
     copy("price_display");
@@ -1453,6 +1454,21 @@ export async function updateServiceCatalogAction(
         !Number.isInteger(safe.price_gbp)
       ) {
         throw new Error("Price must be a whole number of pounds (0 or more).");
+      }
+    }
+    // Sale price validation. Null clears. When set, must be a positive
+    // integer and strictly less than the (new or existing) regular
+    // price so the DB check constraint doesn't bounce the write. The
+    // < price check runs again in Postgres as a belt-and-braces.
+    if (safe.sale_price_gbp !== undefined && safe.sale_price_gbp !== null) {
+      if (
+        !Number.isFinite(safe.sale_price_gbp) ||
+        safe.sale_price_gbp <= 0 ||
+        !Number.isInteger(safe.sale_price_gbp)
+      ) {
+        throw new Error(
+          "Sale price must be a whole number of pounds greater than zero, or blank to clear.",
+        );
       }
     }
     if (safe.title !== undefined && !safe.title.trim()) {
