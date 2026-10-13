@@ -38,6 +38,15 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ caseId: string } | null>(null);
   const [pending, start] = useTransition();
+  // Confirmation step. Create button opens a modal; admin has to
+  // re-type the deal summary (£total / £deposit / £commission) to
+  // enable the final confirm. Matches the type-to-confirm pattern
+  // in RemoveAdminButton. Reason: the form's own copy warns the
+  // numbers can't be edited after creation, but it still submitted
+  // on a single click - this closes the gap for muscle-memory
+  // mistypes and double-clicks.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [typed, setTyped] = useState("");
 
   if (accountants.length === 0) {
     return (
@@ -94,7 +103,14 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
   const canSubmit = accountantId !== "" && allValid && !pending;
   const balancePreview = splitValid ? feeNum - depositNum : null;
 
-  const onSubmit = () => {
+  // Deal summary used as the type-to-confirm string. Admin has to
+  // re-type this exactly so the numbers are read a second time -
+  // if they fat-fingered a zero on fee or deposit, it shows here.
+  const confirmPhrase = `£${feeNum} / £${depositNum} / £${commissionNum}`;
+  const typedMatches =
+    typed.trim().replace(/\s+/g, " ") === confirmPhrase;
+
+  const onConfirm = () => {
     setError(null);
     start(async () => {
       const res = await createCase(
@@ -109,6 +125,7 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
         setError(res.error);
         return;
       }
+      setConfirmOpen(false);
       setSuccess({ caseId: res.data.caseId });
     });
   };
@@ -259,16 +276,110 @@ export function BespokeCaseForm({ enquiryId, accountants, createCase }: Props) {
           type="button"
           variant="primary"
           disabled={!canSubmit}
-          onClick={onSubmit}
+          onClick={() => {
+            setTyped("");
+            setError(null);
+            setConfirmOpen(true);
+          }}
           className="w-full sm:w-auto"
         >
-          {pending ? "Creating…" : "Create case"}
+          Create case
         </SLButton>
         <span className="text-xs text-slate">
           Enquiry auto-closes. Fee split can&rsquo;t be edited after creation. Cancel
           and re-create if the numbers are wrong.
         </span>
       </div>
+
+      {confirmOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{
+            background: "rgba(15,30,77,0.45)",
+            backdropFilter: "blur(2px)",
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bespoke-confirm-heading"
+        >
+          <div className="card-sl w-full max-w-md p-6 sm:p-7">
+            <h3
+              id="bespoke-confirm-heading"
+              className="text-lg font-semibold text-ink"
+              style={{ fontFamily: "var(--font-heading)" }}
+            >
+              Confirm bespoke case numbers?
+            </h3>
+            <p className="mt-2 text-sm text-slate">
+              Once created, the fee split can&rsquo;t be edited. The client is
+              billed from these numbers, the accountant is paid the commission
+              on complete, and the audit log records the exact figures.
+            </p>
+            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+              <dt className="text-slate">Total fee</dt>
+              <dd className="font-semibold text-ink">
+                £{feeNum.toLocaleString("en-GB")}
+              </dd>
+              <dt className="text-slate">Deposit (payable now)</dt>
+              <dd className="font-semibold text-ink">
+                £{depositNum.toLocaleString("en-GB")}
+              </dd>
+              <dt className="text-slate">Balance (on approval)</dt>
+              <dd className="font-semibold text-ink">
+                £{(feeNum - depositNum).toLocaleString("en-GB")}
+              </dd>
+              <dt className="text-slate">Accountant commission</dt>
+              <dd className="font-semibold text-ink">
+                £{commissionNum.toLocaleString("en-GB")}
+              </dd>
+            </dl>
+            <label className="mt-4 block">
+              <span
+                className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                Type <code>{confirmPhrase}</code> to confirm
+              </span>
+              <input
+                type="text"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder={confirmPhrase}
+                autoComplete="off"
+                className="input-sl"
+                autoFocus
+              />
+            </label>
+            {error ? (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-red-700"
+                style={{ background: "rgba(220,38,38,0.08)" }}
+              >
+                {error}
+              </p>
+            ) : null}
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                disabled={pending}
+                className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink hover:border-sky/50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <SLButton
+                type="button"
+                variant="primary"
+                disabled={!typedMatches || pending}
+                onClick={onConfirm}
+              >
+                {pending ? "Creating…" : "Create case"}
+              </SLButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
