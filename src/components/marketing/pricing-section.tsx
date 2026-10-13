@@ -36,6 +36,7 @@ export function PricingSection({
           <button
             type="button"
             onClick={() => setMode("personal")}
+            data-pricing-mode="personal"
             className={"pt-btn" + (mode === "personal" ? " active" : "")}
           >
             Personal
@@ -53,21 +54,27 @@ export function PricingSection({
           <button
             type="button"
             onClick={() => setMode("business")}
+            data-pricing-mode="business"
             className={"pt-btn" + (mode === "business" ? " active" : "")}
           >
             Business / VAT
           </button>
         </div>
 
-        {mode === "personal" ? (
+        {/* Both panels render at SSR time, with the inactive one hidden
+            via the `hidden` attribute. React toggles via `mode`; the
+            static export's sterling.js uses the data-pricing-mode /
+            data-pricing-panel attrs to do the same. */}
+        <div data-pricing-panel="personal" hidden={mode !== "personal"}>
           <PersonalGrid tiers={personalTiers} />
-        ) : (
+        </div>
+        <div data-pricing-panel="business" hidden={mode !== "business"}>
           <div className="pricing-grid">
             {companyTiers.map((t) => (
               <BusinessCard key={t.id} tier={t} />
             ))}
           </div>
-        )}
+        </div>
       </div>
     </section>
   );

@@ -93,6 +93,7 @@ export function AudienceTabs() {
               key={t.id}
               type="button"
               onClick={() => onSelect(t.id)}
+              data-audience-tab={t.id}
               className={"audience-tab" + (active === t.id ? " active" : "")}
               aria-pressed={active === t.id}
             >
@@ -101,15 +102,29 @@ export function AudienceTabs() {
           ))}
         </Reveal>
 
-        <div key={animateKey} className="audience-panel animate-in">
-          {current.cards.map((c) => (
-            <Link key={c.title + c.num} href={c.href} className="a-card">
-              <div className="ic">{c.num}</div>
-              <h3>{c.title}</h3>
-              <p>{c.body}</p>
-            </Link>
-          ))}
-        </div>
+        {/* All five panels rendered at SSR, inactive ones hidden. React
+            re-animates the active one via the animateKey. The static
+            export's sterling.js toggles the `hidden` attribute based on
+            the data-audience-tab button clicked. */}
+        {TABS.map((t) => (
+          <div
+            key={t.id}
+            data-audience-panel={t.id}
+            hidden={active !== t.id}
+            className={
+              "audience-panel" +
+              (active === t.id ? " animate-in" : "")
+            }
+          >
+            {t.cards.map((c) => (
+              <Link key={c.title + c.num} href={c.href} className="a-card">
+                <div className="ic">{c.num}</div>
+                <h3>{c.title}</h3>
+                <p>{c.body}</p>
+              </Link>
+            ))}
+          </div>
+        ))}
       </div>
     </section>
   );

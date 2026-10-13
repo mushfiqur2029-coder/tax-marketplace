@@ -53,10 +53,12 @@ export function FaqAccordion({
             return (
               <div
                 key={f.q}
+                data-faq-item
                 className={"faq-item" + (open ? " open" : "")}
               >
                 <button
                   type="button"
+                  data-faq-trigger
                   className="faq-q"
                   aria-expanded={open}
                   onClick={() => setOpenIndex(open ? null : i)}

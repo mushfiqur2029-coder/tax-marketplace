@@ -62,6 +62,7 @@ export function SiteHeader() {
             </SLLink>
             <button
               type="button"
+              data-mobile-menu-toggle
               onClick={() => setMobileOpen((v) => !v)}
               className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-navy-deep transition hover:bg-sky/10 md:hidden"
               aria-label={mobileOpen ? "Close menu" : "Open menu"}
@@ -93,6 +94,7 @@ export function SiteHeader() {
           </div>
 
           <div
+            data-mobile-menu
             className={"mobile-panel md:hidden" + (mobileOpen ? " open" : "")}
           >
             {NAV_LINKS.map((l) => (

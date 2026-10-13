@@ -236,16 +236,39 @@ function rewriteAppLinks(html) {
   });
 }
 
+// Normalize a /_next/static/... URL for both the HTML rewrite and the
+// on-disk filename. Next dev emits brackets as %5B/%5D in URLs, which
+// most static web servers (apache/cPanel, Node http) decode before
+// filesystem lookup — if we saved the literal "%5B..." filename the
+// request would 404. Replacing [ ] with underscores sidesteps this
+// entirely: safe URL, safe filename.
+function normalizeAssetUrl(raw) {
+  const decoded = decodeURIComponent(raw);
+  return decoded.replace(/\[/g, "_").replace(/\]/g, "_");
+}
+
 // Collect /_next/static/... asset URLs referenced in the HTML. We'll
-// download them once at the end and the HTML can keep its original
-// paths.
+// download them once at the end. The HTML keeps the ORIGINAL href
+// unless we normalize it (see rewriteAssetUrls below).
 function collectAssets(html) {
   const re = /\/_next\/static\/[^\s"'<>]+/g;
   let m;
   while ((m = re.exec(html))) {
     const url = m[0].replace(/&quot;$/, "").replace(/\\$/, "");
-    assetsToFetch.set(url, true);
+    assetsToFetch.set(url, normalizeAssetUrl(url));
   }
+}
+
+// Rewrite the HTML's /_next/static/... hrefs to the normalized path so
+// browsers can find the files on disk.
+function rewriteAssetUrls(html) {
+  for (const [raw, normalized] of assetsToFetch.entries()) {
+    if (raw === normalized) continue;
+    // raw is already URL-encoded. HTML contains it literally.
+    const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    html = html.replace(new RegExp(escaped, "g"), normalized);
+  }
+  return html;
 }
 
 // Inject <title>, <meta name="description">, and our sterling.js tag.
@@ -265,15 +288,27 @@ function injectMeta(html, title, description) {
   return html;
 }
 
-async function buildPage(page) {
+// Pages are built in two passes: first collect every asset URL across
+// all pages, then rewrite + write. Needed so rewriteAssetUrls knows
+// about every asset before any page is written.
+const pageHtml = new Map();
+
+async function fetchPage(page) {
   const url = BASE + page.route;
-  console.log(`  ${page.route} -> ${page.out}`);
+  console.log(`  fetch ${page.route}`);
   let html = await fetchText(url);
   collectAssets(html);
+  pageHtml.set(page, html);
+}
+
+async function writePage(page) {
+  let html = pageHtml.get(page);
   html = stripNextScripts(html);
   html = rewriteAppLinks(html);
+  html = rewriteAssetUrls(html);
   html = injectMeta(html, page.title, page.description);
   await writeFileEnsureDir(join(OUT, page.out), html);
+  console.log(`  wrote ${page.out}`);
 }
 
 async function main() {
@@ -281,24 +316,28 @@ async function main() {
   await rm(OUT, { recursive: true, force: true });
   await mkdir(OUT, { recursive: true });
 
-  console.log("Building pages:");
+  console.log("Fetching pages:");
   for (const p of PAGES) {
-    await buildPage(p);
+    await fetchPage(p);
+  }
+  console.log("\nWriting pages:");
+  for (const p of PAGES) {
+    await writePage(p);
   }
 
   console.log(`\nDownloading ${assetsToFetch.size} /_next assets...`);
   // Skip JS chunks — we don't need them. Only download CSS, fonts, and
-  // media (woff, images). The HTML's /_next/static paths still resolve
-  // under cPanel because we mirror the directory shape.
-  for (const url of assetsToFetch.keys()) {
-    const ext = extname(url.split("?")[0]).toLowerCase();
+  // media (woff, images). Save each file at the NORMALIZED path (no
+  // brackets in the filename) so static web servers can serve it.
+  for (const [raw, normalized] of assetsToFetch.entries()) {
+    const ext = extname(raw.split("?")[0]).toLowerCase();
     if (ext === ".js" || ext === ".map") continue;
     try {
-      const buf = await fetchBuffer(BASE + url);
-      await writeFileEnsureDir(join(OUT, url), buf);
-      console.log(`  ${url} (${buf.length}B)`);
+      const buf = await fetchBuffer(BASE + raw);
+      await writeFileEnsureDir(join(OUT, normalized), buf);
+      console.log(`  ${normalized} (${buf.length}B)`);
     } catch (e) {
-      console.log(`  SKIP ${url}: ${e.message}`);
+      console.log(`  SKIP ${raw}: ${e.message}`);
     }
   }
 
