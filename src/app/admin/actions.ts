@@ -689,6 +689,34 @@ export async function reassignCaseAction(
 
   const prevAccountantId = current.accountant_id;
 
+  // Server-side guard: the dropdown already filters to approved +
+  // not-suspended accountants (see admin/cases/[id]/page.tsx), but a
+  // crafted POST straight to this action could supply any user id.
+  // Re-check both approval_status and user suspension here so the
+  // check isn't just a UI convention.
+  const { data: targetAcc, error: targetErr } = await supabase
+    .from("accountant_profiles")
+    .select("user_id, approval_status, users!inner(id, status)")
+    .eq("user_id", newAccountantId)
+    .maybeSingle();
+  if (targetErr) throw new Error(targetErr.message);
+  if (!targetAcc) {
+    throw new Error("That user isn't an accountant.");
+  }
+  if (targetAcc.approval_status !== "approved") {
+    throw new Error(
+      "Can't assign to a non-approved accountant. Approve them first.",
+    );
+  }
+  const targetUser = (targetAcc as unknown as {
+    users: { id: string; status: string };
+  }).users;
+  if (targetUser.status === "suspended") {
+    throw new Error(
+      "Can't assign to a suspended accountant. Lift the suspension first.",
+    );
+  }
+
   // Historical behaviour promoted draft/submitted cases to in_review on
   // reassign, which was a workaround for the accountant dashboard not
   // surfacing admin-assigned cases in those statuses. The dashboard

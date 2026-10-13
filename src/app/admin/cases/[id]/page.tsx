@@ -86,7 +86,17 @@ export default async function AdminCasePage({
       row.accountant_id
         ? admin.from("users").select("id, email").eq("id", row.accountant_id).single()
         : Promise.resolve({ data: null }),
-      admin.from("users").select("id, email").eq("role", "accountant").order("email"),
+      // Only approved + not-suspended accountants can be assigned.
+      // Join accountant_profiles (approval state) with users (email +
+      // suspension state) so the dropdown can't show a suspended or
+      // pending-approval accountant. Server action re-checks this -
+      // see reassignCaseAction in src/app/admin/actions.ts.
+      admin
+        .from("accountant_profiles")
+        .select("user_id, users!inner(id, email, status)")
+        .eq("approval_status", "approved")
+        .neq("users.status", "suspended")
+        .order("user_id"),
       admin
         .from("case_documents")
         .select("id, file_name, file_url, uploaded_at, requirement_key")
@@ -363,10 +373,18 @@ export default async function AdminCasePage({
             <ReassignForm
               caseId={id}
               current={row.accountant_id}
-              options={(allAccs ?? []).map((a) => ({
-                id: a.id,
-                email: a.email,
-              }))}
+              options={(allAccs ?? []).map((a) => {
+                // Row shape is { user_id, users: { id, email, status } }
+                // from the accountant_profiles -> users embed above.
+                // Supabase types the embedded relation as a nested
+                // object; we unwrap to the flat shape ReassignForm
+                // expects.
+                const u = (a as unknown as {
+                  user_id: string;
+                  users: { id: string; email: string };
+                }).users;
+                return { id: u.id, email: u.email };
+              })}
               reassign={reassign}
             />
             {actions && actions.length > 0 ? (
