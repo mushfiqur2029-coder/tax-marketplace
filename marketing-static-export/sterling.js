@@ -93,7 +93,9 @@
     if (!trigger) return;
     var item = trigger.closest("[data-faq-item]");
     if (!item) return;
-    item.classList.toggle("open");
+    var open = item.classList.toggle("open");
+    // Flip aria-expanded on the button for screen reader a11y.
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
   });
 
   // --- Audience tabs on homepage ---------------------------------

@@ -187,6 +187,15 @@ const CONTACT_BODY = `
 <div class="mt-14 border-t border-line pt-6 text-xs text-slate">
 <p>We only use what you send us to answer your question. Nothing is shared with third parties. See the <a class="underline underline-offset-4 hover:text-sky" href="/privacy">privacy policy</a> for details.</p>
 </div>
+
+<section id="booking" class="mt-20">
+<h2 class="text-2xl sm:text-3xl" style="font-family:var(--font-heading)">Prefer to talk it through? Book a call.</h2>
+<p class="mt-3 text-base text-slate">Pick a 30-minute slot with a UK-qualified accountant &mdash; same calendar the consultation flow uses. No charge for the call itself.</p>
+<div class="contact-booking mt-6">
+<iframe src="https://calendar.app.google/XrzpFp1NbH4QjdLF6" title="Book a consultation call" loading="lazy"></iframe>
+</div>
+<p class="mt-4 text-xs text-slate">Calendar not loading? <a class="underline underline-offset-4 hover:text-sky" href="https://calendar.app.google/XrzpFp1NbH4QjdLF6" target="_blank" rel="noopener">Open it in a new tab</a>.</p>
+</section>
 `;
 
 const PAGES = [

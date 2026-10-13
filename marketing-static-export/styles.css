@@ -6005,3 +6005,35 @@
   color: #991b1b;
   border: 1px solid rgba(239, 68, 68, 0.25);
 }
+
+/* FAQ accordion open state. The scraped Next CSS clamps .faq-a at
+   max-height:0; the React source used an inline style={{maxHeight:400}}
+   on the open item to reveal it, which SSR only rendered on the
+   currently-open index (default null -> never). Add the class-driven
+   open rule here so .faq-item.open .faq-a reveals the answer. 1000px
+   is a safe ceiling — longer than any current FAQ answer, short
+   enough that the transition stays snappy. */
+.faq-item.open .faq-a {
+  max-height: 1000px;
+}
+
+/* Contact page: Google Calendar appointment-schedule embed. Fills
+   width on mobile; fixed height tuned for the appointment picker. */
+.contact-booking {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+.contact-booking iframe {
+  display: block;
+  width: 100%;
+  height: 700px;
+  border: 0;
+}
+@media (max-width: 640px) {
+  .contact-booking iframe { height: 600px; }
+}
