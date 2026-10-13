@@ -15,7 +15,7 @@ import { renderInvoicePdf, type InvoiceData } from "@/lib/invoice/pdf";
 import { STALE_DRAFT_DAYS } from "@/app/admin/constants";
 
 // Tiny HTML escaper for values embedded in email bodies. Same shape
-// as the booking route's — inputs here are already-validated DB
+// as the booking route's, inputs here are already-validated DB
 // values but defence-in-depth is cheap.
 function escapeHtml(s: string): string {
   return s
@@ -62,7 +62,7 @@ async function resolvePaymentMethodLabel(
   // Session carries payment_method_types ("card", "bacs_debit", …)
   // but not the brand/last4. Those live on the PaymentIntent's
   // payment_method object. We expand on demand to keep the webhook
-  // snappy — a card is by far the most common case.
+  // snappy, a card is by far the most common case.
   try {
     const pmTypes = session.payment_method_types ?? [];
     const kind = pmTypes[0] ?? "card";
@@ -101,7 +101,7 @@ function capitalize(s: string): string {
 // Resolve the "Invoice for" primary + secondary lines so the PDF
 // shows a real name (or company name on LC) rather than the email.
 // Mirrors the sources the engagement letter + case displays already
-// use — client_profiles.name for the person's name, and
+// use, client_profiles.name for the person's name, and
 // cases.intake_answers.company_name (captured at engagement sign)
 // for the Limited Company. Fallback waterfall ends at the email so
 // a legacy row with no profile still gets a sensible rendering.
@@ -126,7 +126,7 @@ async function resolveInvoiceBillingLines(
       const sub = name ? `${name} · ${clientEmail}` : clientEmail;
       return { primary: companyName, secondary: sub };
     }
-    // Legacy LC case with no company name captured — fall back to
+    // Legacy LC case with no company name captured, fall back to
     // name-on-top, email-below so the invoice is still useful.
     return {
       primary: name || clientEmail,
@@ -142,7 +142,7 @@ async function resolveInvoiceBillingLines(
 }
 
 // Render an invoice PDF and return the base64 payload the email
-// layer expects. Non-fatal callers wrap this in try/catch — a
+// layer expects. Non-fatal callers wrap this in try/catch, a
 // chromium hiccup must not block the status-update that already
 // landed in the DB.
 async function buildInvoiceAttachment(
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
 
       // Add-on payments carry addon_id in metadata. A session that has
       // addon_id is *only* an add-on payment, so we branch here to keep the
-      // case path untouched — never flip case.stripe_payment_status on an
+      // case path untouched, never flip case.stripe_payment_status on an
       // add-on session even though case_id is also stamped for cross-ref.
       if (addonId) {
         const paid = session.payment_status === "paid";
@@ -667,7 +667,7 @@ export async function POST(req: NextRequest) {
       // Receipt email: fired exactly once per case, on the pending →
       // succeeded transition. Stripe sends its own payment-receipt
       // automatically (if enabled in dashboard); this is the business
-      // follow-up — "your case is submitted, here's what happens
+      // follow-up ,  "your case is submitted, here's what happens
       // next". The native receipt and this email are complementary,
       // not duplicates. Moved off the synchronous webhook path via
       // after(): Chromium PDF + SMTP comfortably exceeds Vercel
@@ -722,7 +722,7 @@ export async function POST(req: NextRequest) {
               // Build the invoice PDF. Line items mirror the user's
               // spec: the service name as the first line, then an
               // explicit "Urgent filing" line only when the case
-              // was actually urgent — no empty "Adjustments" row.
+              // was actually urgent, no empty "Adjustments" row.
               // Bespoke two-stage deposit tags the service line with
               // "(deposit)" so the client's PDF archive reads
               // clearly across both invoices on the same case.
@@ -860,7 +860,7 @@ export async function POST(req: NextRequest) {
         event.type === "checkout.session.expired" ? "expired" : "failed";
 
       // ---- Add-on branch ----
-      // Don't flip the row — keep it at pending_payment so the client
+      // Don't flip the row, keep it at pending_payment so the client
       // can retry from the same Pay button. Stale-draft deletion does
       // NOT sweep add-ons, so there's no deletion threat to warn
       // about either, which means no client email. Admin gets an
@@ -951,7 +951,7 @@ export async function POST(req: NextRequest) {
         const serviceLabel = tier?.title ?? row.tier;
         const caseUrl = `${siteUrl().replace(/\/$/, "")}/client/cases/${caseId}/checkout`;
 
-        // Admin visibility — fire regardless of email outcome so
+        // Admin visibility, fire regardless of email outcome so
         // staff see the stall even if the client email bounces.
         try {
           await insertCasePaymentStalledNotification({

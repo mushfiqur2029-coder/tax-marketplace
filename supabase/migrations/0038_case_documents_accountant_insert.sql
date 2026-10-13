@@ -2,8 +2,8 @@
 -- Accountants had no INSERT or DELETE policy on the case_documents
 -- TABLE itself (the original 0002 schema only granted them READ on
 -- their assigned cases). That means every accountant upload path we
--- shipped — Batch 4 Annual Accounts + CT600, Batch 5 VAT return PDF
--- — would fail at the DB layer the moment anyone exercised them in
+-- shipped. Batch 4 Annual Accounts + CT600, Batch 5 VAT return PDF
+-- ,  would fail at the DB layer the moment anyone exercised them in
 -- production, with "new row violates row-level security policy for
 -- table case_documents". The uploads-sweep E2E caught all three.
 --

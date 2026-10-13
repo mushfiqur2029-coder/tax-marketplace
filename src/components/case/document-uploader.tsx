@@ -27,7 +27,7 @@ type Props = {
   /**
    * Fires after each individual file upload resolves ok. Lets a parent
    * that renders a server-component document list below the uploader
-   * call router.refresh() so the new file appears immediately — the
+   * call router.refresh() so the new file appears immediately, the
    * uploader itself can't call useRouter because it doesn't own the
    * list, only the drop zone + chip strip.
    */
@@ -140,7 +140,7 @@ export function DocumentUploader({
       const newItems: PendingItem[] = picked.map((file) => {
         const id = nextId();
         if (!fileMatchesAccept(file, accept)) {
-          // Drop-zone counterpart to the input's `accept` filter — the
+          // Drop-zone counterpart to the input's `accept` filter, the
           // browser's native picker honours accept but drag-drop
           // doesn't, so we enforce it here too.
           return {
@@ -177,12 +177,12 @@ export function DocumentUploader({
                   : { ...p, status: "error", error: res.error },
             ),
           );
-          // Auto-fade successful uploads after a few seconds — the file is
+          // Auto-fade successful uploads after a few seconds, the file is
           // now visible in the documents list below, so the chip becomes
           // redundant confirmation noise otherwise.
           if (res.ok) {
             // Fire first so a parent that renders a server-component
-            // list refreshes before the chip disappears — if we fired
+            // list refreshes before the chip disappears, if we fired
             // after the setTimeout the list would briefly be out of
             // sync with "Uploaded" chip gone + file still missing.
             onEachUploadSuccess?.();
@@ -281,7 +281,7 @@ export function DocumentUploader({
             if (e.target) e.target.value = "";
           }}
         />
-        {/* Camera capture — same action, but `capture="environment"`
+        {/* Camera capture, same action, but `capture="environment"`
             tells mobile browsers to open the rear-facing camera
             directly. Desktop silently falls back to the normal file
             picker (desktops ignore `capture`). accept is forced to
@@ -318,7 +318,7 @@ export function DocumentUploader({
               // Modal path for anywhere getUserMedia works (every
               // modern desktop + mobile browser over https/localhost).
               // The hidden <input capture="environment"> fallback
-              // handles the rest — older iOS Safari, embedded
+              // handles the rest, older iOS Safari, embedded
               // webviews, restricted work browsers.
               if (canUseGetUserMedia) setCameraModalOpen(true);
               else cameraRef.current?.click();

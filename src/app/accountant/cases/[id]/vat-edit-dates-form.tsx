@@ -18,7 +18,7 @@ type Props = {
 
 // Manual-override form. Normally hidden behind a disclosure so the
 // accountant doesn't accidentally retype dates on cycles the system
-// generated — opens on click, lets them nudge the dates for the
+// generated, opens on click, lets them nudge the dates for the
 // current (unfiled) cycle only.
 export function VatEditDatesForm({
   cycleId,

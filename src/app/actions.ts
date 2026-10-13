@@ -40,7 +40,7 @@ export async function signUpAction(
   const avatar = formData.get("avatar");
 
   if (role !== "client" && role !== "accountant") {
-    // "admin" is explicitly rejected — admins are only created by other admins
+    // "admin" is explicitly rejected, admins are only created by other admins
     // via the admin dashboard. See supabase/README.md for bootstrap.
     return { error: "Please choose an account type." };
   }
@@ -56,7 +56,7 @@ export async function signUpAction(
     return { error: "Password must be at least 8 characters." };
   }
 
-  // Check public.users first — Supabase's own signUp with an existing
+  // Check public.users first. Supabase's own signUp with an existing
   // confirmed email silently no-ops (email-enumeration protection), which
   // leaves the user confused when they never receive a confirmation. This
   // is the same account-existence trade-off we already accept on
@@ -119,7 +119,7 @@ export async function signUpAction(
         upsert: false,
       });
     if (upErr) {
-      // Non-fatal — signup itself succeeded. Log and continue.
+      // Non-fatal, signup itself succeeded. Log and continue.
       console.warn("avatar upload failed:", upErr.message);
     } else {
       const table =
@@ -159,7 +159,7 @@ export async function signInAction(
     // Distinguish "no such account" from "wrong password" so users can tell
     // whether to fix a typo, sign up, or hit Forgot password. Anything more
     // sensitive (suspended / pending approval) still gets the generic
-    // "wrong password" phrasing here — those states have their own UI once
+    // "wrong password" phrasing here, those states have their own UI once
     // the user is actually signed in.
     //
     // Trade-off flagged in the spec: this makes account existence
@@ -206,7 +206,7 @@ export async function signInAction(
 // Forgot password: send a reset link to the user's inbox.
 //
 // Intentionally returns the same "if it exists" info message regardless of
-// whether the email is registered — Supabase's resetPasswordForEmail already
+// whether the email is registered. Supabase's resetPasswordForEmail already
 // behaves this way, and echoing account existence would let an attacker
 // enumerate valid emails.
 // -------------------------------------------------------------------------
@@ -223,7 +223,7 @@ export async function sendPasswordResetAction(
 
   const supabase = await createClient();
   await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-  // Do not surface errors from resetPasswordForEmail — some (like "user not
+  // Do not surface errors from resetPasswordForEmail, some (like "user not
   // found") would leak account existence. Rate-limit errors, if any, will
   // manifest as no email arriving, which is acceptable UX.
 
@@ -234,7 +234,7 @@ export async function sendPasswordResetAction(
 
 // -------------------------------------------------------------------------
 // Complete the password reset. Called from /reset-password after the user
-// has landed there via the Supabase recovery link — which the client-side
+// has landed there via the Supabase recovery link, which the client-side
 // Supabase SDK converts into a valid session cookie automatically.
 // updateUser then targets that session's user.
 // -------------------------------------------------------------------------

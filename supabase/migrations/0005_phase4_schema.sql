@@ -1,4 +1,4 @@
--- Phase 4 schema — chat channels + attachments, wallet + withdrawals,
+-- Phase 4 schema, chat channels + attachments, wallet + withdrawals,
 -- admin RLS for cases/messages/reassignment, receipt storage.
 -- Apply after 0004_accountant_update_cases.sql.
 
@@ -133,7 +133,7 @@ drop policy if exists "withdrawal_read_own_or_admin" on public.withdrawal_reques
 create policy "withdrawal_read_own_or_admin" on public.withdrawal_requests
   for select using (accountant_id = auth.uid() or public.is_admin());
 
--- No direct INSERT/UPDATE from clients — go through security-definer RPCs.
+-- No direct INSERT/UPDATE from clients, go through security-definer RPCs.
 
 -- ==================================================================
 -- TRIGGER: on case complete → credit accountant wallet 50%

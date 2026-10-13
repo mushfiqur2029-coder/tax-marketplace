@@ -10,7 +10,7 @@ type Props = {
 };
 
 // The server action redirects to Stripe on success (never resolves), so the
-// only case where the promise settles is a validation/DB failure — surface
+// only case where the promise settles is a validation/DB failure, surface
 // the error inline instead of letting it bubble as a Next.js digest.
 export function PayButton({ amountLabel, start }: Props) {
   const [pending, startTransition] = useTransition();

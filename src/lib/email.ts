@@ -18,13 +18,13 @@ import {
 //     stored by /api/auth/google/connect to call Gmail's REST API as
 //     the connected Gmail account (nextnoor04@gmail.com). Kept wired
 //     so email keeps flowing if SMTP ever has an outage, at the cost
-//     of a non-matching From address — the recipient's eye sees it as
+//     of a non-matching From address, the recipient's eye sees it as
 //     nextnoor04@gmail.com, not info@sterlingledger.co.uk. Only use
 //     this path deliberately or when SMTP is skipped.
 //
 //   - sendEmailViaAppsScript (legacy): posts to a Google Apps Script
 //     Web App that calls GmailApp.sendEmail. Never actually deployed
-//     in production — the APPSSCRIPT_* env vars have been unset the
+//     in production, the APPSSCRIPT_* env vars have been unset the
 //     whole time, so every call quietly logged "skipped" and returned
 //     ok. Kept as a last-ditch fallback for anyone who prefers that
 //     path.
@@ -56,7 +56,7 @@ export type EmailParams = {
   bcc?: string[];
   /** Optional PDF attachment, base64-encoded. Legacy single-attachment path. */
   pdfBase64?: string;
-  /** Required when pdfBase64 is set — the filename the recipient sees. */
+  /** Required when pdfBase64 is set, the filename the recipient sees. */
   filename?: string;
   /** Generic attachments array. Preferred over pdfBase64 for anything non-PDF. */
   attachments?: EmailAttachment[];
@@ -141,7 +141,7 @@ export async function sendEmailViaAppsScript(
 // SMTP path (primary)
 // ------------------------------------------------------------------
 
-// Lazy singleton — nodemailer connects on first use and keeps a
+// Lazy singleton, nodemailer connects on first use and keeps a
 // pool of sockets open so repeated sends within a serverless
 // invocation don't each incur a TLS handshake.
 let smtpTransporter: Transporter | null = null;
@@ -270,7 +270,7 @@ export async function sendEmailViaSmtp(
 // Build an RFC 5322 MIME message, then base64url-encode it for the
 // Gmail REST API's `raw` field. Multipart/mixed when attachments are
 // present; HTML-only otherwise. We don't do multipart/alternative
-// (plain-text alongside HTML) — Gmail renders the HTML fine on its
+// (plain-text alongside HTML). Gmail renders the HTML fine on its
 // own and the extra body only exists for cases where it would,
 // which is rare for the booking confirmation surface.
 function buildRawMime(params: {
@@ -339,7 +339,7 @@ function wrap76(s: string): string {
   return s.replace(/(.{76})/g, "$1\r\n");
 }
 
-// RFC 2047 "encoded-word" for the Subject header so non-ASCII (£, —)
+// RFC 2047 "encoded-word" for the Subject header so non-ASCII (£, )
 // survives. UTF-8 base64 form keeps the implementation tiny.
 function encodeHeader(s: string): string {
   // ASCII fast path.
@@ -426,7 +426,7 @@ export async function sendEmailViaGmail(
   // Resolve the From address. token.email is "unknown" when the
   // OAuth callback couldn't look it up (userinfo.email scope isn't
   // requested; tokeninfo often returns no email without it). Fall
-  // back to GOOGLE_CALENDAR_ID — that env var already holds the
+  // back to GOOGLE_CALENDAR_ID, that env var already holds the
   // connected admin's Gmail address (used by the calendar booking
   // code for the same reason). Final fallback is "me", which Gmail
   // interprets as the authenticated sender.

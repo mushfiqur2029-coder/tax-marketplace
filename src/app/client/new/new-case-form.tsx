@@ -25,7 +25,7 @@ type Props = {
   urgentFeePence: number;
   // Server-fetched tier catalogue (reads service_catalog, falls back
   // to static PLAN_TIERS). Passed in so admin edits reflect without
-  // a code change. Already filtered down by group — personalTiers =
+  // a code change. Already filtered down by group, personalTiers =
   // Personal picker list; companyTiers = Limited Company picker list.
   personalTiers: PlanTier[];
   companyTiers: PlanTier[];
@@ -118,12 +118,12 @@ export function NewCaseForm({
     }
   };
 
-  // Enquiry-only tiers (bespoke LC) don't create a case — they jump
+  // Enquiry-only tiers (bespoke LC) don't create a case, they jump
   // straight to the enquiry form at /client/new/enquiry. They also skip
   // the deadline step because there's no fixed fee or filing date yet.
   const isEnquiryTier = !!selectedTier?.requiresEnquiry;
 
-  // Deadline step applies to any flat-fee pick — Personal always
+  // Deadline step applies to any flat-fee pick. Personal always
   // (no enquiry tiers exist on that side) and Company once a non-
   // enquiry tier is selected.
   const showDeadlineStep =

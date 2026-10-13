@@ -3,7 +3,7 @@
 -- `supabase.storage.from('case-documents').upload(...)` *before* the
 -- case_documents INSERT (which migration 0033 already opened) ever
 -- ran. The upload action does storage first and the DB row second,
--- which is why 0033 looked like it fixed the problem — the DB layer
+-- which is why 0033 looked like it fixed the problem, the DB layer
 -- was fine, the storage layer wasn't.
 --
 -- This migration mirrors 0033's condition over to the three
@@ -21,7 +21,7 @@
 --   accountant DELETE  → their own assigned case
 --
 -- Read policies (client-own, accountant-assigned, admin-all) are
--- intact and intentionally unchanged — they never had a status gate
+-- intact and intentionally unchanged, they never had a status gate
 -- and reviewers need to see signed URLs across every status.
 
 -- -------- client INSERT --------

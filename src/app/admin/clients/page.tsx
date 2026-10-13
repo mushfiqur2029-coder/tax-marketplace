@@ -139,7 +139,7 @@ export default async function AdminClientsPage({
           ? q
             ? `No clients match "${q}".`
             : "No clients yet."
-          : `Showing ${from + 1}–${Math.min(to + 1, total)} of ${total}${q ? ` for "${q}"` : ""}.`}
+          : `Showing ${from + 1}, ${Math.min(to + 1, total)} of ${total}${q ? ` for "${q}"` : ""}.`}
       </p>
 
       <Section

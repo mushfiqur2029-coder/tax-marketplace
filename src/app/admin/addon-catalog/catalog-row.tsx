@@ -63,7 +63,7 @@ export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
       });
       if (res.ok) {
         // Deactivate flips the pill colour + moves the row between
-        // "Active" and "Inactive" sections — needs a page re-render
+        // "Active" and "Inactive" sections, needs a page re-render
         // since both lists live in the server component.
         router.refresh();
       } else setError(res.error);

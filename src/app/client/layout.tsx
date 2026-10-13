@@ -36,7 +36,7 @@ export default async function ClientLayout({
       }}
       bell={<Bell userId={me.id} role={me.role} />}
     >
-      {/* No layout-level RealtimeRefresh yet — no sidebar badges.
+      {/* No layout-level RealtimeRefresh yet, no sidebar badges.
           Per-page RealtimeRefresh handles each page's own refreshes.
           Add a layout-level subscription here when client-nav badges
           land. */}

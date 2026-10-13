@@ -50,10 +50,10 @@ function stripDataUrlPrefix(dataUrl: string): string | null {
 //   • not already signed
 //
 // Variants:
-//   • limited_company — requires company_name + company_number in
+//   • limited_company, requires company_name + company_number in
 //     intake_answers (captured by the Companies House picker above);
 //     letter renders the full Parties block with director labels.
-//   • personal — no company identity needed; letter renders a
+//   • personal, no company identity needed; letter renders a
 //     client-only Parties block.
 //
 // Writes:
@@ -74,7 +74,7 @@ function stripDataUrlPrefix(dataUrl: string): string | null {
 // enters) their Companies House details. Writes company_name,
 // company_number and the picked company_status into intake_answers via
 // the merge RPC so a concurrent save can't clobber other keys. Only
-// valid in the pre-sign draft state — once engagement is signed the
+// valid in the pre-sign draft state, once engagement is signed the
 // snapshot is baked into the PDF and must not change here.
 // -------------------------------------------------------------------------
 export async function setCompanyIdentityAction(
@@ -145,7 +145,7 @@ export async function setCompanyIdentityAction(
 
 // -------------------------------------------------------------------------
 // clearCompanyIdentityAction
-// Companion to setCompanyIdentityAction — used by the widget's "Change"
+// Companion to setCompanyIdentityAction, used by the widget's "Change"
 // button so the client can pick a different company before signing.
 // Deliberately writes empty-string values rather than deleting keys
 // because the merge RPC only merges (|| in SQL has no delete semantic).
@@ -237,7 +237,7 @@ export async function signEngagementAction(
       throw new Error("Case has no personal service selected.");
     }
 
-    // Company identity must be captured before signing on the LC path —
+    // Company identity must be captured before signing on the LC path.
     // the engagement letter PDF prints company_name and company_number
     // at the top of the Parties block, and the Section A pre-fills on
     // onboarding are sourced from these two keys. Personal cases carry
@@ -264,7 +264,7 @@ export async function signEngagementAction(
     }
 
     // Pull the client's profile for snapshot. Phone can legitimately be
-    // blank — the letter will render "—" in that case.
+    // blank, the letter will render ", " in that case.
     const admin = createAdminClient();
     const { data: profile } = await admin
       .from("client_profiles")
@@ -346,7 +346,7 @@ export async function signEngagementAction(
       );
       // Signature + checkbox are preserved in the form state on error,
       // so the user can click Sign and continue again without redrawing.
-      // Only surface "contact support" if a retry is unlikely to help —
+      // Only surface "contact support" if a retry is unlikely to help.
       // for now, every error here is transient enough to retry.
       throw new Error(
         "We couldn't generate your engagement PDF just now. Please click Sign and continue again. Your signature and tick are kept. If it keeps failing, contact support.",
@@ -475,9 +475,9 @@ export async function getEngagementAssetSignedUrl(
     }
 
     // Access rules mirror what the accountant case detail page shows:
-    // admin always, client owner, assigned accountant, and — because
+    // admin always, client owner, assigned accountant, and, because
     // unassigned queue cases are visible to every approved accountant
-    // deciding whether to take them — any approved accountant on a paid
+    // deciding whether to take them, any approved accountant on a paid
     // queue case too. Without this last branch an accountant looking at
     // the queue would see "Engagement letter signed" with a broken
     // signature image, even though they can see the rest of the case.
@@ -590,7 +590,7 @@ export async function revealCompanyAuthCodeAction(
       );
     }
 
-    // Call via the user-session supabase client, not admin — the RPC's
+    // Call via the user-session supabase client, not admin, the RPC's
     // authz uses auth.uid(), which is null for service-role sessions
     // (admin). This was the real cause of "Not allowed." firing for
     // the assigned accountant. See migration 0041.

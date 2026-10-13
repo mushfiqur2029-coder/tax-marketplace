@@ -114,7 +114,7 @@ export function OnboardingAnswersPanel({
         if (fieldsHere.length === 0 && legacyDl.length === 0) return null;
         const missingHere =
           missingBySection[section.key as ChecklistSection] ?? 0;
-        // "Not yet registered for UTR" callout — fires when the client
+        // "Not yet registered for UTR" callout, fires when the client
         // ticked the gating sibling as "No". Distinct from the amber
         // "Flagged as unavailable" pill: that pill means "client has it
         // but didn't upload"; this callout means "client doesn't have

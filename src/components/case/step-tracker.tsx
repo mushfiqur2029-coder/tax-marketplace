@@ -10,7 +10,7 @@ export type Step = {
 
 // Mobile: a compact single-row of numbered circles joined by a thin
 // progress line, with the current step's label shown underneath.
-// Desktop (sm+): the original 4-card layout — bigger tap targets +
+// Desktop (sm+): the original 4-card layout, bigger tap targets +
 // full labels per step make sense once there's room.
 //
 // The mobile pattern saves ~200px of vertical space vs the stacked
@@ -24,7 +24,7 @@ export function StepTracker({ steps }: { steps: Step[] }) {
 
   return (
     <>
-      {/* Mobile compact tracker — hidden at sm+ */}
+      {/* Mobile compact tracker, hidden at sm+ */}
       <div className="sm:hidden">
         <ol className="flex items-center justify-between gap-1.5">
           {steps.map((s, i) => {
@@ -84,7 +84,7 @@ export function StepTracker({ steps }: { steps: Step[] }) {
         </div>
       </div>
 
-      {/* Desktop tracker — the original 4-column card layout */}
+      {/* Desktop tracker, the original 4-column card layout */}
       <ol className="hidden gap-3 sm:grid sm:grid-cols-4">
         {steps.map((s, i) => (
           <li key={s.key}>

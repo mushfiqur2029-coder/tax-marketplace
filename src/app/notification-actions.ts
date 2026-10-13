@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 
-// Both actions are user-scoped by RLS — no server-side auth check needed
+// Both actions are user-scoped by RLS, no server-side auth check needed
 // beyond "signed in", because notifications_owner_update policy restricts
 // the UPDATE to rows where recipient_id = auth.uid().
 

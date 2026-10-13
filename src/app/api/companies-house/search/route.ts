@@ -4,7 +4,7 @@ import { searchCompanies } from "@/lib/companies-house";
 
 // Server-side proxy for the Companies House API.
 //
-// The browser never sees the API key — the key stays in the server env
+// The browser never sees the API key, the key stays in the server env
 // and the client only talks to this endpoint. We also gate on an
 // authenticated session so a leaked /api/companies-house/search URL
 // can't be hammered externally and burn our rate-limit budget.

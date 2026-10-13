@@ -37,7 +37,7 @@ type Phase =
 //
 // Lifecycle: on open we request a MediaStream, show it in a <video>,
 // and keep a ref to the stream so we can stop every track on close
-// (closing a webcam cleanly matters — a lingering tab-level stream
+// (closing a webcam cleanly matters, a lingering tab-level stream
 // shows the browser's "camera in use" indicator and freaks users
 // out). Capture draws the current frame to a canvas, converts to a
 // blob, and switches to a "preview" phase so the user can retake
@@ -63,7 +63,7 @@ export function CameraCaptureModal({ open, onClose, onCapture }: Props) {
 
   // Stop every track on the current stream (if any). Called on
   // close, on unmount, and when switching from live -> preview (we
-  // keep the stream for retake, actually — so this is only used for
+  // keep the stream for retake, actually, so this is only used for
   // the final cleanup).
   const stopStream = useCallback((stream: MediaStream | null | undefined) => {
     if (!stream) return;
@@ -137,7 +137,7 @@ export function CameraCaptureModal({ open, onClose, onCapture }: Props) {
     if (phase.kind === "live") {
       el.srcObject = phase.stream;
       // play() can reject on some browsers if the user navigated
-      // away before autoplay kicked in. Swallow — the UI already
+      // away before autoplay kicked in. Swallow, the UI already
       // shows "Open camera" and the user can retry.
       void el.play().catch(() => {});
     } else {
@@ -221,7 +221,7 @@ export function CameraCaptureModal({ open, onClose, onCapture }: Props) {
   const handleRetake = useCallback(() => {
     if (phase.kind !== "preview") return;
     URL.revokeObjectURL(phase.blobUrl);
-    // Jump back to the open stream rather than re-requesting — the
+    // Jump back to the open stream rather than re-requesting, the
     // tracks are still live. If somehow the stream has died (user
     // navigated and came back) we'll fall through to the live-phase
     // effect's srcObject attach which will show a frozen last frame

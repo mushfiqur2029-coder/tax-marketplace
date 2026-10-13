@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-// In-page filter chip row on /client — swaps the Cases list between
+// In-page filter chip row on /client, swaps the Cases list between
 // in-progress / completed / pending. Lives separately from the sidebar
 // (that moved into the shared portal shell) because it's a page-level
 // control, not navigation chrome.

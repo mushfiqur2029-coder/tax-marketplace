@@ -57,7 +57,7 @@ export function ReassignForm({
           if (res.ok) {
             setSaved(true);
             // The "· current" marker in the select next to the newly
-            // assigned accountant comes from a server-component prop —
+            // assigned accountant comes from a server-component prop.
             // refresh so the option list reflects the new assignment
             // without needing a manual reload.
             router.refresh();

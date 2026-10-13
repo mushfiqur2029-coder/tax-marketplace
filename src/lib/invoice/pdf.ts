@@ -7,7 +7,7 @@ import { renderPdfFromHtml } from "@/lib/engagement/pdf";
 // letter so there is one chromium pipeline across the codebase.
 //
 // Caller gets a Uint8Array of PDF bytes and decides what to do with
-// them — the Stripe webhook base64-encodes and hands them to the
+// them, the Stripe webhook base64-encodes and hands them to the
 // email layer; other callers (admin PDF preview, etc.) can
 // `new Response(bytes, { headers: ... })` directly.
 

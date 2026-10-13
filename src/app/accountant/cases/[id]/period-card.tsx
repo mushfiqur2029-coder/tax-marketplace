@@ -24,7 +24,7 @@ type Props = {
 // Accounting period card. The accountant enters start+end dates and
 // a payroll flag; saving opens the second-stage upload for the client
 // (notification fires server-side). Dates can be revised freely until
-// the client submits period docs — after that, the server locks edits.
+// the client submits period docs, after that, the server locks edits.
 export function PeriodCard({
   periodStart,
   periodEnd,

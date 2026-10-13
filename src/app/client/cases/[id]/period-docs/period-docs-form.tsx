@@ -19,7 +19,7 @@ type Props = {
   tierId: TierId;
   fields: ChecklistField[];
   docsByKey: Record<string, UploadedDoc[]>;
-  // Current intake_answers — used to read `{fieldId}_not_available`
+  // Current intake_answers, used to read `{fieldId}_not_available`
   // flags that drive the per-row "I don't have this" checkbox state.
   answers: Record<string, string>;
   requiredCount: number;
@@ -34,8 +34,8 @@ type Props = {
   setNotAvailable: (fieldId: string, next: boolean) => Promise<ActionResult>;
 };
 
-// Period-docs form. Single-section layout — no text/select fields,
-// uploads only — so it's lighter than OnboardingForm. Progress bar
+// Period-docs form. Single-section layout, no text/select fields,
+// uploads only, so it's lighter than OnboardingForm. Progress bar
 // matches the dashboard style, same visual language as the rest of
 // the app.
 export function PeriodDocsForm({
@@ -399,7 +399,7 @@ function PeriodUploadRow({
 
 // Per-slot accept + hint for the period-docs section. The bank-
 // statement slot accepts PDF statements and/or CSV/XLSX/XLS
-// transaction exports in the same drop zone — merged in 0064 after
+// transaction exports in the same drop zone, merged in 0064 after
 // the split proved error-prone (clients sorting files twice, and a
 // crafted upload hit the wrong slot).
 function acceptForPeriodDocSlot(fieldId: string): string | undefined {

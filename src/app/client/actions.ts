@@ -64,7 +64,7 @@ function assertNotSuspended(status: string, action: string): void {
 // pay, upload documents. There is no intake form and no deadline step.
 // -------------------------------------------------------------------------
 // createCaseAction uses redirect() on success. fail() re-throws Next's
-// NEXT_REDIRECT digest so control flow still works — only real errors get
+// NEXT_REDIRECT digest so control flow still works, only real errors get
 // wrapped into the return value.
 export async function createCaseAction(
   formData: FormData,
@@ -93,7 +93,7 @@ export async function createCaseAction(
     }
 
     // Enquiry-only tiers (bespoke, no flat fee) must not land in
-    // cases.tier — they live in service_enquiries. Belt-and-braces on
+    // cases.tier, they live in service_enquiries. Belt-and-braces on
     // the form's own routing: the client wizard sends enquiry-tier
     // picks to /client/new/enquiry, but a crafted POST straight to
     // createCaseAction would otherwise create a half-formed case with
@@ -122,7 +122,7 @@ export async function createCaseAction(
 
     // Both current flat-fee segments (Personal and Limited Company)
     // carry a client-chosen filing deadline + optional urgent upgrade.
-    // This is the client's desired completion date — separate from the
+    // This is the client's desired completion date, separate from the
     // accountant-set accounting period dates (period_start_date /
     // period_end_date / vat_return_cycles) which stay as they are and
     // aren't touched here. Validate server-side so a crafted POST
@@ -144,7 +144,7 @@ export async function createCaseAction(
 
     // Snapshot the quoted fee onto the case at creation. Future admin
     // edits of service_catalog.price_gbp (or sale_price_gbp) must not
-    // retroactively change what this client was quoted —
+    // retroactively change what this client was quoted.
     // custom_fee_pence is read by effectiveFeePence everywhere a case
     // price is displayed or charged.
     //
@@ -286,7 +286,7 @@ export async function startCheckoutAction(
       },
     ];
     if (isUrgent) {
-      // Server-authoritative fee — never trust anything the client sent.
+      // Server-authoritative fee, never trust anything the client sent.
       line_items.push({
         quantity: 1,
         price_data: {
@@ -504,7 +504,7 @@ export async function startAddonCheckoutAction(
 // -------------------------------------------------------------------------
 // Fallback: if the Stripe webhook hasn't landed yet, poll the session once
 // and reconcile. Called from the client case-detail page after
-// ?addon_paid=<addonId>. Idempotent — safe to call after the webhook won
+// ?addon_paid=<addonId>. Idempotent, safe to call after the webhook won
 // the race, since case_addons.status will already be 'paid'.
 // -------------------------------------------------------------------------
 export async function reconcileAddonPaymentAction(addonId: string) {

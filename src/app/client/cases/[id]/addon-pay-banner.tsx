@@ -12,7 +12,7 @@ type Props = {
 };
 
 // A pay banner drawn in the same visual language as the ApproveAndFile
-// action-required card — clearly a prompt the client shouldn't miss, sitting
+// action-required card, clearly a prompt the client shouldn't miss, sitting
 // right in the flow of the case page. On submit the server action calls
 // Stripe and redirects, so we only see the return value if it errored.
 export function AddonPayBanner({

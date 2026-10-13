@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from "react";
 type Props = {
   // Fires on every stroke end with the live state of the pad: isEmpty
   // tells the parent whether to enable the submit button; dataUrl is the
-  // current PNG snapshot (null when empty). Produced lazily — only on
-  // stroke end — since toDataURL is expensive on larger canvases.
+  // current PNG snapshot (null when empty). Produced lazily, only on
+  // stroke end, since toDataURL is expensive on larger canvases.
   onChange?: (state: { isEmpty: boolean; dataUrl: string | null }) => void;
   // Optional hidden form field name. Keeps compatibility with plain-HTML
   // form submissions; most callers will prefer the onChange payload.
@@ -43,7 +43,7 @@ export function SignaturePad({
 
   // Size the backing store to devicePixelRatio for crisp lines. Rebuild
   // on container width change so a layout shift (e.g. sidebar open) stays
-  // sharp without clearing the drawing — we re-paint from a snapshot.
+  // sharp without clearing the drawing, we re-paint from a snapshot.
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -76,7 +76,7 @@ export function SignaturePad({
     const ro = new ResizeObserver(resize);
     ro.observe(container);
     return () => ro.disconnect();
-    // We intentionally don't depend on `empty` — snapshot is captured
+    // We intentionally don't depend on `empty` ,  snapshot is captured
     // from the canvas at resize time, not from state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height]);
@@ -172,7 +172,7 @@ export function SignaturePad({
     if (!drawingRef.current) return;
     drawingRef.current = false;
     lastPosRef.current = null;
-    // Produce the dataURL once per stroke — expensive, so avoid doing it
+    // Produce the dataURL once per stroke, expensive, so avoid doing it
     // on move. Mirror it into the hidden input for plain-form consumers
     // and surface it via onChange for React consumers.
     const url = api.toDataUrl();

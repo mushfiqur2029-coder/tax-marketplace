@@ -73,7 +73,7 @@ export default async function OnboardingPage({
   }
 
   // The Company Authentication Code lives encrypted. We never read it
-  // back for the client (they supplied it) — the form field shows an
+  // back for the client (they supplied it), the form field shows an
   // "already saved" indicator when it's set, and lets them overwrite.
   // Personal cases have no encrypted field; the check short-circuits
   // with authCodeAlreadySet = false (ignored by the form for Personal).

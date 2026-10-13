@@ -856,7 +856,7 @@ export default async function AdminCasePage({
             </section>
           ) : null}
 
-          {/* Legacy intake — retired personal segments only (first_time_filer /
+          {/* Legacy intake, retired personal segments only (first_time_filer /
               self_employed / landlord / investor / cis / high_earner). The
               new "personal" segment has an empty seg.intake and uses the
               Onboarding checklist card above like LC. */}

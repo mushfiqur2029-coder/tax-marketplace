@@ -216,7 +216,7 @@ function AccountantUploadSlot({
       setError(null);
       const res = await uploadDoc(requirementKey, fd);
       if (res.ok) {
-        // Real DB id comes back from the server now — no more "optimistic-"
+        // Real DB id comes back from the server now, no more "optimistic-"
         // placeholder that disabled the Remove button until a page
         // refresh.
         onUploaded(res.data);

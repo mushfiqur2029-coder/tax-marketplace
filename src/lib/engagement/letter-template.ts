@@ -13,8 +13,8 @@ export type EngagementLetterFields = {
   // callers.
   variant?: EngagementLetterVariant;
   // Captured on the engagement page before signing. Empty string for
-  // legacy cases that signed before the Companies House lookup landed —
-  // rendered as "—" rather than skipping the row, so the PDF layout
+  // legacy cases that signed before the Companies House lookup landed.
+  // rendered as ", " rather than skipping the row, so the PDF layout
   // stays stable across versions. Ignored when variant is "personal".
   companyName: string;
   companyNumber: string;      // 8 chars, Companies House format

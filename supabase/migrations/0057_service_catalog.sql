@@ -2,7 +2,7 @@
 -- src/lib/plans.ts as the source of truth for display fields (title,
 -- tagline, description, features, price). Business-logic fields
 -- (id/group/requires_enquiry/admin_create_only) are also stored here
--- for completeness, but the admin UI treats them as read-only — a
+-- for completeness, but the admin UI treats them as read-only, a
 -- genuine new service type needs a code migration (new TierId enum
 -- value + checklist mapping + commission trigger branch) and would
 -- be introduced via a seed insert here as part of that migration.
@@ -13,7 +13,7 @@
 -- affect NEW signups. Historic cases are backfilled by 0058.
 --
 -- active=false hides a service from new signups while preserving
--- history — same semantic as addon_catalog.active.
+-- history, same semantic as addon_catalog.active.
 
 create table if not exists public.service_catalog (
   id text primary key,
@@ -48,7 +48,7 @@ create index if not exists service_catalog_active_order_idx
   on public.service_catalog (active, display_order);
 
 alter table public.service_catalog enable row level security;
--- No public policies — admin-only, read + write via service role.
+-- No public policies, admin-only, read + write via service role.
 
 -- Publish to realtime so admin edits land live on the admin
 -- catalogue page without requiring a reload.
@@ -68,7 +68,7 @@ $$;
 -- Seed with the current PLAN_TIERS data verbatim. On a fresh deploy
 -- these ARE the source of truth; on an existing deploy, the admin can
 -- edit them after this migration lands. ON CONFLICT DO NOTHING keeps
--- the migration idempotent — re-running won't clobber admin edits.
+-- the migration idempotent, re-running won't clobber admin edits.
 
 insert into public.service_catalog
   (id, "group", title, tagline, description, features, footer_line, price_gbp,

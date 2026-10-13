@@ -46,7 +46,7 @@ export default async function NewCasePage({
 
   // Compute earliest standard + urgent deadlines server-side (Europe/London,
   // UK bank holidays excluded). The Personal step 3 picker uses these for
-  // its `min` and for the helper copy — client clocks can't move the gate.
+  // its `min` and for the helper copy, client clocks can't move the gate.
   const [earliestStandard, earliestUrgent, personalTiers, companyTiers] =
     await Promise.all([
       earliestStandardDeadline(),

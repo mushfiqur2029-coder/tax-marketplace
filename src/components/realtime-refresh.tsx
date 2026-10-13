@@ -21,7 +21,7 @@ export type RealtimeSubscription = {
 //
 // Mount this once per page that needs to stay fresh when another user's
 // action changes the DB. The notification bell handles its own
-// subscription separately — this covers the page content.
+// subscription separately, this covers the page content.
 //
 // Each instance uses a unique `channel` string. Supabase routes
 // per-channel so collisions would silently drop events; keep the name

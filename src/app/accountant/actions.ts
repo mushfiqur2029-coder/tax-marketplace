@@ -34,7 +34,7 @@ export type { ActionResult };
 // Suspended accountants keep read access to their assigned cases (RLS is
 // unchanged), but every case-mutating server action goes through this
 // gate. Blocking here rather than in RLS means Realtime subscriptions and
-// SELECTs still work — only the mutations are refused.
+// SELECTs still work, only the mutations are refused.
 function assertNotSuspended(status: string, action: string): void {
   if (status === "suspended") {
     throw new Error(
@@ -80,7 +80,7 @@ async function loadCaseForAccountant(caseId: string) {
 }
 
 // -------------------------------------------------------------------------
-// Take a case from the queue (atomic — race-safe using WHERE accountant_id IS NULL).
+// Take a case from the queue (atomic, race-safe using WHERE accountant_id IS NULL).
 // -------------------------------------------------------------------------
 export async function takeCaseAction(caseId: string): Promise<ActionResult> {
   try {
@@ -218,7 +218,7 @@ export async function updateCaseStatusAction(
 
 // -------------------------------------------------------------------------
 // Add-on: preset. Snapshots the catalog row's description + amount into
-// case_addons at status 'pending_payment' — the client sees a Pay banner
+// case_addons at status 'pending_payment', the client sees a Pay banner
 // immediately, no admin review. Catalog row must still be active at the
 // moment of insert; edits to the catalog after this do not rewrite the
 // snapshot.
@@ -245,7 +245,7 @@ export async function requestPresetAddonAction(
       throw new Error("Case is already complete. No more add-ons.");
     }
 
-    // Read the price from the DB — never trust a client-supplied amount.
+    // Read the price from the DB, never trust a client-supplied amount.
     const { data: preset, error: presetErr } = await supabase
       .from("addon_catalog")
       .select("key, name, description, amount_pence, active")
@@ -288,7 +288,7 @@ export async function requestPresetAddonAction(
 }
 
 // -------------------------------------------------------------------------
-// Add-on: custom. Inserts at 'pending_admin' — admin has to approve before
+// Add-on: custom. Inserts at 'pending_admin', admin has to approve before
 // the client sees it. Accountant sets the description and amount here; both
 // are validated server-side, and no downstream code trusts anything below
 // this line to have been price-verified until admin approval flips it to
@@ -375,7 +375,7 @@ export async function requestCustomAddonAction(input: {
 // -------------------------------------------------------------------------
 // Set the accounting period on a limited-company case. non_vat_reg and
 // vat_reg use this to unlock the client's second-stage document upload.
-// Dormant doesn't have a period step — the spec is explicit about "no
+// Dormant doesn't have a period step, the spec is explicit about "no
 // further client-facing step" for Dormant after Sections A/B/C.
 //
 // The client is notified when both dates are present, so uploading only
@@ -640,7 +640,7 @@ export async function removeAccountantDocumentAction(
 //
 // prepared is accepted as a starting status too, because the accountant
 // may have already stepped through it manually for a personal case
-// before this action existed — belt and braces.
+// before this action existed, belt and braces.
 export async function prepareApprovalAction(
   caseId: string,
   input: {
@@ -669,7 +669,7 @@ export async function prepareApprovalAction(
       throw new Error("This action is for limited-company cases only.");
     }
     const tierId = fresh.tier as TierId;
-    // Non-dormant tiers need the period docs in first — the accountant
+    // Non-dormant tiers need the period docs in first, the accountant
     // can't credibly prepare Annual Accounts without the full period's
     // bank data.
     if (periodDocsApplyToTier(tierId) && !fresh.period_docs_submitted_at) {
@@ -705,7 +705,7 @@ export async function prepareApprovalAction(
     // any add-on on this case is still awaiting payment. Preset add-
     // ons sit at `pending_payment`, custom ones at `pending_admin`
     // (awaiting admin review) or `pending_payment` (approved,
-    // awaiting client payment). Either state blocks — a case can't
+    // awaiting client payment). Either state blocks, a case can't
     // move downstream while the client still owes the fee.
     const { data: unpaidAddons } = await admin
       .from("case_addons")
@@ -846,7 +846,7 @@ async function assertVatReadyForAccountant(caseId: string) {
       "Client hasn't completed onboarding yet. Can't open VAT cycles.",
     );
   }
-  // Frequency can legitimately be null here — the client may have
+  // Frequency can legitimately be null here, the client may have
   // picked "I don't know" in Section D. Callers that need a concrete
   // Monthly/Quarterly/Annually (openFirstVatCycle, editVatCycleDates)
   // handle null themselves; callers that don't need it (upload the
@@ -863,7 +863,7 @@ async function assertVatReadyForAccountant(caseId: string) {
 // auto-create on approve-and-file.
 //
 // `frequency` is accepted as an optional second input for the "I don't
-// know" path — if the client picked that in Section D the accountant
+// know" path, if the client picked that in Section D the accountant
 // picks it here, we persist it back to intake_answers so later cycle
 // math has a real value.
 export async function openFirstVatCycleAction(
@@ -883,7 +883,7 @@ export async function openFirstVatCycleAction(
 
     // If the client didn't commit to a frequency (chose "I don't know"
     // or left it blank), the accountant's choice here is authoritative
-    // — write it back so subsequent cycles and the client's visible
+    // ,  write it back so subsequent cycles and the client's visible
     // Section D answer agree.
     if (!storedFreq && input.frequency) {
       const prev =
@@ -904,7 +904,7 @@ export async function openFirstVatCycleAction(
       throw new Error("Period end date must be YYYY-MM-DD.");
     }
 
-    // Must not already have a cycle on this case — this is the "first"
+    // Must not already have a cycle on this case, this is the "first"
     // action. The accountant uses editVatCycleDatesAction to adjust
     // dates on an existing cycle.
     const { data: existing } = await admin
@@ -958,7 +958,7 @@ export async function openFirstVatCycleAction(
 }
 
 // Manual override: adjust the dates on an existing cycle. Allowed up
-// to (but not including) status='filed' — once a cycle is filed we
+// to (but not including) status='filed', once a cycle is filed we
 // don't touch the historical record. HMRC due date is derived in the
 // generated column so a date change propagates automatically.
 export async function editVatCycleDatesAction(
@@ -994,7 +994,7 @@ export async function editVatCycleDatesAction(
     void caseRow;
 
     if (!frequency) {
-      // Shouldn't happen in practice — opening the first cycle persists
+      // Shouldn't happen in practice, opening the first cycle persists
       // a concrete frequency even when the client said "I don't know".
       // Guard here is defense in depth so a bad intake_answers edit
       // can't leave the label math unable to run.
@@ -1033,7 +1033,7 @@ export async function editVatCycleDatesAction(
 }
 
 // Accountant uploads the final return PDF for the given cycle. Only
-// one slot (ACCOUNTANT_VAT_RETURN_DOC_KEY) — the accountant can replace
+// one slot (ACCOUNTANT_VAT_RETURN_DOC_KEY), the accountant can replace
 // it by uploading again (we don't dedupe at insert time; the UI
 // enforces "remove before upload").
 export async function uploadVatReturnDocAction(
@@ -1164,11 +1164,11 @@ export async function removeVatReturnDocAction(
   }
 }
 
-// Accountant assembles the approval payload (box 1–9 + optional note)
+// Accountant assembles the approval payload (box 1 to 9 + optional note)
 // and transitions the cycle to client_approval. Preconditions: cycle
 // at in_review, VAT return PDF uploaded, client docs submitted.
 // Box arithmetic is validated to catch obvious transcription errors
-// (box 3 = 1+2, box 5 = 3-4) — the accountant can still override by
+// (box 3 = 1+2, box 5 = 3-4), the accountant can still override by
 // sending explicit values.
 export async function prepareVatApprovalAction(
   cycleId: string,

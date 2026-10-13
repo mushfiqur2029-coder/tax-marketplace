@@ -116,7 +116,7 @@ export async function setServiceEnquiryStatusAction(
       .update({
         status,
         // Admin notes are append-only in the UI, but the API accepts a
-        // full replace — the admin page keeps the previous note in the
+        // full replace, the admin page keeps the previous note in the
         // textarea so the admin can decide whether to extend or wipe.
         admin_notes: notes,
       })
@@ -128,7 +128,7 @@ export async function setServiceEnquiryStatusAction(
     }
 
     // Only notify the client on actual transitions INTO contacted or
-    // closed. Best-effort — a failed notification doesn't roll back the
+    // closed. Best-effort, a failed notification doesn't roll back the
     // status change (admin's save would be broken for a UI-only
     // concern).
     if (

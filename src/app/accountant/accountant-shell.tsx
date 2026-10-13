@@ -22,7 +22,7 @@ const GROUPS: ReadonlyArray<PortalNavGroup<AccountantCountKey>> = [
       // Available cases = /accountant?view=queue. Both hit the same
       // page so plain `/accountant` highlights Dashboard; the queue
       // view highlights via activePrefix match on the base path only
-      // when the URL contains ?view=queue — but activePrefix is a
+      // when the URL contains ?view=queue, but activePrefix is a
       // path-only match, so Available cases will highlight whenever
       // the user is on /accountant (same as Dashboard). Acceptable
       // for now; a future improvement is query-string-aware active.
@@ -33,7 +33,7 @@ const GROUPS: ReadonlyArray<PortalNavGroup<AccountantCountKey>> = [
         activePrefix: "/accountant/queue",
         countKey: "queue",
       },
-      // Cases detail pages live under /accountant/cases/:id — highlight here.
+      // Cases detail pages live under /accountant/cases/:id, highlight here.
       // activeExcludeExact so /accountant itself only lights Dashboard.
       {
         href: "/accountant",

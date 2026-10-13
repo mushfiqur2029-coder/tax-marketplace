@@ -3,7 +3,7 @@
 -- split as every other line of revenue. Credited immediately (not tied to
 -- case complete) since add-on work often happens mid-case.
 --
--- Baseline is 0020's on_case_complete_credit_wallet in spirit — a single
+-- Baseline is 0020's on_case_complete_credit_wallet in spirit, a single
 -- security-definer trigger function, an insert into wallet_transactions
 -- with status 'available', an amount read off the row so a future catalog
 -- price change or admin edit does not retroactively rewrite the commission.
@@ -52,7 +52,7 @@ for each row execute function public.on_addon_paid_credit_wallet();
 -- False-match risk: a case-completion earning (from 0020) with the same
 -- accountant + case + amount would prevent the backfill from firing. In
 -- practice the amounts collide only when an add-on's commission equals the
--- plan's commission on the same case for the same accountant — rare, and
+-- plan's commission on the same case for the same accountant, rare, and
 -- the trigger will still cover every future add-on payment cleanly.
 -- ==========================================================================
 

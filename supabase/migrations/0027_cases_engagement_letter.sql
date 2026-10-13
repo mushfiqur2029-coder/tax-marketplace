@@ -13,7 +13,7 @@
 -- segment ignores them.
 --
 -- Storage paths use the existing case-documents bucket under
--- signatures/{case_id}/ — see Batch 2 commit for the server action that
+-- signatures/{case_id}/ ,  see Batch 2 commit for the server action that
 -- writes there. No new bucket needed.
 
 alter table public.cases

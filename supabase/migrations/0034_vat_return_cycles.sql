@@ -11,7 +11,7 @@
 -- so the client always has a current cycle to work on. Dates can be
 -- overridden by the accountant if needed via editVatCycleDatesAction.
 --
--- Status machine is independent of the main case.status — a case can
+-- Status machine is independent of the main case.status, a case can
 -- be at status='complete' (Batch 4 Annual Accounts + CT filed) while
 -- VAT cycles continue monthly/quarterly/annually below it.
 
@@ -32,7 +32,7 @@ create table if not exists public.vat_return_cycles (
   -- within (case_id, cycle_number) so two concurrent inserts can't
   -- both land as #N.
   cycle_number int not null,
-  -- Human label, e.g. "Q1 Jan–Mar 2026", "January 2026", "Year ending
+  -- Human label, e.g. "Q1 Jan, Mar 2026", "January 2026", "Year ending
   -- 31 Dec 2026". Computed from the dates + Section D frequency at
   -- insert time but stored so UI doesn't need to re-derive it.
   period_label text not null,
@@ -47,7 +47,7 @@ create table if not exists public.vat_return_cycles (
   client_docs_submitted_at timestamptz,
   -- Box 1-9 + optional note + prepared_by/at. Shaped like
   -- cases.approval_payload (Batch 4) so UI can reuse the "no VAT
-  -- payable" conditional messaging pattern — Box 5 drives the
+  -- payable" conditional messaging pattern. Box 5 drives the
   -- client-facing liability display.
   approval_payload jsonb,
   filed_at timestamptz,
@@ -88,7 +88,7 @@ create policy "vat_cycles_client_select_own" on public.vat_return_cycles
 
 -- Client UPDATE scope: stamping client_docs_submitted_at (submit own
 -- uploads) and transitioning status client_approval → filed (approve
--- and file). Server actions enforce which column / which transition —
+-- and file). Server actions enforce which column / which transition.
 -- RLS just gates "is this client authorised to touch this cycle".
 drop policy if exists "vat_cycles_client_update_own" on public.vat_return_cycles;
 create policy "vat_cycles_client_update_own" on public.vat_return_cycles

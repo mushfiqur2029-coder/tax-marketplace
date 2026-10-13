@@ -207,7 +207,7 @@ export async function rejectProfileChangeAction(
 
 // ---------------------------------------------------------------------------
 // Admin's OWN profile edit. Admins are top of the hierarchy so changes apply
-// immediately — no pending_profile_changes row, no approval gate.
+// immediately, no pending_profile_changes row, no approval gate.
 // ---------------------------------------------------------------------------
 export type AdminProfileEdit = {
   name: string;

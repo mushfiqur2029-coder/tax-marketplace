@@ -9,7 +9,7 @@ import type { AdminNavCounts } from "@/app/admin/admin-counts";
 
 // Admin console nav. Sidebar at lg+, slide-in drawer below lg behind
 // the hamburger button in the main-area top strip. 10 flat tabs was
-// clipping even on normal desktop widths and would only get worse —
+// clipping even on normal desktop widths and would only get worse.
 // this restructures them into three groups (Teams / Money / Requests)
 // plus two standalone items (Dashboard, Account).
 //

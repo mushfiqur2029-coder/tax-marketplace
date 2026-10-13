@@ -37,7 +37,7 @@ export type ChatMessage = {
   created_at: string;
 };
 
-// Given a message, return its attachments — prefers the new jsonb array,
+// Given a message, return its attachments, prefers the new jsonb array,
 // falls back to the legacy singular columns for unmigrated rows.
 function attachmentsOf(m: ChatMessage): MessageAttachment[] {
   if (Array.isArray(m.attachments) && m.attachments.length > 0) {
@@ -58,7 +58,7 @@ function attachmentsOf(m: ChatMessage): MessageAttachment[] {
 export type ChatThread = {
   channel: MessageChannel;
   label: string; // Tab label
-  // Per-message sender label — map user id → display name (e.g. "Client",
+  // Per-message sender label, map user id → display name (e.g. "Client",
   // "Accountant", "Admin"). Any sender not in the map falls back to
   // `fallbackSenderLabel`. "You" is applied automatically to the current user.
   senderLabels: Record<string, string>;
@@ -164,7 +164,7 @@ export function MultiThreadChat({
     activeRef.current = active;
   }, [active]);
 
-  // Realtime — one subscription for the whole case, filter client-side by
+  // Realtime, one subscription for the whole case, filter client-side by
   // channel and by threads the user is actually a party to.
   useEffect(() => {
     const knownChannels = new Set(threads.map((t) => t.channel));
@@ -427,7 +427,7 @@ function ChatView({
     if (files.length) addFiles(files);
   };
 
-  // Clipboard paste on the textarea — pulls out any files (mostly images).
+  // Clipboard paste on the textarea, pulls out any files (mostly images).
   const onPaste = (e: React.ClipboardEvent) => {
     const files = Array.from(e.clipboardData.files ?? []);
     if (files.length) {

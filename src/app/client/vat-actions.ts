@@ -92,7 +92,7 @@ export async function uploadVatCycleDocAction(
     if (file.size > MAX) throw new Error("File is over 50 MB.");
 
     // Bank statement slot is PDF-only per spec. Other slots accept any
-    // common format — we don't police content types further.
+    // common format, we don't police content types further.
     if (requirementKey === "vat_bank_statement_pdf") {
       const name = file.name.toLowerCase();
       const type = (file.type || "").toLowerCase();
@@ -290,7 +290,7 @@ export async function approveAndFileVatCycleAction(
       throw new Error("Approval didn't take. Try again.");
     }
 
-    // Compute + insert the next cycle via the admin client — RLS
+    // Compute + insert the next cycle via the admin client. RLS
     // doesn't give clients insert on vat_return_cycles, but this is a
     // trusted server-side continuation of their approve-and-file.
     const next = computeNextCycleDates(cycle.cycle_end_date, frequency);
@@ -322,7 +322,7 @@ export async function approveAndFileVatCycleAction(
       .select("id, cycle_hmrc_due_date")
       .single();
     if (insErr) {
-      // Non-fatal for the current approval — the accountant can
+      // Non-fatal for the current approval, the accountant can
       // manually open the next cycle if auto-create fails. Log and
       // continue so the client's filed action still succeeds.
       console.error("Auto-open next VAT cycle failed:", insErr.message);

@@ -25,7 +25,7 @@ export function getVatFrequency(
 // True when the client picked "I don't know" (or left the field blank)
 // for VAT return frequency. The accountant's first-cycle form uses
 // this to decide whether to also prompt them for the frequency alongside
-// the first period end date — then writes their choice back to
+// the first period end date, then writes their choice back to
 // intake_answers so subsequent cycle math has a real frequency.
 export function vatFrequencyNeedsAccountantInput(
   intakeAnswers: Record<string, string> | null | undefined,
@@ -34,7 +34,7 @@ export function vatFrequencyNeedsAccountantInput(
 }
 
 // Reads the client's 9-digit VAT Registration Number from Section D.
-// Used as the HMRC payment reference on the client's approval card —
+// Used as the HMRC payment reference on the client's approval card.
 // not re-entered per cycle.
 export function getVatRegistrationNumber(
   intakeAnswers: Record<string, string> | null | undefined,
@@ -63,7 +63,7 @@ export const VAT_CYCLE_STATUS_LABELS: Record<VatCycleStatus, string> = {
 // Dates
 // ---------------------------------------------------------------------------
 //
-// We work entirely in ISO YYYY-MM-DD strings — UK VAT periods are
+// We work entirely in ISO YYYY-MM-DD strings. UK VAT periods are
 // calendar-day boundaries without a timezone, and we never want
 // Date-object JS magic to drift us by a day. All helpers below take and
 // return YYYY-MM-DD.
@@ -106,7 +106,7 @@ function addDays(ymd: Ymd, days: number): Ymd {
 }
 
 // Months in one period, from the frequency. Monthly=1, Quarterly=3,
-// Annually=12. Not exported — callers go via the dates functions.
+// Annually=12. Not exported, callers go via the dates functions.
 function monthsPerPeriod(f: VatFrequency): number {
   switch (f) {
     case "Monthly":
@@ -121,7 +121,7 @@ function monthsPerPeriod(f: VatFrequency): number {
 // Given a period end date and the frequency, derive the start date.
 // For a quarter ending 2026-03-31 at Quarterly, start = 2026-01-01.
 // Pattern: start = end - N months + 1 day. This matches UK VAT
-// convention where period "Jan–Mar" ends on the last day of March and
+// convention where period "Jan, Mar" ends on the last day of March and
 // starts on the first day of January.
 export function computePeriodStart(endYmd: Ymd, f: VatFrequency): Ymd {
   const months = monthsPerPeriod(f);
@@ -160,7 +160,7 @@ const MONTH_LONG = [
 ];
 
 // Human label for a cycle. Shape depends on frequency so the client
-// isn't shown "Q1 Jan–Jan 2026" for a monthly cycle. Caller sets this
+// isn't shown "Q1 Jan, Jan 2026" for a monthly cycle. Caller sets this
 // at insert and we store it; subsequent renders can lean on this
 // rather than re-deriving.
 export function computePeriodLabel(
@@ -171,7 +171,7 @@ export function computePeriodLabel(
   const s = parseYmd(startYmd);
   const e = parseYmd(endYmd);
   if (f === "Monthly") {
-    // "January 2026" if whole month, else "1–15 Jan 2026" fallback.
+    // "January 2026" if whole month, else "1 to 15 Jan 2026" fallback.
     const wholeMonth =
       s.y === e.y &&
       s.m === e.m &&
@@ -195,14 +195,14 @@ export function computePeriodLabel(
 // ---------------------------------------------------------------------------
 //
 // Fixed list per the spec:
-//  - Bank statement for the period            — required, PDF only
-//  - Sales invoices / platform statements     — required (multi)
-//  - Purchase documents / invoices            — optional (multi)
-//  - Bill copies                              — optional (multi)
+//  - Bank statement for the period, required, PDF only
+//  - Sales invoices / platform statements, required (multi)
+//  - Purchase documents / invoices, optional (multi)
+//  - Bill copies, optional (multi)
 //
 // We reuse ChecklistField so the existing DocumentUploader row renderer
 // can be dropped straight in. requiredFor stays empty since the
-// vat_reg tier is the only one eligible for VAT cycles at all — the
+// vat_reg tier is the only one eligible for VAT cycles at all, the
 // section/tier gates are enforced by the cycle existing in the first
 // place.
 
@@ -267,7 +267,7 @@ export const VAT_PERIOD_FOOTER_NOTE =
 export type VatApprovalPayload = {
   // All amounts in pence to stay integer. Positive = owed to HMRC;
   // negative values are allowed on Box 4 reclaim and Box 5 net (refund
-  // from HMRC). Boxes 6–9 are turnover totals, always >= 0.
+  // from HMRC). Boxes 6 to 9 are turnover totals, always >= 0.
   box_1_pence: number; // VAT due on sales
   box_2_pence: number; // VAT due on acquisitions from EU
   box_3_pence: number; // Total VAT due (box 1 + box 2)

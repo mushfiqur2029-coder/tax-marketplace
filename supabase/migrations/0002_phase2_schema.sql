@@ -1,4 +1,4 @@
--- Phase 2 schema — service selection, intake, docs, Stripe Checkout.
+-- Phase 2 schema, service selection, intake, docs, Stripe Checkout.
 -- Apply via SQL Editor after 0001_initial_schema.sql.
 
 -- ---------- Case additions ----------

@@ -124,7 +124,7 @@ export function NotificationBell({
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   // Toasts render through a portal into document.body. The site
   // header has backdrop-blur-md on it, which creates a new
-  // containing block for `position: fixed` descendants — without
+  // containing block for `position: fixed` descendants, without
   // the portal, the toast's "fixed bottom-4 right-4" anchored to
   // the header's bounds (a short strip at the top of the viewport)
   // and ended up overlapping the browser chrome at the top. The
@@ -132,7 +132,7 @@ export function NotificationBell({
   // backdrop-filter / transform / filter.
   const [portalMounted, setPortalMounted] = useState(false);
   useEffect(() => {
-    // Standard SSR-safe portal mount gate — the effect only runs on
+    // Standard SSR-safe portal mount gate, the effect only runs on
     // the client, flipping us from the server-rendered (no portal)
     // to the client-rendered (portal) tree exactly once. The
     // react-hooks/set-state-in-effect rule flags any setState in an
@@ -362,7 +362,7 @@ export function NotificationBell({
       ) : null}
 
       {/*
-        Toast stack — fixed to the viewport so the notification is visible
+        Toast stack, fixed to the viewport so the notification is visible
         without opening the bell. Rendered through a Portal into
         document.body so no ancestor containing-block (the site
         header's backdrop-filter, for one) can trap the position.

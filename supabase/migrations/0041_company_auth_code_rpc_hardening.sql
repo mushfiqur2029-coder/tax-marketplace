@@ -4,7 +4,7 @@
 --
 -- Root cause of the live bug:
 --   revealCompanyAuthCodeAction calls admin.rpc("get_company_auth_code",
---   ...) — the service-role client. Inside the RPC, auth.uid() is NULL.
+--   ...) ,  the service-role client. Inside the RPC, auth.uid() is NULL.
 --   0030 made the assigned-accountant check null-safe with coalesce, so
 --   with auth.uid()=null the function correctly rejects (as it would for
 --   any truly unauthenticated caller). Fix is at the call site: switch

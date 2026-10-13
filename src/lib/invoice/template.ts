@@ -8,7 +8,7 @@ import path from "node:path";
 // recipients see one consistent Sterling Ledger brand.
 //
 // Rendered as a full HTML document that Puppeteer prints to A4 PDF
-// via the shared src/lib/engagement/pdf.ts helper — no duplicate
+// via the shared src/lib/engagement/pdf.ts helper, no duplicate
 // chromium pipeline.
 
 export type InvoiceLineItem = {
@@ -43,7 +43,7 @@ export type InvoiceData = {
 };
 
 // Logo as a data URL, cached per process. Matches the engagement
-// letter path — same file, same base64 pipeline, same text wordmark
+// letter path, same file, same base64 pipeline, same text wordmark
 // fallback if the file ever goes missing.
 let logoDataUrlCache: string | null = null;
 function logoDataUrl(): string {

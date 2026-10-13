@@ -1,4 +1,4 @@
--- Batch B — notifications for all three roles.
+-- Batch B, notifications for all three roles.
 --
 -- Populated automatically by:
 --   • DB triggers for messages + cases (high-fanout, multiple entry points)
@@ -141,11 +141,11 @@ for each row execute function public.notify_new_message();
 -- Trigger: cases table
 --
 -- Fires for two overlapping events:
---   (a) A case "enters the queue" (paid, submitted, unassigned) — broadcast
+--   (a) A case "enters the queue" (paid, submitted, unassigned), broadcast
 --       'new_queue_case' to every approved accountant.
---   (b) A case's status changes on UPDATE — notify client + admins.
+--   (b) A case's status changes on UPDATE, notify client + admins.
 --
--- Note: (a) intentionally does NOT also emit a case_status_change — the
+-- Note: (a) intentionally does NOT also emit a case_status_change, the
 -- accountants get one queue ping per case, which is what they want.
 -- ==========================================================================
 create or replace function public.notify_case_change() returns trigger

@@ -11,7 +11,7 @@
 --     renders N attachments with zero extra queries.
 --   • Migration is a single UPDATE, backfilling old singular columns into
 --     the array.
---   • No FK integrity is being lost — nothing else in the schema references
+--   • No FK integrity is being lost, nothing else in the schema references
 --     an individual attachment.
 --
 -- The old singular columns (attachment_path / attachment_name /
@@ -41,5 +41,5 @@ update public.messages
  where attachment_path is not null
    and (attachments is null or attachments = '[]'::jsonb);
 
--- notify_new_message trigger is unchanged — it fires per row insert, so
+-- notify_new_message trigger is unchanged, it fires per row insert, so
 -- one message row (with N attachments) still equals one notification.

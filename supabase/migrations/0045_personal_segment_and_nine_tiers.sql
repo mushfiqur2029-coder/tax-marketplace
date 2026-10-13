@@ -15,7 +15,7 @@
 --
 -- Old personal enum values (basic / standard / premium) and the old
 -- 6 segment values (first_time_filer / self_employed / landlord /
--- investor / cis / high_earner) are intentionally NOT dropped —
+-- investor / cis / high_earner) are intentionally NOT dropped.
 -- dropping enum values in Postgres is painful, and all case data
 -- was wiped before this flow lands so there is nothing to migrate.
 -- The TypeScript side filters them out of the wizard, and the
@@ -53,7 +53,7 @@ end $$;
 --   complex_international   £1000 → £500.00  (50000)
 --
 -- Old personal tiers (basic/standard/premium) are retained in the case
--- statement for safety even though they are no longer sold — a case
+-- statement for safety even though they are no longer sold, a case
 -- in that tier can still complete and credit the historical amount.
 -- Limited-company tiers unchanged.
 

@@ -10,7 +10,7 @@
 --   vat_reg      → £500 (50000 pence)
 --
 -- Historic case rows that completed BEFORE this trigger lands keep
--- the £200 credit they were awarded at the time — we're not back-
+-- the £200 credit they were awarded at the time, we're not back-
 -- dating wallet balances, that would be wrong. Only cases that
 -- transition into 'complete' from here on use the new split.
 --
@@ -19,7 +19,7 @@
 -- unchanged.
 --
 -- The 4th tier vat_plus_accounts_200k (Bespoke, over £200k turnover)
--- is intentionally NOT in this branch — those engagements go
+-- is intentionally NOT in this branch, those engagements go
 -- through the enquiry form, never land in cases.tier, and are
 -- billed and credited outside the platform's flat-fee flow.
 

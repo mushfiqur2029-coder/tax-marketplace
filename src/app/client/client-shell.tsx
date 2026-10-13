@@ -6,7 +6,7 @@ import {
   type PortalNavGroup,
 } from "@/components/portal-shell";
 
-// Client portal nav. Five items, no groups — "New return" sits as a
+// Client portal nav. Five items, no groups ,  "New return" sits as a
 // persistent sidebar item while /client's own dashboard keeps the big
 // in-page CTA for first-time visitors (both affordances by design).
 // Chrome is shared with admin + accountant via <PortalShell>.

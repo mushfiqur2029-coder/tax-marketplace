@@ -9,13 +9,13 @@ import type { ChecklistField } from "@/lib/engagement/checklist";
 // OnboardingForm's UploadRow / DocumentUploader can be reused without a
 // parallel component. requiredFor lists the TierIds that MUST have this
 // field; empty = optional for everyone. The PAYE summary is conditional
-// — required only when the case has payroll_registered OR the client
-// uploaded a PAYE certificate in Section A — so its requiredFor stays
+// ,  required only when the case has payroll_registered OR the client
+// uploaded a PAYE certificate in Section A, so its requiredFor stays
 // empty here and the caller promotes it to required at runtime.
 
 export const PERIOD_DOC_FIELDS: ChecklistField[] = [
   {
-    // Single bank-statements slot — PDF statements and/or
+    // Single bank-statements slot. PDF statements and/or
     // CSV/XLSX/XLS transaction exports both land here. Previously
     // split into _pdf and _csv ids which forced the client to sort
     // files into two drop zones; a crafted upload could also hit
@@ -77,7 +77,7 @@ export const SECTION_A_PAYE_UPLOAD_ID = "paye_certificate";
 export const ACCOUNTANT_ANNUAL_ACCOUNTS_KEY = "accountant_annual_accounts";
 export const ACCOUNTANT_CT600_KEY = "accountant_ct600";
 
-// Dormant short-circuits the entire period-docs flow — the spec is
+// Dormant short-circuits the entire period-docs flow, the spec is
 // explicit about "no further client-facing step" after Sections A/B/C.
 // Admin-created bespoke engagements file annual accounts + VAT just
 // like vat_reg, so they're in-scope too.
@@ -100,7 +100,7 @@ export function periodDocsApplyToTier(tier: TierId): boolean {
 //
 //   • Otherwise, PAYE summary is required when the company IS
 //     payroll-registered OR has uploaded a PAYE certificate in
-//     Section A — the two signals the accountant can derive from the
+//     Section A, the two signals the accountant can derive from the
 //     case before period-docs are due. If neither is true, the field
 //     is shown but optional.
 //
@@ -119,7 +119,7 @@ export function periodDocFieldsForCase(opts: {
 
   return PERIOD_DOC_FIELDS.flatMap((f) => {
     if (f.id !== PERIOD_PAYE_FIELD_ID) return [f];
-    // Hide the field entirely when the client has no PAYE scheme —
+    // Hide the field entirely when the client has no PAYE scheme.
     // leaving it visible as "Optional" is confusing when the client
     // has already declared they don't need PAYE at all.
     if (payeHardExcluded) return [];

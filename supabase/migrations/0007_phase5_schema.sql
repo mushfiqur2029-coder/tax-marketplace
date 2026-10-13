@@ -1,4 +1,4 @@
--- Phase 5 schema — expanded profile fields, accountant approval workflow,
+-- Phase 5 schema, expanded profile fields, accountant approval workflow,
 -- deadline on cases, avatars storage, admin analytics + drill-in RLS.
 -- Apply after 0006_admin_direct_reply.sql.
 
@@ -92,7 +92,7 @@ end;
 $$;
 
 -- ==========================================================================
--- RLS — accountants must be approved to see queue / take cases
+-- RLS, accountants must be approved to see queue / take cases
 -- ==========================================================================
 
 drop policy if exists "cases_accountant_read_queue" on public.cases;
@@ -132,7 +132,7 @@ create policy "cases_accountant_update_queue_or_own" on public.cases
   with check (accountant_id = auth.uid());
 
 -- ==========================================================================
--- RLS — admins read/update on accountant/client profiles + users
+-- RLS, admins read/update on accountant/client profiles + users
 -- ==========================================================================
 
 drop policy if exists "accountant_profiles_admin_read" on public.accountant_profiles;
@@ -152,7 +152,7 @@ create policy "users_admin_read_all" on public.users
   for select using (public.is_admin());
 
 -- ==========================================================================
--- STORAGE — avatars bucket (public, small files)
+-- STORAGE, avatars bucket (public, small files)
 -- ==========================================================================
 
 insert into storage.buckets (id, name, public, file_size_limit)
@@ -167,7 +167,7 @@ create policy "avatars_upload_own" on storage.objects
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
--- Anyone (including public) can read avatars — profile pics are non-sensitive.
+-- Anyone (including public) can read avatars, profile pics are non-sensitive.
 drop policy if exists "avatars_public_read" on storage.objects;
 create policy "avatars_public_read" on storage.objects
   for select using (bucket_id = 'avatars');

@@ -90,7 +90,7 @@ function withTimeout<T>(
 
 // Render the HTML to a PDF Uint8Array. Caller is responsible for storing
 // or sending the bytes. Throws on failure so the sign action surfaces a
-// clear error ("engagement PDF couldn't be generated — contact support")
+// clear error ("engagement PDF couldn't be generated, contact support")
 // rather than silently storing a half-cooked file.
 //
 // The whole render runs under a RENDER_TIMEOUT_MS cap. Without this a
@@ -113,7 +113,7 @@ async function renderPdfInner(html: string): Promise<Uint8Array> {
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
-    // waitUntil 'networkidle0' is overkill here — our template is self-
+    // waitUntil 'networkidle0' is overkill here, our template is self-
     // contained with the logo as a data URL. 'load' avoids a flaky wait.
     await page.setContent(html, { waitUntil: "load" });
     const buf = await page.pdf({

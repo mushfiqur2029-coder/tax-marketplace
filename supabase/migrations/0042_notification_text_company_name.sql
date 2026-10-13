@@ -2,14 +2,14 @@
 -- the company name on limited-company cases, when we have one.
 --
 -- Reads intake_answers->>'company_name' on NEW (the new row). Shape:
---   "<Company> — moved to <status>."    when company_name is present
+--   "<Company> ,  moved to <status>."    when company_name is present
 --   "Case moved to <status>."           fallback (personal-tax cases
 --                                       and legacy LC cases that
 --                                       signed before capture landed)
 --
 -- Other branches (new_queue_case, client-approval-to-filed accountant
 -- nudge) unchanged. The queue notification already carries case_id so
--- the accountant can click through — personalising its text would
+-- the accountant can click through, personalising its text would
 -- require joining accountant_profiles against cases on every insert
 -- which isn't worth it for a line of UI.
 
@@ -55,7 +55,7 @@ begin
     company_name := nullif(trim(coalesce(NEW.intake_answers->>'company_name', '')), '');
     status_msg := case
       when company_name is not null then
-        format('%s — moved to %s.', company_name,
+        format('%s, moved to %s.', company_name,
                public.humanize_status(NEW.status::text))
       else
         format('Case moved to %s.', public.humanize_status(NEW.status::text))
@@ -75,7 +75,7 @@ begin
       values (NEW.accountant_id, 'case_status_change', NEW.id,
               case
                 when company_name is not null then
-                  format('%s — client approved and filed. Time to mark complete.',
+                  format('%s, client approved and filed. Time to mark complete.',
                          company_name)
                 else
                   'Your client approved and filed. Time to mark complete.'

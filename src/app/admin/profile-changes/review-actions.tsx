@@ -25,7 +25,7 @@ export function ReviewActions({
       const res = await fn(id, note || null);
       if (res.ok) {
         setNote("");
-        // Row moves from Pending to Reviewed on this page — refresh so
+        // Row moves from Pending to Reviewed on this page, refresh so
         // the two lists re-render with the new split instead of leaving
         // the just-reviewed row stuck in Pending.
         router.refresh();

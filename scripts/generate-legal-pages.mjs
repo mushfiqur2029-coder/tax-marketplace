@@ -5,7 +5,7 @@
 // Why not hand-build each HTML: the shell has 100+ class names from
 // the compiled Tailwind + specific data-* attributes for sterling.js
 // (mobile menu, pricing toggle). Cloning keeps those bits in sync for
-// free — a rebuild of the main scrape updates the shell, and these
+// free, a rebuild of the main scrape updates the shell, and these
 // two legal pages pick up the new shell when this script re-runs.
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -244,7 +244,7 @@ const PAGES = [
     slug: "terms",
     title: "Terms of Service. Sterling Ledger.",
     description:
-      "The terms of using Sterling Ledger — service description, pricing, payment, refunds, liability, and your rights.",
+      "The terms of using Sterling Ledger, service description, pricing, payment, refunds, liability, and your rights.",
     eyebrow: "Legal",
     heading: "Terms of Service",
     body: TERMS_BODY,

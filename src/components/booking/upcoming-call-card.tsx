@@ -1,7 +1,7 @@
 // Shared presentation for a single booked scoping call. Used on
 // both the client dashboard (/client "Upcoming calls" section) and
 // the admin enquiry detail page so staff see the same date, time
-// and Meet join link the client sees. Pure presentation — no RLS
+// and Meet join link the client sees. Pure presentation, no RLS
 // or data-fetching assumptions; the caller passes a plain object.
 
 export type UpcomingBookingView = {

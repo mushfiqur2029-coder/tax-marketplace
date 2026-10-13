@@ -11,7 +11,7 @@ import { SLButton } from "@/components/sl-button";
 // The email link lands here with a recovery token in the URL fragment. The
 // client-side Supabase SDK (detectSessionInUrl = true by default) trades
 // that token for a session cookie once mounted. We poll getUser() to know
-// when that finishes and only then let the form submit — otherwise the
+// when that finishes and only then let the form submit, otherwise the
 // server action's updateUser({ password }) fires with no session.
 export function ResetPasswordForm() {
   const [state, formAction, pending] = useActionState<AuthState, FormData>(

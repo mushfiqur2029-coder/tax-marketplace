@@ -252,7 +252,7 @@ export default async function AccountantCaseDetailPage({
     (data.row.intake_answers ?? null) as Record<string, string> | null,
   );
   // VAT section renders even when vatFrequency is null (client picked
-  // "I don't know" in Section D) — the first-cycle form prompts the
+  // "I don't know" in Section D), the first-cycle form prompts the
   // accountant to confirm the frequency alongside the first period
   // end date, and the server action persists it back.
   const showVatSection =
@@ -552,7 +552,7 @@ export default async function AccountantCaseDetailPage({
       {/* Case detail: two-column at xl+ where there's genuine room for a
           side chat panel. Below xl (which covers phones, tablets, and
           even typical laptops at 1024-1280px wide) the chat and
-          main-content columns stack full-width — chat used to drop to
+          main-content columns stack full-width, chat used to drop to
           ~400px at 1024 which was unusable, and the lg breakpoint fired
           too eagerly for a side-column layout. */}
       {/* Bespoke two-stage balance due. Shows AFTER the client has
@@ -713,7 +713,7 @@ export default async function AccountantCaseDetailPage({
               </p>
               {(() => {
                 // Pre-flight warning when add-ons on this case are
-                // unpaid — the server action will refuse, so flag it
+                // unpaid, the server action will refuse, so flag it
                 // here instead of after the accountant fills in the
                 // form and clicks Send.
                 const unpaid = addons.filter(
@@ -924,7 +924,7 @@ export default async function AccountantCaseDetailPage({
             </section>
           ) : null}
 
-          {/* Legacy intake answers card — only renders for retired personal
+          {/* Legacy intake answers card, only renders for retired personal
               segments (first_time_filer / self_employed / landlord /
               investor / cis / high_earner) whose seg.intake has fields.
               Limited Company answers live in the Onboarding checklist

@@ -3,7 +3,7 @@ import "server-only";
 // Companies House public data API wrapper.
 //
 // Auth: HTTP Basic with the API key as the username and an empty password.
-// Confirmed from Companies House's own authorisation guide — the base64
+// Confirmed from Companies House's own authorisation guide, the base64
 // payload is literally `<key>:` (trailing colon, no password).
 //
 // Two call shapes:
@@ -30,7 +30,7 @@ export type CompaniesHouseHit = {
 export type LookupResult =
   | { ok: true; items: CompaniesHouseHit[] }
   // fallback=true tells the client "API is unavailable, drop to manual
-  // entry silently". Covers missing env var and 5xx responses — anything
+  // entry silently". Covers missing env var and 5xx responses, anything
   // that would prevent *all* lookups from working, not just one query.
   | { ok: false; fallback: true }
   // 4xx: specific to this query (bad input, rate-limited). Surface the

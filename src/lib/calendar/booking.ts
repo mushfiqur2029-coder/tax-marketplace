@@ -5,7 +5,7 @@
 // slot duration, and timezone as optional overrides.
 //
 // Auth prefers an OAuth2 refresh token granted via the one-time admin
-// consent flow at /api/auth/google/connect — the server acts AS the
+// consent flow at /api/auth/google/connect, the server acts AS the
 // calendar owner, which is what unlocks `attendees` (native Google
 // calendar invite to the client) and `conferenceData.hangoutsMeet`
 // (auto-attached Meet link).
@@ -27,7 +27,7 @@ export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 // Env is read lazily so dev builds don't crash when the booking env
 // isn't configured (the picker just hides itself in that case).
 // Either auth path (OAuth2 owner refresh token OR service-account JWT)
-// is enough to list slots + create events — the picker should surface
+// is enough to list slots + create events, the picker should surface
 // as long as GOOGLE_CALENDAR_ID is set and at least one auth path has
 // its env vars present.
 export function isCalendarConfigured(): boolean {
@@ -155,7 +155,7 @@ export type BookingOptions = {
 };
 
 export type Slot = {
-  // ISO 8601 with offset — safe to pass to new Date().
+  // ISO 8601 with offset, safe to pass to new Date().
   startIso: string;
   endIso: string;
   // Pre-rendered "10:00" label in the configured timezone, so clients
@@ -175,7 +175,7 @@ function parseYmd(ymd: string): { y: number; m: number; d: number } {
   };
 }
 
-// Return 0 (Sunday) through 6 (Saturday) for a YYYY-MM-DD in UTC — the
+// Return 0 (Sunday) through 6 (Saturday) for a YYYY-MM-DD in UTC, the
 // calendar day boundary is tz-aware upstream when needed, but for the
 // Mon-Fri check we only need civil weekday from the date components.
 function civilWeekday(ymd: string): number {
@@ -190,7 +190,7 @@ export function isWorkingDay(ymd: string): boolean {
 
 // Build the absolute instant for a given civil (date, hour, minute)
 // pair in a given IANA timezone. We do this by trial-and-adjust so we
-// don't need a dedicated TZ library — Node 20+ has Intl.DateTimeFormat
+// don't need a dedicated TZ library. Node 20+ has Intl.DateTimeFormat
 // with timeZone + hour12=false which gives us the needed inverse.
 function civilToUtc(
   ymd: string,
@@ -332,7 +332,7 @@ export async function listAvailableSlots(
   const candidates = candidateSlots(ymd, opts);
   if (candidates.length === 0) return [];
 
-  // One freebusy query per day — bounded by the first/last candidate.
+  // One freebusy query per day, bounded by the first/last candidate.
   const timeMin = candidates[0].startIso;
   const timeMax = candidates[candidates.length - 1].endIso;
   const busy = await freeBusy(
@@ -360,7 +360,7 @@ export type CreateBookingInput = {
   slotMinutes?: number;
   // Short title shown on the calendar.
   summary: string;
-  // Long-form notes — client name/email/phone go here plus any
+  // Long-form notes, client name/email/phone go here plus any
   // feature-specific context.
   description: string;
   // Attendee for the invite + Meet link. We also stash it on
@@ -390,8 +390,8 @@ export async function createBooking(
   const end = new Date(start.getTime() + slotMinutes * 60_000);
 
   // Belt-and-braces: re-check that the exact slot is still free. This
-  // is a soft race — Google's native guard is "if there's a conflict,
-  // insert still succeeds" — so we do it here and refuse ourselves.
+  // is a soft race. Google's native guard is "if there's a conflict,
+  // insert still succeeds", so we do it here and refuse ourselves.
   const busy = await freeBusy(calendarId, start.toISOString(), end.toISOString(), timezone);
   if (overlaps(start.toISOString(), end.toISOString(), busy)) {
     throw new Error("That slot was taken while you were booking. Pick another.");
@@ -400,7 +400,7 @@ export async function createBooking(
   const auth = await getAuthContext();
   const isOwner = auth.kind === "owner";
 
-  // Base body — works for both auth kinds.
+  // Base body, works for both auth kinds.
   type EventBody = {
     summary: string;
     description: string;

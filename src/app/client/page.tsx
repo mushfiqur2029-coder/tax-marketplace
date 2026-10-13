@@ -71,7 +71,7 @@ export default async function ClientDashboard({
       .order("starts_at", { ascending: true }),
     // All enquiries this client has filed. Lives in a dedicated section
     // below cases so the client can see the status of their bespoke
-    // leads — including closed/quoted outcomes. RLS limits to the
+    // leads, including closed/quoted outcomes. RLS limits to the
     // signed-in client via service_enquiries_client_select.
     supabase
       .from("service_enquiries")
@@ -325,7 +325,7 @@ function UpcomingCalls({ bookings }: { bookings: UpcomingBookingView[] }) {
 
 // Enquiries history. Rendered below the cases list so the main
 // dashboard surface stays focused on live cases while giving the
-// client a durable record of every bespoke lead they've filed —
+// client a durable record of every bespoke lead they've filed.
 // what Sterling Ledger did with it, and the scoping-call booking
 // (if any) that went with it.
 type EnquiryHistoryItem = {

@@ -9,7 +9,7 @@
 -- 0021 (case_addons, addon_catalog), 0043 (service_enquiries).
 --
 -- Row-level security filters realtime events the same way it filters
--- SELECTs — admins get all rows, assigned accountants get their own
+-- SELECTs, admins get all rows, assigned accountants get their own
 -- case rows, clients get their own case rows. No new data leaks.
 
 do $$ begin

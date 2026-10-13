@@ -6,17 +6,17 @@
 -- silently filter Personal cases out:
 --
 --   - "Save didn't take, the database refused the write" on the
---     Personal UTR (sa_utr) text field save — same shape as 0039.
+--     Personal UTR (sa_utr) text field save, same shape as 0039.
 --   - "new row violates row-level security policy" on Personal
---     document upload (sa_ni_proof etc.) — same shape as 0033 and
+--     document upload (sa_ni_proof etc.) ,  same shape as 0033 and
 --     0037 at the DB layer and the storage layer respectively.
 --
 -- The server actions (saveChecklistAnswersAction,
 -- uploadChecklistDocumentAction, removeChecklistDocumentAction,
 -- submitChecklistAction in src/app/client/onboarding-actions.ts)
--- already enforce the fine-grained rules — which columns to merge,
+-- already enforce the fine-grained rules, which columns to merge,
 -- which requirement_keys are valid for the tier, which slots are
--- still open — so RLS only needs to gate "is this client authorised
+-- still open, so RLS only needs to gate "is this client authorised
 -- to touch this case's intake / documents at all". Opening the
 -- window on payment and closing it on onboarding submit keeps RLS
 -- as a coarse gate without widening what server-side code allows.

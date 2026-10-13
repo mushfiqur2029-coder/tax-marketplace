@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // Returns the available 15-minute slot starts for the given civil day
 // in Europe/London (Mon-Fri 10:00-17:00 by default) after excluding
 // everything already busy on the shared Sterling Ledger calendar.
-// Signed-in clients only — this is the same gate as the enquiry form
+// Signed-in clients only, this is the same gate as the enquiry form
 // that calls it.
 export async function GET(req: NextRequest) {
   await requireRole("client");

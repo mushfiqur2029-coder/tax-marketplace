@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 // and redirects. After consent, Google calls back to
 // /api/auth/google/callback which persists the resulting refresh token.
 //
-// Setup prereqs — must happen before this URL will work:
+// Setup prereqs, must happen before this URL will work:
 //   1. GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET set from a
 //      Google Cloud OAuth 2.0 Client ID (Web application type).
 //   2. Authorized redirect URIs in the Google Cloud console must

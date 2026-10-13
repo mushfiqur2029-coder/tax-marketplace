@@ -23,9 +23,9 @@ const BUCKET = "case-documents";
 // success) OR directly after the Stripe success_url bounce when the
 // webhook is still catching up. The gate here is "client owns, case is
 // paid-but-not-onboarded, case is on a flow that has an onboarding
-// checklist" — i.e. Limited Company or Personal (new 9-up catalogue).
+// checklist", i.e. Limited Company or Personal (new 9-up catalogue).
 // We don't block on status because the webhook sets status='submitted'
-// independently of the onboarding submit — the two gates are orthogonal.
+// independently of the onboarding submit, the two gates are orthogonal.
 async function assertCaseInOnboarding(caseId: string) {
   const me = await requireRole("client");
   const supabase = await createClient();
@@ -33,7 +33,7 @@ async function assertCaseInOnboarding(caseId: string) {
   // merge/validate against caseRow.intake_answers, so leaving it out
   // silently nukes everything on every save (next = { ...{}, [field]: v })
   // and makes submit mark every answered field as missing. Was masked
-  // for ages by 0039's RLS block — all writes failed anyway — so the
+  // for ages by 0039's RLS block, all writes failed anyway, so the
   // bug didn't surface until the policy fix landed and writes started
   // actually hitting the row.
   const { data: caseRow, error } = await supabase
@@ -93,7 +93,7 @@ export async function saveChecklistAnswersAction(
     const { supabase, tier } = await assertCaseInOnboarding(caseId);
 
     const visibleFields = fieldsForTier(tier);
-    // Build a patch of just the fields present in this FormData —
+    // Build a patch of just the fields present in this FormData.
     // nothing read from the current DB state. The merge happens
     // atomically in SQL via the merge_case_intake_answers RPC
     // (migration 0040), so two concurrent saves can't race by both
@@ -102,7 +102,7 @@ export async function saveChecklistAnswersAction(
     let encryptPlain: string | null = null;
 
     for (const field of visibleFields) {
-      // "I don't have this" sibling flag — valid for every field
+      // "I don't have this" sibling flag, valid for every field
       // kind, not just uploads. Lives as `{fieldId}_not_available`
       // in the intake_answers JSONB. requiredFieldsForTierGiven in
       // checklist.ts treats a field with `_not_available = "true"`
@@ -123,7 +123,7 @@ export async function saveChecklistAnswersAction(
       }
 
       // Company identity is set at engagement sign and is immutable from
-      // onboarding. Silently drop any attempt to overwrite — the UI
+      // onboarding. Silently drop any attempt to overwrite, the UI
       // renders them read-only, so hitting this path means a bypass
       // attempt and we don't want to leak either way.
       if (field.id === "company_name" || field.id === "company_number") {
@@ -135,7 +135,7 @@ export async function saveChecklistAnswersAction(
       const value = String(raw).trim();
 
       // Pattern validation on text fields where a regex is defined.
-      // We validate here (write-time) AND on submit — write-time catches
+      // We validate here (write-time) AND on submit, write-time catches
       // the mistake earlier and keeps bad values out of the row.
       if (field.kind === "text" && field.pattern && value) {
         const re = new RegExp(field.pattern.regex);
@@ -158,7 +158,7 @@ export async function saveChecklistAnswersAction(
       }
 
       // Patch always includes the field. Empty-string values overwrite
-      // the stored value rather than deleting the key — the submit
+      // the stored value rather than deleting the key, the submit
       // validator treats "" as missing, same as absent, so the behavior
       // is identical from the form's perspective. (jsonb || only
       // merges; implementing key-delete would need a separate RPC
@@ -166,14 +166,14 @@ export async function saveChecklistAnswersAction(
       patch[field.id] = value;
     }
 
-    // Only hit the RPC if there's actually something to merge — a save
+    // Only hit the RPC if there's actually something to merge, a save
     // that only touched the encrypted field would otherwise fire a
     // no-op update.
     if (Object.keys(patch).length > 0) {
       // merge_case_intake_answers performs a single-statement
       // UPDATE cases SET intake_answers = coalesce(..., '{}') || patch
       // under the normal RLS policies for the case. The RPC returns
-      // the row count — 0 means an RLS block (same silent-success
+      // the row count, 0 means an RLS block (same silent-success
       // shape that bit us in #0039 before). We surface it loudly.
       const { data: rows, error: rpcErr } = await supabase.rpc(
         "merge_case_intake_answers",
@@ -206,7 +206,7 @@ export async function saveChecklistAnswersAction(
       // User-session supabase so the RPC's auth.uid()-based client-id
       // check actually sees the signed-in user. admin.rpc would have
       // auth.uid()=null, which the pre-0041 three-valued logic silently
-      // bypassed — 0041 hardens that path too, so this must be the
+      // bypassed, 0041 hardens that path too, so this must be the
       // user session now.
       const { error: rpcErr } = await supabase.rpc("set_company_auth_code", {
         p_case_id: caseId,
@@ -244,7 +244,7 @@ export async function uploadChecklistDocumentAction(
 
     // Validate the requirement_key against the schema. Prevents a
     // malicious client submitting an arbitrary key that doesn't fit any
-    // slot — the accountant case view would then show a stray group.
+    // slot, the accountant case view would then show a stray group.
     const visible = fieldsForTier(tier);
     const slot = visible.find(
       (f) => f.id === requirementKey && f.kind === "upload",
@@ -273,7 +273,7 @@ export async function uploadChecklistDocumentAction(
     // Return the inserted row's id so the client can key the Remove
     // button on a real UUID. Previously the client fabricated an
     // "optimistic-" id, which the Remove-disabled guard then kept
-    // greyed out until a page refresh — classic "button doesn't do
+    // greyed out until a page refresh, classic "button doesn't do
     // anything" bug.
     const { data: inserted, error: dbErr } = await supabase
       .from("case_documents")
@@ -352,7 +352,7 @@ export async function removeChecklistDocumentAction(
 // stamps onboarding_submitted_at, and bounces the client back to the
 // case dashboard. Case now becomes visible in the accountant queue.
 //
-// Server-side re-validation of required fields matters here — a client
+// Server-side re-validation of required fields matters here, a client
 // with a stale CHECKLIST_FIELDS copy or an interrupted upload could
 // otherwise submit a partial onboarding and trip accountants later.
 // -------------------------------------------------------------------------
@@ -368,7 +368,7 @@ export async function submitChecklistAction(
       (caseRow as unknown as { intake_answers: Record<string, string> | null })
         .intake_answers ?? {};
     // Required set depends on the client's answers because of Section
-    // B's ID branch — Passport means one upload, Driving licence means
+    // B's ID branch. Passport means one upload, Driving licence means
     // two. requiredFieldsForTierGiven filters by both tier and
     // showWhen visibility.
     const required = requiredFieldsForTierGiven(tier, answers);
@@ -385,7 +385,7 @@ export async function submitChecklistAction(
     );
 
     // Separately, the Company Authentication Code lives encrypted. We
-    // check presence by reading the column directly (bytea is enough —
+    // check presence by reading the column directly (bytea is enough.
     // no need to decrypt for a presence check).
     const { data: cryptoCheck } = await admin
       .from("cases")

@@ -1,4 +1,4 @@
-// Shared top block for every admin page — eyebrow + h1 + description.
+// Shared top block for every admin page, eyebrow + h1 + description.
 // Replaces the per-page copy of this block that used to live inside
 // DashboardShell when admin pages still used that shell. The admin
 // layout provides the surrounding sidebar + main-area chrome, so the

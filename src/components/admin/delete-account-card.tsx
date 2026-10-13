@@ -16,7 +16,7 @@ import type { ActionResult } from "@/lib/action-result";
 //     modal, same pattern as the admin-removal flow.
 //
 // The server action re-runs the pre-check before actually deleting,
-// so this component is strictly a UI gate — the authoritative "safe
+// so this component is strictly a UI gate, the authoritative "safe
 // to delete" decision is made server-side.
 
 export type PreCheckRow = {

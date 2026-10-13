@@ -33,7 +33,7 @@ create index if not exists service_enquiries_status_created_idx
 create index if not exists service_enquiries_client_idx
   on public.service_enquiries (client_id, created_at desc);
 
--- updated_at trigger — admins mutate status + notes, both are
+-- updated_at trigger, admins mutate status + notes, both are
 -- surfaced in the enquiries list so we want "last touched" visible
 -- without an app-side bookkeeping burden.
 create or replace function public.set_service_enquiries_updated_at()
@@ -59,7 +59,7 @@ create policy "service_enquiries_client_insert" on public.service_enquiries
   for insert with check (client_id = auth.uid());
 
 -- Client self-read: can see their own enquiries. (Not strictly used
--- by the client UI yet — the thanks screen is in-page — but future
+-- by the client UI yet, the thanks screen is in-page, but future
 -- "my enquiries" view will need this and the policy is harmless.)
 drop policy if exists "service_enquiries_client_select" on public.service_enquiries;
 create policy "service_enquiries_client_select" on public.service_enquiries
@@ -84,7 +84,7 @@ exception when duplicate_object then null; end $$;
 -- ==========================================================================
 -- Trigger: fan a 'service_enquiry' notification out to every admin on
 -- insert. Mirrors notify_case_change's "new_queue_case" fanout.
--- The notification case_id stays null — enquiries aren't cases. The
+-- The notification case_id stays null, enquiries aren't cases. The
 -- bell's linkFor() routes 'service_enquiry' to /admin/enquiries where
 -- the admin can click through.
 -- ==========================================================================
@@ -105,7 +105,7 @@ create trigger service_enquiries_notify
   after insert on public.service_enquiries
   for each row execute function public.notify_service_enquiry();
 
--- Realtime publication — admin list page uses the same realtime
+-- Realtime publication, admin list page uses the same realtime
 -- refresh pattern as the cases pages (optional nice-to-have; the
 -- admin's bell notification already covers hard refresh).
 do $$ begin

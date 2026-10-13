@@ -50,7 +50,7 @@ export async function loadAccountantCase(
   const supabase = await createClient();
 
   // Read via the admin client so RLS doesn't hide a case that's simply been
-  // taken by someone else — we need to distinguish "case doesn't exist" from
+  // taken by someone else, we need to distinguish "case doesn't exist" from
   // "taken by another accountant" to give the accountant a useful page.
   const admin = createAdminClient();
   const { data: row, error } = await admin

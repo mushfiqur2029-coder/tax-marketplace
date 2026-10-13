@@ -75,7 +75,7 @@ export function OnboardingForm({
 
   // Visibility is derived from the current answers so conditional
   // branches (Section B: Passport vs Driving licence) toggle live.
-  // Required count re-computes on every answer change — picking
+  // Required count re-computes on every answer change, picking
   // Passport drops the driving-licence slots out of both the count
   // and the submit guard. Fields the client marked "I don't have
   // this" (via DocumentUploader's checkbox → {fieldId}_not_available
@@ -103,7 +103,7 @@ export function OnboardingForm({
 
   // Per-section + per-question resolution math. uploadedBySection is
   // keyed by section letter and groups the uploaded requirement_keys
-  // for that section — missingRequiredBySection + isFieldResolved
+  // for that section, missingRequiredBySection + isFieldResolved
   // read from this shape.
   const uploadedBySection: Record<string, Set<string>> = {};
   for (const f of fields) uploadedBySection[f.section] ??= new Set();
@@ -130,7 +130,7 @@ export function OnboardingForm({
   // Legacy driving-licence uploads: before the Passport vs Driving-
   // licence branch landed, the Driving licence slot had a single
   // upload at this requirement_key. Surface any existing uploads as
-  // a read-only "previously uploaded" row — removable, doesn't count
+  // a read-only "previously uploaded" row, removable, doesn't count
   // toward progress.
   const legacyDrivingLicenceDocs = docsByKey[LEGACY_DRIVING_LICENCE_ID] ?? [];
 
@@ -184,7 +184,7 @@ export function OnboardingForm({
 
   return (
     <div className="space-y-6">
-      {/* Progress bar — matches the case-progress style used on the dashboard */}
+      {/* Progress bar, matches the case-progress style used on the dashboard */}
       <div className="card-sl p-5">
         <div className="flex items-baseline justify-between">
           <span
@@ -256,7 +256,7 @@ export function OnboardingForm({
           </div>
           <div className="space-y-5">
             {/* Section A opens with the Company identity captured at
-                engagement sign — read-only here. Rendered as a single
+                engagement sign, read-only here. Rendered as a single
                 locked card so the client doesn't try to re-type details
                 that are already baked into the signed PDF. */}
             {section.key === "A" ? (
@@ -268,7 +268,7 @@ export function OnboardingForm({
             ) : null}
             {bySection(section.key).map((field) => {
               // Skip the two company identity fields in the normal loop
-              // — they're rendered above as a locked block. The entries
+              // ,  they're rendered above as a locked block. The entries
               // still live in CHECKLIST_FIELDS so progress math and
               // the required-count submit guard treat them normally.
               if (
@@ -419,7 +419,7 @@ export function OnboardingForm({
 
             {/* Legacy driving-licence upload (pre-ID-choice schema). Only
                 rendered on Section B and only when we actually have
-                legacy docs — otherwise invisible. */}
+                legacy docs, otherwise invisible. */}
             {section.key === "B" && legacyDrivingLicenceDocs.length > 0 ? (
               <LegacyDrivingLicenceBlock
                 docs={legacyDrivingLicenceDocs}
@@ -473,7 +473,7 @@ export function OnboardingForm({
 // ---------------- Field rows ----------------
 
 // Section A opener. Company Name + Number were captured at engagement
-// sign and baked into the PDF, so they are not editable here — if the
+// sign and baked into the PDF, so they are not editable here, if the
 // client needs a correction it goes through support (the engagement
 // letter would need re-issuing anyway).
 function CompanyIdentityReadonly({
@@ -562,7 +562,7 @@ function FieldLabel({
   // Per-question indicator next to the Required pill. Only shown
   // when the field is required: green check means resolved (uploaded,
   // answered, or "I don't have this" ticked); red dot means still
-  // needed. Optional fields have no dot — nothing to signal.
+  // needed. Optional fields have no dot, nothing to signal.
   resolved?: boolean;
 }) {
   return (

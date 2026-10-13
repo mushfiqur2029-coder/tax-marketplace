@@ -82,7 +82,7 @@ export default async function EngagementPage({
     (caseRow as unknown as { intake_answers: Record<string, string> | null })
       .intake_answers ?? {};
   // Company identity only matters on the LC path. Personal cases carry
-  // no company_name / company_number — the letter renders a client-only
+  // no company_name / company_number, the letter renders a client-only
   // Parties block via variant: "personal".
   const companyName = (answers.company_name ?? "").trim();
   const companyNumber = (answers.company_number ?? "").trim();
@@ -167,7 +167,7 @@ export default async function EngagementPage({
   };
 
   // Signing gate: LC blocks on company identity being set; Personal has
-  // no gate — the sign form is ready as soon as the page loads.
+  // no gate, the sign form is ready as soon as the page loads.
   const signDisabled = isCompany && !companyReady;
 
   // Header copy. The LC path mentions confirming the company; Personal
@@ -249,7 +249,7 @@ export default async function EngagementPage({
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
-        {/* Letter preview — isolated from the dashboard styles via iframe
+        {/* Letter preview, isolated from the dashboard styles via iframe
              srcDoc, since the engagement letter has its own typography and
              should look identical to the printed PDF.
              On mobile the iframe comes second (via lg:order-1) so the

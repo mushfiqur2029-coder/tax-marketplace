@@ -18,10 +18,10 @@
 -- call, which is SECURITY INVOKER and relies on the same RLS gates)
 -- hits zero rows. Both server actions correctly detect that and throw
 -- the "Submit didn't take. The database refused the write." error the
--- user sees in the UI — but the real fix is to open the window.
+-- user sees in the UI, but the real fix is to open the window.
 --
 -- Scope mirrors 0039's shape (not 0046's generalised version) because
--- period docs only exist on the limited_company_vat segment — Personal
+-- period docs only exist on the limited_company_vat segment. Personal
 -- tiers finish at onboarding and go straight to accountant prep. The
 -- segment check keeps the window from inadvertently applying to any
 -- future segment that gets added.

@@ -50,7 +50,7 @@ export default async function AccountantLayout({
       {/* Layout-level subscription keeps the sidebar queue / mine
           badges fresh when other accountants take cases or the user's
           own case progresses. Filtered subscriptions wouldn't help
-          here — any cases change may flip either count. */}
+          here, any cases change may flip either count. */}
       <RealtimeRefresh
         channel={`accountant-layout-${me.id}`}
         subscriptions={[{ table: "cases" }]}

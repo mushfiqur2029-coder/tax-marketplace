@@ -1,14 +1,14 @@
 import type { PlanTier } from "@/lib/plans";
 
 // Single-source TOTAL price lookup. Precedence:
-//   1. row.custom_fee_pence  — set only on admin-created bespoke cases;
+//   1. row.custom_fee_pence, set only on admin-created bespoke cases;
 //      wins unconditionally so bespoke pricing is never silently
 //      overridden by a tier-level sale.
-//   2. tier.salePriceGbp     — when non-null, this is the "was £X now £Y"
+//   2. tier.salePriceGbp, when non-null, this is the "was £X now £Y"
 //      promotional price. Flows into every checkout surface (deposit,
 //      full-fee, balance) because they all route through this function
 //      via `upfrontChargePence` / `balanceChargePence`.
-//   3. tier.priceGbp         — the regular catalogue price, fallback.
+//   3. tier.priceGbp, the regular catalogue price, fallback.
 //
 // Returns an integer number of pence. For bespoke two-stage engagements
 // this is still the TOTAL (deposit + balance); use `upfrontChargePence`
@@ -18,7 +18,7 @@ import type { PlanTier } from "@/lib/plans";
 // price at creation; they read the tier live at each surface (letter
 // render, checkout, admin display). That means admin flipping a sale
 // on/off between engagement signing and checkout will show different
-// amounts on the letter vs the Stripe page — pre-existing behaviour
+// amounts on the letter vs the Stripe page, pre-existing behaviour
 // also true for any priceGbp edit. Bespoke cases are immune via
 // custom_fee_pence snapshotting at creation. Already-paid cases are
 // also immune since Stripe has already captured the exact amount.

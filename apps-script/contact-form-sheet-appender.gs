@@ -18,7 +18,7 @@
  * 5. Save (Ctrl+S / Cmd+S). Name the project
  *    "Sterling Ledger contact form". Enter a project name if asked.
  * 6. (Optional but recommended) Change the SHARED_SECRET constant
- *    below to a long random string. Memo that string somewhere — the
+ *    below to a long random string. Memo that string somewhere, the
  *    frontend will send it as a header, so this script can reject
  *    random POSTs from bots. Leave it empty to accept any POST (less
  *    safe; use rate-limiting at the frontend only).
@@ -61,7 +61,7 @@ var SHARED_SECRET = "";
 var SHEET_ID = "1g8RPppUXU5bnViufhxwCDR66Wux6ERiMs_xugNySOds";
 
 // Which tab to append rows to. If your sheet has only one tab, leave
-// as empty string — the script uses the first/active sheet.
+// as empty string, the script uses the first/active sheet.
 var TAB_NAME = "";
 
 function doPost(e) {
@@ -139,7 +139,7 @@ function doPost(e) {
 }
 
 // doGet lets you hit the Web App URL in a browser and see a tiny
-// status page — useful for confirming the deploy worked. Does NOT
+// status page, useful for confirming the deploy worked. Does NOT
 // accept form submissions via GET.
 function doGet() {
   return ContentService
@@ -153,7 +153,7 @@ function doGet() {
 
 function jsonResponse_(obj, status) {
   // Apps Script Web Apps don't let you set the HTTP status code
-  // directly — any non-exception response is 200. We still return
+  // directly, any non-exception response is 200. We still return
   // the status in the body so the frontend can read it.
   return ContentService
     .createTextOutput(JSON.stringify(obj))
@@ -163,7 +163,7 @@ function jsonResponse_(obj, status) {
 function getHeader_(e, name) {
   // Apps Script doesn't give direct header access on `e`, but some
   // headers come through on e.parameter when the frontend duplicates
-  // them in the body. This helper is a stub — if you deploy behind
+  // them in the body. This helper is a stub, if you deploy behind
   // a reverse proxy that writes headers into the body, update here.
   if (e && e.parameter && e.parameter[name]) return e.parameter[name];
   return "";

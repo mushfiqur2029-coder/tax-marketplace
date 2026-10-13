@@ -11,16 +11,16 @@ import { getAllTiers } from "@/lib/service-catalog";
 // by `id` / `key`, and overwrites the HTML placeholders.
 //
 // What this surfaces:
-//   • tiers    — service_catalog rows, filtered to active + non-admin-create-only
+//   • tiers, service_catalog rows, filtered to active + non-admin-create-only
 //                (admin-only tiers like the bespoke LC are hidden from
 //                 the public price list; they're ever-only reachable via
 //                 /admin/enquiries bespoke flow)
-//   • addons   — addon_catalog rows, filtered to active + non-sentinel
+//   • addons, addon_catalog rows, filtered to active + non-sentinel
 //                (sentinels like __custom_max__ are config, not real
-//                 add-ons — see src/lib/addon-catalog.ts)
+//                 add-ons, see src/lib/addon-catalog.ts)
 //
 // What this does NOT surface:
-//   • profile data, user info, cases, anything else — this endpoint is
+//   • profile data, user info, cases, anything else, this endpoint is
 //     deliberately narrow to the pricing surface.
 
 // CORS: only the two marketing hostnames can read this. Browser CORS

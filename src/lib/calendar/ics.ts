@@ -3,7 +3,7 @@
 // (the native Google invite covers attendee invites; this is only the
 // backup "add to your own calendar" artefact).
 //
-// Deliberately NOT using a library — the format is dead simple and
+// Deliberately NOT using a library, the format is dead simple and
 // pulling in `ics` or `node-ical` adds surface area for one function.
 
 export type IcsInput = {
@@ -18,11 +18,11 @@ export type IcsInput = {
   // output is always UTC (Z-suffixed).
   startIso: string;
   endIso: string;
-  // Optional URL — attached as the event's URL property so the
+  // Optional URL, attached as the event's URL property so the
   // client's calendar can link back (we point this at the Google
   // Meet link when it exists).
   url?: string;
-  // Optional location — used for the Meet URL in human-facing
+  // Optional location, used for the Meet URL in human-facing
   // calendars that show LOCATION prominently (eg Apple Calendar).
   location?: string;
 };
@@ -31,7 +31,7 @@ function pad(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
-// YYYYMMDDTHHMMSSZ — the only timestamp format iCal reliably parses.
+// YYYYMMDDTHHMMSSZ, the only timestamp format iCal reliably parses.
 function fmtUtc(iso: string): string {
   const d = new Date(iso);
   const y = d.getUTCFullYear();
@@ -43,7 +43,7 @@ function fmtUtc(iso: string): string {
   return `${y}${mo}${dd}T${hh}${mm}${ss}Z`;
 }
 
-// RFC 5545 escapes: backslash → \\, comma → \,, semicolon → \;,
+// RFC 5545 escapes: backslash → \\, comma → \, semicolon → \;,
 // newlines → \n (literal, two chars).
 function escapeText(s: string): string {
   return s

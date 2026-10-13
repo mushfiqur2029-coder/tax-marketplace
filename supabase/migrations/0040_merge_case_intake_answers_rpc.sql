@@ -20,7 +20,7 @@
 -- The function runs as SECURITY INVOKER so the existing RLS policy
 -- on public.cases (cases_client_update_own_draft, 0014's approve
 -- policy, 0039's onboarding window) is the authoritative authz
--- gate — a client who can't UPDATE the row via REST also can't via
+-- gate, a client who can't UPDATE the row via REST also can't via
 -- this RPC. Returns the row count so the TS caller can detect a
 -- 0-rows RLS block and surface a loud error instead of a silent
 -- "ok".

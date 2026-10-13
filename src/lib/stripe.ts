@@ -28,14 +28,14 @@ export function stripeWebhookSecret(): string {
 // Base URL used in every outbound email + any Stripe redirect that
 // needs an absolute host. Resolution order:
 //
-//   1. NEXT_PUBLIC_SITE_URL — the explicit production/preview value
+//   1. NEXT_PUBLIC_SITE_URL, the explicit production/preview value
 //      an operator set on Vercel. Preferred when non-empty.
-//   2. VERCEL_URL — Vercel-auto-injected per deployment. Doesn't
+//   2. VERCEL_URL. Vercel-auto-injected per deployment. Doesn't
 //      include a protocol; prefix https. Deployment-specific (not
 //      a stable alias), so links in long-lived emails could end up
-//      pointing at an old deployment URL — but still better than
+//      pointing at an old deployment URL, but still better than
 //      "localhost" or a hostless path when (1) was misconfigured.
-//   3. http://localhost:3000 — local dev fallback. Loudly logged
+//   3. http://localhost:3000, local dev fallback. Loudly logged
 //      when we fall here while running on Vercel so the misconfig
 //      shows up in logs instead of silently emailing broken links.
 //

@@ -13,14 +13,14 @@
 -- while cases.accountant_id is already ON DELETE SET NULL so the
 -- case itself survives their deletion. If uploaded_by stays CASCADE,
 -- deleting an accountant would silently drop every case_documents
--- row they ever uploaded — including on surviving cases owned by
--- someone else — leaving holes in document history + orphaned
+-- row they ever uploaded, including on surviving cases owned by
+-- someone else, leaving holes in document history + orphaned
 -- storage files that no DB row references.
 --
 -- The pre-check in deleteAccountantAccountAction still refuses to
 -- delete an accountant with wallet / withdrawal / add-on / VAT-cycle
 -- rows on record, so the SET NULL doesn't make it easier to delete
--- accounts with financial history — it only makes the already-safe
+-- accounts with financial history, it only makes the already-safe
 -- case (zero financial rows) actually safe for case documents too.
 
 -- Part 1: enum value ------------------------------------------------
@@ -28,7 +28,7 @@ alter type admin_action_type add value if not exists 'account_deleted';
 
 -- Part 2: relax case_documents.uploaded_by FK -----------------------
 --
--- The column stays NOT NULL at write time — RLS policies that filter
+-- The column stays NOT NULL at write time. RLS policies that filter
 -- on `uploaded_by = auth.uid()` keep working for live users. SET NULL
 -- only kicks in when the referenced user row disappears, which only
 -- happens via the primary-admin deletion flow (or the admin removal

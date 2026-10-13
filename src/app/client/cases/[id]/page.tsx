@@ -66,7 +66,7 @@ export default async function CaseDetailPage({
       await reconcilePaymentAction(id);
     } catch {}
   }
-  // Fallback reconcile for add-on payments — the Stripe webhook usually
+  // Fallback reconcile for add-on payments, the Stripe webhook usually
   // wins, but on local dev / slow webhooks the page-load poll picks up
   // the paid state and fires the accountant notification.
   if (addon_paid) {
@@ -94,7 +94,7 @@ export default async function CaseDetailPage({
   // Derive the Resume button's href from buildSteps() rather than
   // interpolating `nextStep` directly. The step keys are
   // `period_docs` (underscore, from the TypeScript union) but the
-  // route folder is `period-docs` (hyphen) — interpolating the key
+  // route folder is `period-docs` (hyphen), interpolating the key
   // produced /period_docs which 404s. buildSteps() is the single
   // source of truth for step → URL mapping and is already correct.
   const stepsForLinks = buildSteps(id, data, null);
@@ -107,7 +107,7 @@ export default async function CaseDetailPage({
   // Load add-ons on this case. Clients see:
   //   • pending_payment as a prominent pay banner near the top
   //   • paid / rejected in the history section below documents
-  // Custom rows in pending_admin never surface here — admin holds them.
+  // Custom rows in pending_admin never surface here, admin holds them.
   type AddonRow = {
     id: string;
     kind: "preset" | "custom";
@@ -136,7 +136,7 @@ export default async function CaseDetailPage({
 
   // Load VAT return cycles for vat_reg cases. All cycles ever opened
   // on the case, most-recent first, so the client can see current +
-  // history. Only vat_reg actually has cycles — other tiers always
+  // history. Only vat_reg actually has cycles, other tiers always
   // return an empty list.
   type VatCycleRow = {
     id: string;
@@ -157,7 +157,7 @@ export default async function CaseDetailPage({
     !isDraft &&
     data.row.segment === "limited_company_vat" &&
     // vat_plus_accounts_bespoke is the admin-created bespoke
-    // variant of vat_reg — same VAT return workflow, bespoke-priced,
+    // variant of vat_reg, same VAT return workflow, bespoke-priced,
     // so the VAT cycles panel renders for both.
     (data.tier.id === "vat_reg" ||
       data.tier.id === "vat_plus_accounts_bespoke")
@@ -275,7 +275,7 @@ export default async function CaseDetailPage({
   };
 
   // Pull the approval payload fields out once for the richer card.
-  // Dormant / personal cases won't have an approval_payload — those
+  // Dormant / personal cases won't have an approval_payload, those
   // fall back to the plain ApproveAndFileButton below.
   const approvalPayload = data.row.approval_payload as
     | {
@@ -314,7 +314,7 @@ export default async function CaseDetailPage({
           // doesn't touch cases, so it needs its own subscription.
           { table: "case_addons", filter: `case_id=eq.${data.row.id}` },
           // Accountant uploads Annual Accounts + CT600 for approval,
-          // or VAT return PDFs — the file list on the case page needs
+          // or VAT return PDFs, the file list on the case page needs
           // to refresh so the client can open the new file.
           { table: "case_documents", filter: `case_id=eq.${data.row.id}` },
           // Accountant moves a VAT cycle (sets due date, marks filed).

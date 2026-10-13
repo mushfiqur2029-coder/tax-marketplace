@@ -8,11 +8,11 @@ import type { TierId } from "@/lib/plans";
 // and the server-side "all required fields present" validation.
 //
 // Field flavours:
-//   text     — free text input
-//   select   — dropdown from `options`, optional `showOtherOn` triggers a
+//   text, free text input
+//   select, dropdown from `options`, optional `showOtherOn` triggers a
 //              freetext "other" field with id={id}_other
-//   date     — HTML date input, stored as YYYY-MM-DD
-//   upload   — one or more files uploaded to case_documents with
+//   date. HTML date input, stored as YYYY-MM-DD
+//   upload, one or more files uploaded to case_documents with
 //              requirement_key = id. multi=true permits several files.
 //
 // requiredFor:
@@ -35,7 +35,7 @@ function aliasChecklistTier(tier: TierId): TierId {
 }
 
 // Tier id groupings. Keeping these local to checklist.ts because
-// PLAN_TIERS imports would be circular — the lists live on paper here
+// PLAN_TIERS imports would be circular, the lists live on paper here
 // instead of being generated from plans.ts. If plans.ts ever adds a
 // tier that should take onboarding, both lists need updating.
 const LC_TIER_IDS: TierId[] = ["dormant", "non_vat_reg", "vat_reg"];
@@ -45,7 +45,7 @@ const LC_TIER_IDS: TierId[] = ["dormant", "non_vat_reg", "vat_reg"];
 // requirements including P60/P45, P11D, pension / Gift Aid / child
 // benefit / student loan statements. Group B (non-resident landlord
 // + complex international) drops P11D, child benefit, student loan,
-// and demands a Passport only — no driving-licence option. Sections
+// and demands a Passport only, no driving-licence option. Sections
 // above (A/B/C/D) are Limited Company only; Personal uses Section P
 // with per-field requirements driven by these groups via `requiredFor`
 // + `hiddenForTiers`.
@@ -79,11 +79,11 @@ export type ShowWhen = { fieldId: string; equals: string };
 // Kept outside the discriminated union so adding a new kind doesn't
 // require re-declaring them each time.
 //
-//   hiddenForTiers           — hard-hide for these tiers regardless of
+//   hiddenForTiers, hard-hide for these tiers regardless of
 //                              showWhen. Used for Group B dropping
 //                              items 2/9/11, and for driving-licence
 //                              uploads vanishing from Group B entirely.
-//   showWhenBypassForTiers   — ignore the showWhen gate for these
+//   showWhenBypassForTiers, ignore the showWhen gate for these
 //                              tiers (field renders unconditionally).
 //                              Used so Group B's passport upload is
 //                              always visible even though sa_id_type
@@ -157,8 +157,8 @@ export const CHECKLIST_SECTIONS: ChecklistSectionDef[] = [
     showForTiers: ["vat_reg"],
   },
   {
-    // Personal — single flat section used by all nine Personal tiers.
-    // Form renders this without the "Section P —" prefix.
+    // Personal, single flat section used by all nine Personal tiers.
+    // Form renders this without the "Section P , " prefix.
     key: "P",
     title: "Your Self Assessment documents",
     showForTiers: PERSONAL_TIER_IDS,
@@ -202,7 +202,7 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
   {
     // Gates company_utr. If the client isn't registered yet (brand
     // new company that hasn't received the HMRC welcome letter) we
-    // don't block the engagement on the UTR — the accountant can
+    // don't block the engagement on the UTR, the accountant can
     // guide them through registration later.
     id: "company_utr_registered",
     section: "A",
@@ -276,7 +276,7 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
   // Identity document is a choice between Passport (one upload) and
   // Driving licence (front + back uploads). The select below gates
   // which upload slots appear via `showWhen`. The old flow required
-  // *both* a passport AND a driving licence — this change makes it one
+  // *both* a passport AND a driving licence, this change makes it one
   // or the other.
   //
   // We keep the `director_passport` id so test cases that already
@@ -404,9 +404,9 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
   // ---------------- Section P: Personal Self Assessment ----------------
   //
   // Two groups:
-  //   Group A — the seven "straightforward" tiers. Full upload set.
+  //   Group A, the seven "straightforward" tiers. Full upload set.
   //             Identity: Passport OR Driving licence (branched).
-  //   Group B — non-resident landlord + complex international. Drops
+  //   Group B, non-resident landlord + complex international. Drops
   //             P11D, child benefit, and student loan. Identity:
   //             Passport only, always visible (no select).
   //
@@ -464,7 +464,7 @@ export const CHECKLIST_FIELDS: ChecklistField[] = [
     kind: "upload",
     requiredFor: PERSONAL_TIER_IDS,
     showWhen: { fieldId: "sa_id_type", equals: "Passport" },
-    // For Group B tiers, sa_id_type doesn't render — the showWhen
+    // For Group B tiers, sa_id_type doesn't render, the showWhen
     // can never resolve. Bypass makes passport always visible for
     // those tiers.
     showWhenBypassForTiers: PERSONAL_GROUP_B_TIER_IDS,
@@ -635,7 +635,7 @@ export function fieldsForTier(tier: TierId): ChecklistField[] {
   return CHECKLIST_FIELDS.filter((f) => {
     if (!visibleSections.has(f.section)) return false;
     // Field-level tier hard-hide (new in migration 0063 era for the
-    // Group B Personal split — P11D / child benefit / student loan
+    // Group B Personal split. P11D / child benefit / student loan
     // vanish for Group B tiers, and the driving-licence slots vanish
     // for Group B's Passport-only identity path).
     if (f.hiddenForTiers?.includes(t)) return false;
@@ -645,7 +645,7 @@ export function fieldsForTier(tier: TierId): ChecklistField[] {
 
 // Which fields in the visible-for-this-tier set are required for this
 // particular tier. Used by both the client submit guard and the server
-// validator — single source of truth. Does NOT filter by showWhen: a
+// validator, single source of truth. Does NOT filter by showWhen: a
 // field with a showWhen that doesn't match is simply hidden and so
 // never counts as missing. See `requiredFieldsForTierGiven` for the
 // visibility-aware version.
@@ -658,7 +658,7 @@ export function requiredFieldsForTier(tier: TierId): ChecklistField[] {
 // UI label ("Required" / "Optional") and every server submit guard
 // must route through here so the tier aliasing stays in lockstep.
 // Direct `field.requiredFor.includes(tier)` reads silently skip the
-// alias — the bespoke tier would read as not-required even though
+// alias, the bespoke tier would read as not-required even though
 // the server validator treats it as required, which produced the
 // label-versus-validator mismatch on Section D.
 export function isFieldRequired(
@@ -671,7 +671,7 @@ export function isFieldRequired(
 // Visibility gate on a single field for a given set of answers.
 // A field with no `showWhen` is always visible. A field whose
 // `showWhen` references an unanswered question is hidden until that
-// question is answered — which is the right default for conditional
+// question is answered, which is the right default for conditional
 // branches like Section B's ID type.
 //
 // Tier parameter is optional for back-compat with existing callers;
@@ -695,7 +695,7 @@ export function fieldIsVisible(
 // A document-style field counts as "resolved" when the client either
 // uploaded one or ticked "I don't have this". The latter writes a
 // sibling flag `{fieldId}_not_available: "true"` into intake_answers
-// — see src/components/case/document-uploader.tsx + the onboarding
+// ,  see src/components/case/document-uploader.tsx + the onboarding
 // server actions. This helper centralises the check so both the
 // client-facing missing-count math and the admin/accountant red-flag
 // badge agree.
@@ -750,7 +750,7 @@ export function isFieldResolved(opts: {
 // render a red "incomplete" badge when a section has any required
 // field still unresolved (no upload, no non-empty answer, and the
 // client hasn't ticked "I don't have this"). Fields marked
-// not-available are considered resolved — the badge is for the
+// not-available are considered resolved, the badge is for the
 // client's active to-do list, not for admin's chase list (admin sees
 // the not-available flag separately as a "flagged as unavailable"
 // state on the field).
@@ -785,7 +785,7 @@ export function missingRequiredBySection(
 // Required subset of visible fields. The onboarding submit guard calls
 // this with the current intake_answers so a Passport-only path doesn't
 // demand driving-licence uploads, and vice versa. Fields the client
-// has marked "I don't have this" are excluded — they're resolved, not
+// has marked "I don't have this" are excluded, they're resolved, not
 // missing (see isFieldMarkedNotAvailable).
 export function requiredFieldsForTierGiven(
   tier: TierId,
@@ -804,7 +804,7 @@ export function requiredFieldsForTierGiven(
 // upload at this key. New flow splits it into front + back under
 // `director_driving_licence_front` / `_back`. We keep this constant
 // exported so the form and panel views can surface any legacy uploads
-// as a read-only "previously uploaded" row — the data is still in
+// as a read-only "previously uploaded" row, the data is still in
 // storage, we just don't want it to vanish from the UI.
 export const LEGACY_DRIVING_LICENCE_ID = "director_driving_licence";
 

@@ -38,7 +38,7 @@ type Props = {
   // Pick/Change controls so the user can't fire a second save on top.
   busy?: boolean;
   // When true, the "Change" link stops working and we show a lock
-  // icon with the "contact support" copy — used on Section A once
+  // icon with the "contact support" copy, used on Section A once
   // engagement is signed.
   locked?: boolean;
 };
@@ -67,7 +67,7 @@ export function CompanyLookup({
   // We mirror `initial` into local state so the pick responds instantly
   // on click without waiting for the server round-trip. React's "adjust
   // state during render" pattern (preferred over an effect) keeps the
-  // widget in sync when the parent re-renders with a saved value — the
+  // widget in sync when the parent re-renders with a saved value, the
   // sentinel ref holds the last initial we've reconciled so we don't
   // bounce the user's local pick on an unrelated re-render.
   const [selected, setSelected] = useState<CompanyPick | null>(initial);
@@ -77,7 +77,7 @@ export function CompanyLookup({
     setSelected(initial);
   }
   const [mode, setMode] = useState<"search" | "manual">("search");
-  // Fallback latches to true if the API ever returns 503 — once we've
+  // Fallback latches to true if the API ever returns 503, once we've
   // seen an outage, don't keep hitting it in the same session; drop
   // straight into manual mode.
   const [fallback, setFallback] = useState<boolean>(false);
@@ -152,7 +152,7 @@ export function CompanyLookup({
         setLoading(false);
       } catch (err) {
         if (ac.signal.aborted) return;
-        // Treat any thrown error as transient — show a tiny inline
+        // Treat any thrown error as transient, show a tiny inline
         // message, don't flip to manual mode permanently.
         setSearchError(err instanceof Error ? err.message : "Search failed.");
         setLoading(false);
@@ -199,7 +199,7 @@ export function CompanyLookup({
     const pick: CompanyPick = {
       company_number: number,
       company_name: name,
-      // Manual-entry can't verify status — mark unknown so downstream
+      // Manual-entry can't verify status, mark unknown so downstream
       // code doesn't claim we checked.
       company_status: "unknown",
     };

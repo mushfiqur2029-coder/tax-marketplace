@@ -1,7 +1,7 @@
 -- Reinstating deadlines + urgent fee on the Personal flow (reverses the
--- 0045 decision). The function body is unchanged — the urgent branch was
+-- 0045 decision). The function body is unchanged, the urgent branch was
 -- already segment-agnostic and reads is_urgent / urgent_fee_pence off the
--- row — but the inline comment in 0045 claimed urgent was dead code for
+-- row, but the inline comment in 0045 claimed urgent was dead code for
 -- new personal tiers. That is now wrong: Personal sets is_urgent on
 -- urgent cases and the trigger adds urgent_fee_pence / 2 to the
 -- accountant's wallet credit, just like Limited Company's original

@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   if (!state || !stateCookie || state !== stateCookie) {
     return errorRedirect(req, "state_mismatch");
   }
-  // State is "<adminUserId>:<nonce>" — guard against someone finishing
+  // State is "<adminUserId>:<nonce>" ,  guard against someone finishing
   // consent in a different admin's browser.
   if (!state.startsWith(me.id + ":")) {
     return errorRedirect(req, "state_user_mismatch");

@@ -9,7 +9,7 @@
 --   case_payment_stalled   → /admin/cases/<id>
 --   addon_payment_stalled  → /admin/cases/<id> + add-on scrolls into
 --                            view (same page houses both)
--- Separate enum values also keep the UI copy specific — a case
+-- Separate enum values also keep the UI copy specific, a case
 -- stall triggers a deletion threat for the client, an add-on stall
 -- doesn't, so bundling them under one type would make the admin
 -- bell confusing.

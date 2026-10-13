@@ -1,12 +1,12 @@
 -- Admin-created bespoke case from an enquiry. Three schema changes:
 --
---   1. cases.custom_fee_pence — per-row override. When set, every
+--   1. cases.custom_fee_pence, per-row override. When set, every
 --      price-reading surface (Stripe amount, engagement letter, checkout
 --      display, payments history, wallet commission split) prefers this
 --      over the tier catalogue priceGbp. Only ever written by the admin
 --      createBespokeCaseFromEnquiryAction server action.
 --
---   2. cases.service_enquiry_id — audit trail link back to the
+--   2. cases.service_enquiry_id, audit trail link back to the
 --      originating enquiry so the admin UI can show "case created from
 --      enquiry X" and the client can see the quote in the context of
 --      the enquiry they submitted.
@@ -36,7 +36,7 @@ do $$ begin
 end $$;
 
 -- Wallet commission trigger: 50/50 of the effective fee (custom when
--- set, tier catalogue otherwise). Urgent branch unchanged — still
+-- set, tier catalogue otherwise). Urgent branch unchanged, still
 -- adds urgent_fee_pence / 2 segment-agnostically.
 create or replace function public.on_case_complete_credit_wallet()
 returns trigger
@@ -51,7 +51,7 @@ begin
      and (old.status is null or old.status <> 'complete')
      and new.accountant_id is not null
   then
-    -- Custom override wins when set — the admin picked the fee for
+    -- Custom override wins when set, the admin picked the fee for
     -- this bespoke engagement, split that in half, done. Falls through
     -- to the tier catalogue for every other case.
     if new.custom_fee_pence is not null then

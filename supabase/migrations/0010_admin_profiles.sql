@@ -1,6 +1,6 @@
 -- Admins get their own profile table so name / contact_number live somewhere
 -- editable from the app. Parallel shape to client_profiles / accountant_profiles.
--- Admin profile edits apply IMMEDIATELY (no admin-approval loop — there is no
+-- Admin profile edits apply IMMEDIATELY (no admin-approval loop, there is no
 -- one above admin to approve), so pending_profile_changes is NOT used for admins.
 
 create table if not exists public.admin_profiles (

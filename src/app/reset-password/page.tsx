@@ -8,7 +8,7 @@ import { ResetPasswordForm } from "./reset-password-form";
 // a session cookie. Once that's done, updateUser({ password }) is authorized
 // against that recovery session.
 //
-// This page must not redirect the "already signed in" state — the recovery
+// This page must not redirect the "already signed in" state, the recovery
 // session IS a signed-in state, and redirecting away would lock the user
 // out of completing their reset. If they later navigate here without a
 // token, the form's own updateUser call will fail with a clear error.

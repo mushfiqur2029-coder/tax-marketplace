@@ -5865,7 +5865,7 @@
 }
 
 /*# sourceMappingURL=%5Broot-of-the-server%5D__020lki3._.css.map*/
-/* Sale pricing — rendered dynamically by sterling.js when a tier has a
+/* Sale pricing, rendered dynamically by sterling.js when a tier has a
    non-null salePriceGbp. Kept at the end of the file so it overrides
    any utility class the HTML carries on the same element. */
 .price-was {
@@ -5936,7 +5936,7 @@
   color: var(--color-navy-deep, #0f2345);
 }
 
-/* Contact form — matches the overall marketing design language.
+/* Contact form, matches the overall marketing design language.
    Used on /contact and anywhere else we embed a Sterling Ledger
    contact form via [data-contact-form]. */
 .contact-grid {
@@ -6011,7 +6011,7 @@
    on the open item to reveal it, which SSR only rendered on the
    currently-open index (default null -> never). Add the class-driven
    open rule here so .faq-item.open .faq-a reveals the answer. 1000px
-   is a safe ceiling — longer than any current FAQ answer, short
+   is a safe ceiling, longer than any current FAQ answer, short
    enough that the transition stays snappy. */
 .faq-item.open .faq-a {
   max-height: 1000px;

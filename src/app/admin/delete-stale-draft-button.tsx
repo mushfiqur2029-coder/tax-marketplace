@@ -6,7 +6,7 @@ import type { ActionResult } from "@/lib/action-result";
 
 // Two-click destructive confirm. Lighter than the admin-removal
 // modal because the stakes are lower (no payment, no financial
-// history) but still deliberate — first click swaps the label to
+// history) but still deliberate, first click swaps the label to
 // "Confirm delete", a 5-second window to click again, then the
 // action fires. Click Cancel or let the window elapse to reset.
 

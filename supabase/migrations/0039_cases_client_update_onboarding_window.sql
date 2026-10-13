@@ -3,7 +3,7 @@
 -- missing" on submit, because cases.intake_answers was still null
 -- in the DB. Root cause is the same silent-match-zero-rows RLS trap
 -- that migration 0014 fixed for the client_approval → filed
--- transition — never generalised to the post-pay onboarding window.
+-- transition, never generalised to the post-pay onboarding window.
 --
 -- `cases_client_update_own_draft` (from 0002) requires status='draft'.
 -- Payment flips status to 'submitted', so the moment the client
@@ -20,7 +20,7 @@
 --
 -- Scoped by `onboarding_submitted_at is null` so after the client
 -- submits onboarding they can no longer rewrite intake_answers via
--- a crafted REST call — the server action still gates WHICH columns
+-- a crafted REST call, the server action still gates WHICH columns
 -- it writes, this policy gates WHEN clients can write at all.
 
 drop policy if exists "cases_client_update_onboarding" on public.cases;

@@ -15,7 +15,7 @@
   // trigger a preflight AND doesn't try to read the opaque redirect
   // response (Apps Script 302s to a googleusercontent URL whose CORS
   // headers we can't rely on). Success is inferred from no network
-  // error — the row-append already happened server-side by then.
+  // error, the row-append already happened server-side by then.
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form || !form.matches || !form.matches("[data-contact-form]")) return;
@@ -181,7 +181,7 @@
   //   <span data-tier-sub="sole_trader">one-off</span>
   //
   // If an element isn't present for a tier, we skip it silently so
-  // this is additive — pages without pricing render fine.
+  // this is additive, pages without pricing render fine.
   function renderPrice(el, tier) {
     if (tier.priceDisplay) {
       el.textContent = tier.priceDisplay;
@@ -210,7 +210,7 @@
         });
       })
       .catch(function () {
-        // Silent failure — the HTML already has the price at build
+        // Silent failure, the HTML already has the price at build
         // time as a fallback. User still sees a number.
       });
   }

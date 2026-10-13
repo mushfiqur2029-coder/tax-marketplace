@@ -3,7 +3,7 @@
 // Why scrape instead of hand-write: the design is already shipping and
 // evolving. Scraping captures 100% visual fidelity + current copy with
 // zero drift. Trade-off is verbose Tailwind-generated class names in
-// the output HTML — still crawlable by search engines, just not as
+// the output HTML, still crawlable by search engines, just not as
 // hand-tuned as a from-scratch rebuild would be.
 //
 // Pre-reqs:
@@ -11,7 +11,7 @@
 //   • NO signed-in session (otherwise `/` redirects to /{role})
 //
 // Produces /marketing-static-export/ ready to upload to cPanel's
-// public_html. Static files only — zero Node/Next at runtime.
+// public_html. Static files only, zero Node/Next at runtime.
 
 import {
   mkdir,
@@ -41,7 +41,7 @@ const PAGES = [
     out: "index.html",
     title: "Sterling Ledger. Tax & VAT, sorted by real accountants.",
     description:
-      "UK tax marketplace. Self Assessment, Corporation Tax, VAT — one flat fee, qualified accountant on every case, done online.",
+      "UK tax marketplace. Self Assessment, Corporation Tax, VAT, one flat fee, qualified accountant on every case, done online.",
   },
   {
     route: "/about",
@@ -76,7 +76,7 @@ const PAGES = [
     out: "landlords/index.html",
     title: "Landlord tax returns. One property or a full portfolio.",
     description:
-      "Rental income, mortgage interest, allowable expenses — your Self Assessment, filed by a qualified accountant.",
+      "Rental income, mortgage interest, allowable expenses, your Self Assessment, filed by a qualified accountant.",
   },
   {
     route: "/first-time-filers",
@@ -90,42 +90,42 @@ const PAGES = [
     out: "high-earners/index.html",
     title: "High earners. Multi-source UK tax returns, done properly.",
     description:
-      "Over the Personal Allowance taper, pension annual allowance, multiple income sources — handled by a qualified accountant.",
+      "Over the Personal Allowance taper, pension annual allowance, multiple income sources, handled by a qualified accountant.",
   },
   {
     route: "/investors",
     out: "investors/index.html",
     title: "Investor tax returns. Capital gains, dividends, crypto.",
     description:
-      "Shares, funds, crypto, property sales — gains reported and tax calculated correctly on your UK Self Assessment.",
+      "Shares, funds, crypto, property sales, gains reported and tax calculated correctly on your UK Self Assessment.",
   },
   {
     route: "/expats",
     out: "expats/index.html",
     title: "Expat UK tax returns. Non-resident landlords and overseas income.",
     description:
-      "Living abroad with UK income or property? NRLS, treaty positions, remittance basis — all handled by a UK accountant.",
+      "Living abroad with UK income or property? NRLS, treaty positions, remittance basis, all handled by a UK accountant.",
   },
   {
     route: "/cis-construction",
     out: "cis-construction/index.html",
     title: "CIS tax returns. Reconcile deductions, claim your refund.",
     description:
-      "Construction Industry Scheme (CIS) subcontractors — deductions reconciled, allowable expenses claimed, refund filed.",
+      "Construction Industry Scheme (CIS) subcontractors, deductions reconciled, allowable expenses claimed, refund filed.",
   },
   {
     route: "/limited-company-tax-returns",
     out: "limited-company-tax-returns/index.html",
     title: "Limited company tax returns. Accounts, CT600, VAT.",
     description:
-      "UK Ltd companies — annual accounts to Companies House, Corporation Tax to HMRC, VAT returns. Flat fee, qualified accountant.",
+      "UK Ltd companies, annual accounts to Companies House, Corporation Tax to HMRC, VAT returns. Flat fee, qualified accountant.",
   },
   {
     route: "/ltd-company-directors",
     out: "ltd-company-directors/index.html",
     title: "Director Self Assessment. Salary, dividends, benefits.",
     description:
-      "UK Ltd company directors — the personal Self Assessment side of your tax, filed correctly alongside your company's.",
+      "UK Ltd company directors, the personal Self Assessment side of your tax, filed correctly alongside your company's.",
   },
   {
     route: "/vat-business",
@@ -206,7 +206,7 @@ function stripNextScripts(html) {
     /<link[^>]+rel="preload"[^>]+as="script"[^>]*\/?>/g,
     "",
   );
-  // __NEXT_DATA__ etc. — covered by the <script> stripper above.
+  // __NEXT_DATA__ etc. ,  covered by the <script> stripper above.
   // Dev-mode banner/overlay containers injected by turbopack.
   html = html.replace(
     /<nextjs-portal[^>]*>[\s\S]*?<\/nextjs-portal>/g,
@@ -217,7 +217,7 @@ function stripNextScripts(html) {
 
 // Rewrite /path hrefs into absolute app URLs for anything that goes to
 // the Next.js app. Leave anchors (#id) and already-absolute http(s)
-// URLs alone. Also leave /_next/* URLs — we handle those as asset
+// URLs alone. Also leave /_next/* URLs, we handle those as asset
 // downloads.
 function rewriteAppLinks(html) {
   return html.replace(/\bhref="\/([^"#]*)(#[^"]*)?"/g, (m, path, hash) => {
@@ -239,7 +239,7 @@ function rewriteAppLinks(html) {
 // Normalize a /_next/static/... URL for both the HTML rewrite and the
 // on-disk filename. Next dev emits brackets as %5B/%5D in URLs, which
 // most static web servers (apache/cPanel, Node http) decode before
-// filesystem lookup — if we saved the literal "%5B..." filename the
+// filesystem lookup, if we saved the literal "%5B..." filename the
 // request would 404. Replacing [ ] with underscores sidesteps this
 // entirely: safe URL, safe filename.
 function normalizeAssetUrl(raw) {
@@ -326,7 +326,7 @@ async function main() {
   }
 
   console.log(`\nDownloading ${assetsToFetch.size} /_next assets...`);
-  // Skip JS chunks — we don't need them. Only download CSS, fonts, and
+  // Skip JS chunks, we don't need them. Only download CSS, fonts, and
   // media (woff, images). Save each file at the NORMALIZED path (no
   // brackets in the filename) so static web servers can serve it.
   for (const [raw, normalized] of assetsToFetch.entries()) {
@@ -346,7 +346,7 @@ async function main() {
   // /styles.css + fonts to /fonts/<hash>.woff2, rewrites @font-face
   // urls inside the CSS, and strips the stale /_next/ references
   // from each HTML. See scripts/flatten-static-export.mjs for the
-  // detailed reasoning — this reuses that module's helpers.
+  // detailed reasoning, this reuses that module's helpers.
   console.log("\nFlattening /_next into /styles.css + /fonts ...");
   const { flattenCssAndFonts, rewriteHtml } = await import("./flatten-static-export.mjs");
   await flattenCssAndFonts(OUT, BASE);
@@ -449,7 +449,7 @@ const STERLING_JS = `// Vanilla replacements for the three bits that need JS onc
   //   <span data-tier-sub="sole_trader">one-off</span>
   //
   // If an element isn't present for a tier, we skip it silently so
-  // this is additive — pages without pricing render fine.
+  // this is additive, pages without pricing render fine.
   function renderPrice(el, tier) {
     if (tier.priceDisplay) {
       el.textContent = tier.priceDisplay;
@@ -480,7 +480,7 @@ const STERLING_JS = `// Vanilla replacements for the three bits that need JS onc
         });
       })
       .catch(function () {
-        // Silent failure — the HTML already has the price at build
+        // Silent failure, the HTML already has the price at build
         // time as a fallback. User still sees a number.
       });
   }
@@ -493,21 +493,21 @@ const STERLING_JS = `// Vanilla replacements for the three bits that need JS onc
 })();
 `;
 
-const README = `# Sterling Ledger — static marketing site
+const README = `# Sterling Ledger, static marketing site
 
 This folder is the deployable static marketing site. Upload its
 contents into cPanel's \`public_html/\` and the domain
 \`sterlingledger.co.uk\` is live. Nothing in here needs Node, PHP, or
-any runtime — it's plain HTML + CSS + JS.
+any runtime, it's plain HTML + CSS + JS.
 
 ## What's where
 
 \`\`\`
 public_html/
-  index.html             — / homepage
-  about/index.html       — /about
-  calculators/index.html — /calculators
-  guides/index.html      — /guides
+  index.html             ,  / homepage
+  about/index.html       ,  /about
+  calculators/index.html ,  /calculators
+  guides/index.html      ,  /guides
   self-employed/index.html
   landlords/index.html
   first-time-filers/index.html
@@ -520,8 +520,8 @@ public_html/
   vat-business/index.html
   making-tax-digital/index.html
   tax-advice/index.html
-  _next/static/...       — CSS + fonts the pages reference
-  sterling.js            — mobile menu, FAQ, tabs, live pricing
+  _next/static/...       ,  CSS + fonts the pages reference
+  sterling.js, mobile menu, FAQ, tabs, live pricing
   (plus every file from the project's /public/)
 \`\`\`
 
@@ -530,7 +530,7 @@ description for SEO. Prices are populated at build time as a fallback
 and refreshed live on page load from the admin-edited catalog at
 \`https://apisterlingledger.co.uk/api/public/pricing\`.
 
-## Live pricing — how it works
+## Live pricing, how it works
 
 \`sterling.js\` fetches the public pricing endpoint on every page load
 and swaps the HTML text inside any element with the attribute
@@ -540,7 +540,7 @@ sale is set on a tier (\`salePriceGbp\` non-null), the swap renders
 + \`.price-now\`) you can style with CSS.
 
 If the API call fails (network, CORS, DNS), the HTML's built-in
-price stays visible — users never see a blank price card.
+price stays visible, users never see a blank price card.
 
 ## Internal links
 
@@ -574,7 +574,7 @@ Then upload the regenerated \`marketing-static-export/\` to cPanel.
 
 Each page is a standalone HTML file. Add structured data
 (\`<script type="application/ld+json">\`), tweak meta descriptions,
-add Open Graph tags, drop in a Plausible snippet, etc. — all
+add Open Graph tags, drop in a Plausible snippet, etc. ,  all
 without touching the Next.js app or doing a code deploy. Just edit
 the HTML and re-upload.
 `;

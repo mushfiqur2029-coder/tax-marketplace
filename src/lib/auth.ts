@@ -15,7 +15,7 @@ export type AccountantApproval = "pending" | "approved" | "rejected";
 //      public.protect_primary_admin) hardcodes the same email as a
 //      final defense against direct SQL / service-role manipulation.
 // If the email ever needs to change, update it here AND in the
-// trigger body in a single migration — one without the other opens a
+// trigger body in a single migration, one without the other opens a
 // bypass window.
 export const PRIMARY_ADMIN_EMAIL = "ritzbd.com@gmail.com";
 

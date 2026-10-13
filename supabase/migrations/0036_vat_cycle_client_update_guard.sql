@@ -4,7 +4,7 @@
 -- V7a of the Batch 5 E2E caught: the "vat_cycles_client_update_own"
 -- policy from 0034 permits UPDATE on any column, so a crafted REST
 -- call from a client's JWT could overwrite approval_payload, cycle
--- dates, or period_label — all accountant-owned fields. The server
+-- dates, or period_label, all accountant-owned fields. The server
 -- actions only ever write status/client_docs_submitted_at/filed_at
 -- for client paths, but DB-level enforcement is what makes it a real
 -- security gate (not just a TS code path).
@@ -30,7 +30,7 @@ declare
 begin
   select client_id into v_client from public.cases where id = NEW.case_id;
 
-  -- Not a client write — accountant / admin / service_role flows skip
+  -- Not a client write, accountant / admin / service_role flows skip
   -- this guard. Null auth.uid() (service role via admin client) also
   -- skips, which is intentional: the admin client is a trusted
   -- continuation (used by approveAndFileVatCycleAction for the

@@ -6,12 +6,12 @@
 --      reinstate actions.
 --   2. Relax CASCADE deletes that would either delete the audit trail
 --      or block the removal when an admin had history:
---        - admin_actions.admin_id        — preserves audit log entries
+--        - admin_actions.admin_id, preserves audit log entries
 --          after the admin is deleted. Column becomes nullable; existing
 --          rows unaffected.
---        - admin_actions.target_user_id  — same reasoning for entries
+--        - admin_actions.target_user_id, same reasoning for entries
 --          where the removed admin was the target.
---        - withdrawal_requests.paid_by   — without SET NULL, deleting
+--        - withdrawal_requests.paid_by, without SET NULL, deleting
 --          an admin who ever marked a payout paid fails with an FK
 --          violation. Column was already nullable; this just relaxes
 --          the delete semantics.
@@ -52,7 +52,7 @@ alter table public.withdrawal_requests
 -- Part 3: primary admin protection trigger --------------------------
 --
 -- Matches PRIMARY_ADMIN_EMAIL in src/lib/auth.ts. If the email ever
--- needs to change, update both places together — the TS constant for
+-- needs to change, update both places together, the TS constant for
 -- the server-action guard, this trigger for the DB-level guard.
 
 create or replace function public.protect_primary_admin()

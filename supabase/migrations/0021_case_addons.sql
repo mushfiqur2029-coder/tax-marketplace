@@ -2,15 +2,15 @@
 -- case, priced separately, mid-way through the job.
 --
 -- Two flavours:
---   preset  — accountant picks from admin-managed addon_catalog. No admin
+--   preset, accountant picks from admin-managed addon_catalog. No admin
 --             review; goes straight to pending_payment so the client can
 --             pay for it.
---   custom  — accountant types a description and amount. Requires admin
+--   custom, accountant types a description and amount. Requires admin
 --             approval (status='pending_admin') before the client sees it.
 --
 -- Snapshot at creation: case_addons.description and .amount_pence are copied
 -- from the catalog row at insert time, and preset_key is a soft reference.
--- This is the same pattern as cases.urgent_fee_pence — a later catalog
+-- This is the same pattern as cases.urgent_fee_pence, a later catalog
 -- price change or deactivation must not retroactively rewrite an existing
 -- add-on's price or the wallet split that follows from it.
 --

@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   }
   // Defensive: refuse to send the invite to an address other than the
   // signed-in user's. This endpoint is only called from the enquiry
-  // form today, which uses me.email already — this guards against a
+  // form today, which uses me.email already, this guards against a
   // crafted POST sending spam invites via our calendar.
   if (attendeeEmail.toLowerCase() !== me.email.toLowerCase()) {
     return NextResponse.json(
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
       service_label: body.serviceLabel?.trim() || summary,
     });
     if (bookingInsertErr) {
-      // Log but don't fail the response — the Google event already
+      // Log but don't fail the response, the Google event already
       // exists and is the ultimate source of truth. The admin
       // notification below is the backstop for staff visibility.
       console.error(

@@ -35,7 +35,7 @@ export async function requestWithdrawalAction(input: {
   if (error) throw new Error(error.message);
 
   // Notify admins. Look up the amount from the just-created request
-  // (request_withdrawal doesn't return it) — read the accountant's most
+  // (request_withdrawal doesn't return it), read the accountant's most
   // recent pending row.
   const admin = createAdminClient();
   const { data: latest } = await admin

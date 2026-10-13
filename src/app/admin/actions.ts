@@ -270,7 +270,7 @@ export async function removeAdminAction(
 // For an accountant: any wallet_transactions row, withdrawal_requests
 // row, case_addons row they issued, or vat_return_cycles row they
 // created. The soft "warn and allow anyway" path is intentionally
-// NOT available — once the row count on the ledger is non-zero,
+// NOT available, once the row count on the ledger is non-zero,
 // admin is directed to Suspend instead (which keeps every row intact
 // and immediately blocks the user from acting).
 //
@@ -283,7 +283,7 @@ export async function removeAdminAction(
 // is captured before the FK gets nulled.
 
 // Shapes returned by the pre-check helpers below live in
-// account-deletion-types.ts — Next's "use server" directive on this
+// account-deletion-types.ts. Next's "use server" directive on this
 // file forbids any non-async-function export, so `export type` here
 // would make Turbopack reject the entire module.
 
@@ -527,7 +527,7 @@ export async function deleteAccountantAccountAction(
     }
 
     // Case documents the accountant uploaded survive via SET NULL
-    // (migration 0060) — the DB row stays with uploaded_by=null,
+    // (migration 0060), the DB row stays with uploaded_by=null,
     // the storage file is preserved. No storage cleanup needed on
     // this path. cases.accountant_id SET NULL leaves the cases
     // themselves intact and unassigned; the UI's unassigned-queue
@@ -566,7 +566,7 @@ export async function deleteAccountantAccountAction(
 //     "case-documents" does NOT auto-delete the files. We explicitly
 //     list every file_url for the case and remove them from storage
 //     before dropping the DB row. If the delete fails we still drop
-//     the row — orphaned storage objects are easier to clean up later
+//     the row, orphaned storage objects are easier to clean up later
 //     than a half-deleted DB state.
 //
 // Audit: logged to admin_actions with action='draft_case_deleted'
@@ -727,7 +727,7 @@ export async function reassignCaseAction(
   // surfacing admin-assigned cases in those statuses. The dashboard
   // now carries an "Assigned" bucket (see src/app/accountant/page.tsx)
   // that shows every case where accountant_id = me regardless of
-  // status, so the status flip here is no longer needed — reassignment
+  // status, so the status flip here is no longer needed, reassignment
   // is a pure assignment change, status transitions stay with the
   // accountant via updateCaseStatusAction.
   const { error: updateErr } = await supabase
@@ -951,7 +951,7 @@ export async function markWithdrawalPaidAction(
 // accountant (approved, sent to client). Reject flips to 'rejected' and
 // notifies only the accountant with the reason.
 //
-// Preset add-ons never reach this action — they short-circuit past admin
+// Preset add-ons never reach this action, they short-circuit past admin
 // review at insert time and go straight to pending_payment.
 // -------------------------------------------------------------------------
 export async function approveAddonAction(
@@ -1078,7 +1078,7 @@ export async function rejectAddonAction(
 
 // -------------------------------------------------------------------------
 // Add-on catalog CRUD. `key` is the stable PK referenced by case_addons.
-// preset_key snapshots — once created, the key cannot change. Name, price,
+// preset_key snapshots, once created, the key cannot change. Name, price,
 // description, and active are editable at will; edits do not retroactively
 // rewrite existing case_addons rows (they snapshot at creation).
 // -------------------------------------------------------------------------
@@ -1206,14 +1206,14 @@ export async function updateAddonCatalogAction(
 // -------------------------------------------------------------------------
 // Create a bespoke-priced case from an existing service_enquiry row. The
 // client lands in the normal engagement letter → pay → onboarding flow
-// — the only differences are:
+// ,  the only differences are:
 //   • cases.tier = vat_plus_accounts_bespoke (new enum value; the client
 //     wizard filters it out, createCaseAction rejects it, so admin is
 //     the only path in)
 //   • cases.custom_fee_pence drives every price surface
 //   • cases.accountant_id is pre-assigned, so the case never surfaces in
 //     the open queue (filter at /accountant uses .is("accountant_id",
-//     null) — already excludes assigned cases, no new filter needed)
+//     null), already excludes assigned cases, no new filter needed)
 //   • cases.service_enquiry_id links back to the originating enquiry for
 //     audit trail
 //   • enquiry is auto-closed on quote creation
@@ -1351,7 +1351,7 @@ export async function createBespokeCaseFromEnquiryAction(
     }
     const caseId = inserted.id as string;
 
-    // Auto-close the enquiry — the quote replaces the "awaiting admin"
+    // Auto-close the enquiry, the quote replaces the "awaiting admin"
     // state. Note is appended to admin_notes if provided.
     const quoteSummary = `[Quote £${feeGbp} (£${depositGbp} deposit + £${feeGbp - depositGbp} balance, £${commissionGbp} accountant commission)]`;
     const closedNote = note?.trim()
@@ -1414,7 +1414,7 @@ export async function createBespokeCaseFromEnquiryAction(
 }
 
 // Service catalog edit. Admin-only. The patch shape is intentionally
-// narrow — only the display + price fields are editable, never id /
+// narrow, only the display + price fields are editable, never id /
 // group / requires_enquiry / admin_create_only (those are code-level
 // decisions driven by the TierId union + wizard routing).
 export async function updateServiceCatalogAction(
@@ -1492,7 +1492,7 @@ export async function updateServiceCatalogAction(
 }
 
 // Signed URL for a receipt file. Callable by admin OR the owning accountant.
-// The path always has the shape "receipts/{withdrawal_id}/..." — we look up
+// The path always has the shape "receipts/{withdrawal_id}/..." ,  we look up
 // the withdrawal and verify caller access before minting the URL.
 export async function getReceiptSignedUrl(
   path: string,

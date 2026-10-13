@@ -8,7 +8,7 @@ type Props = {
   onChange: (file: File | null) => void;
   size?: number;
   // When the user hasn't chosen a new file yet, the built-in preview shows
-  // the current avatar instead of the person-silhouette placeholder — this
+  // the current avatar instead of the person-silhouette placeholder, this
   // is what gets displayed today, not a "before/after" pair. Pass the same
   // fields the Avatar component takes.
   currentPath?: string | null;
@@ -143,7 +143,7 @@ export function AvatarPicker({
   return (
     <div className="flex items-center gap-4">
       {previewUrl ? (
-        // A file is selected — show the new photo as an inline preview.
+        // A file is selected, show the new photo as an inline preview.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={previewUrl}
@@ -152,7 +152,7 @@ export function AvatarPicker({
           style={{ width: size, height: size }}
         />
       ) : (
-        // No new file yet — render the current avatar (photo or initials).
+        // No new file yet, render the current avatar (photo or initials).
         <Avatar
           path={currentPath}
           name={currentName}

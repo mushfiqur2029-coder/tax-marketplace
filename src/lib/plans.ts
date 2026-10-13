@@ -2,7 +2,7 @@
 // tiers are editable by admin via the public.service_catalog table
 // (admin UI at /admin/service-catalog). Runtime reads of a tier
 // should go through `getTier(id)` from `@/lib/service-catalog`, NOT
-// through this file's static PLAN_TIERS — reading from here means
+// through this file's static PLAN_TIERS, reading from here means
 // admin edits don't propagate.
 //
 // This file remains the source of truth for:
@@ -13,7 +13,7 @@
 // so the type system still enforces the known tier set.
 
 export type TierId =
-  // Personal — new 9-up flat-fee catalogue (migration 0045). Each tier
+  // Personal, new 9-up flat-fee catalogue (migration 0045). Each tier
   // targets a specific client situation; picking the tier IS the
   // service choice, there is no additional segment step.
   | "uber_driver"
@@ -25,7 +25,7 @@ export type TierId =
   | "freelancer_consultant"
   | "landlord_multi"
   | "complex_international"
-  // Personal — retired tiers. Enum values stay in Postgres; the wizard
+  // Personal, retired tiers. Enum values stay in Postgres; the wizard
   // filters them out and the server guard in createCaseAction rejects
   // them. Kept in the union so legacy references still typecheck.
   | "basic"
@@ -38,7 +38,7 @@ export type TierId =
   | "dormant"
   | "non_vat_reg"
   | "vat_reg"
-  // Limited company — bespoke enquiry tier. Does NOT map to a cases.tier
+  // Limited company, bespoke enquiry tier. Does NOT map to a cases.tier
   // enum value; picking it diverts to the enquiry form. The server guard
   // in createCaseAction refuses to insert this id into cases.tier.
   | "vat_plus_accounts_200k"
@@ -65,7 +65,7 @@ export type PlanTier = {
   priceGbp: number;             // current price (used for Stripe amount)
   // Optional discounted price. When present, marketing renders
   // "was £priceGbp now £salePriceGbp" styling. Server-side payment
-  // paths still charge priceGbp — the sale display is marketing-only
+  // paths still charge priceGbp, the sale display is marketing-only
   // until we wire checkout to prefer the sale amount.
   salePriceGbp?: number;
   originalGbp?: number;         // struck-through original price (personal only)
@@ -84,11 +84,11 @@ export type PlanTier = {
   priceDisplay?: string;
   // Diverts the LC picker to the enquiry form instead of case
   // creation. The server also refuses to open a case on a tier
-  // marked this way — single source of truth is checked twice.
+  // marked this way, single source of truth is checked twice.
   requiresEnquiry?: boolean;
   // Hides the tier from the client-facing wizard. Used for admin-
   // created bespoke engagements where the client is never choosing
-  // this tier themselves — admin creates it on their behalf after
+  // this tier themselves, admin creates it on their behalf after
   // a scoping call. createCaseAction also refuses to insert tiers
   // flagged this way.
   adminCreateOnly?: boolean;
@@ -248,7 +248,7 @@ export const PLAN_TIERS: PlanTier[] = [
   // Picking the service IS picking the tier; there's no additional
   // plan-tier step for the company path. The 4th tier
   // (vat_plus_accounts_200k) is the bespoke "over £200k turnover"
-  // enquiry flow — defined below but not sold as a flat fee.
+  // enquiry flow, defined below but not sold as a flat fee.
   //
   // Wallet credit splits each fee 50/50 with the assigned accountant on
   // case complete (migration 0045 trigger).
@@ -303,7 +303,7 @@ export const PLAN_TIERS: PlanTier[] = [
   },
   {
     // Bespoke tier for larger VAT-registered companies. Does NOT share
-    // the flat-fee flow — picking it diverts to /client/new/enquiry so
+    // the flat-fee flow, picking it diverts to /client/new/enquiry so
     // we can scope + price on a call. No engagement letter, no
     // checkout, no onboarding checklist attach to this tier.
     id: "vat_plus_accounts_200k",
@@ -323,7 +323,7 @@ export const PLAN_TIERS: PlanTier[] = [
       "For VAT-registered companies with annual turnover over £200k. We quote per engagement after a short call.",
   },
   {
-    // Admin-created bespoke engagement — never appears in the client
+    // Admin-created bespoke engagement, never appears in the client
     // wizard (adminCreateOnly), never has a flat fee (priceGbp: 0
     // placeholder; cases.custom_fee_pence drives every display and
     // the Stripe amount). Reuses the vat_reg onboarding checklist via
@@ -339,7 +339,7 @@ export const PLAN_TIERS: PlanTier[] = [
 ];
 
 // Static fallback lookup. Prefer `getTier` from `@/lib/service-catalog`
-// in server code — it reads from the DB (with this list as fallback)
+// in server code, it reads from the DB (with this list as fallback)
 // so admin edits propagate. This function is used only by the fallback
 // path and by non-server contexts where sync access is unavoidable.
 export function getTierStatic(id: string | null | undefined): PlanTier | null {

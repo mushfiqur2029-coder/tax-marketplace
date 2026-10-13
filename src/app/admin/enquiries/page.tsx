@@ -79,7 +79,7 @@ export default async function AdminEnquiriesPage() {
 
   // Existing bespoke-case links so we hide the create form on
   // enquiries that have already been quoted. Query only on enquiries
-  // that are the bespoke tier — others never become cases.
+  // that are the bespoke tier, others never become cases.
   const bespokeEnquiryIds = all
     .filter((r) => r.service_key === "vat_plus_accounts_200k")
     .map((r) => r.id);
@@ -172,7 +172,7 @@ export default async function AdminEnquiriesPage() {
         subscriptions={[
           { table: "service_enquiries" },
           // Admins need the join link to appear the moment a client
-          // completes the booking flow — matching the live-update
+          // completes the booking flow, matching the live-update
           // behaviour already in place on the client dashboard.
           { table: "bookings" },
         ]}

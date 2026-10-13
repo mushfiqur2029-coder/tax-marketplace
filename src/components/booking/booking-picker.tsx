@@ -8,7 +8,7 @@ import { SLButton } from "@/components/sl-button";
 // that date (fetched from /api/booking/slots), then books one via
 // /api/booking/create. Server owns the actual Google Calendar call.
 //
-// Props keep the component feature-agnostic — the enquiry form passes
+// Props keep the component feature-agnostic, the enquiry form passes
 // its own summary/description/metadata so a future support-chat
 // booking surface can reuse it with different context.
 
@@ -25,7 +25,7 @@ export type BookingResult = {
 type Props = {
   // Short calendar-event title. Shown to the attendee + the owner.
   summary: string;
-  // Multi-line description. The frontend doesn't inspect this — the
+  // Multi-line description. The frontend doesn't inspect this, the
   // caller is responsible for putting whatever context is useful (eg
   // the client's name, phone, company, service, enquiry id).
   description: string;
@@ -55,7 +55,7 @@ const SLOT_DURATION_MIN = 15;
 // the previous window by half so context carries across the jump.
 const PAGE_WORKING_DAYS = 5;
 // Hard cap on how far forward anyone can book. 8 weeks of working days
-// (~2 months) — plenty for a scoping call, prevents infinite future
+// (~2 months), plenty for a scoping call, prevents infinite future
 // browsing. If this needs to shift, change here and the right arrow
 // disables itself cleanly without any other callsite caring.
 const MAX_WORKING_DAYS = 40;
@@ -129,7 +129,7 @@ function longHumanDate(iso: string): string {
   });
 }
 
-// "Friday, 9 October 2026 at HH:MM" — passed through to the server for
+// "Friday, 9 October 2026 at HH:MM", passed through to the server for
 // the admin notification message so it reads the same everywhere.
 function humanTime(startIso: string): string {
   const d = new Date(startIso);
@@ -359,7 +359,7 @@ export function BookingPicker({
 }
 
 // -----------------------------------------------------------------------
-// Paging arrow — 44x44 tap target (iOS Human Interface Guideline minimum)
+// Paging arrow, 44x44 tap target (iOS Human Interface Guideline minimum)
 // so mobile taps land cleanly. Positioned outside the horizontal
 // scroll-row so swipe gestures don't fight with button taps.
 // -----------------------------------------------------------------------
@@ -408,7 +408,7 @@ function PageArrow({
 }
 
 // -----------------------------------------------------------------------
-// Day card — day name on top (small/mono/muted), big bold date, month
+// Day card, day name on top (small/mono/muted), big bold date, month
 // below. Selected state fills with sky blue; today gets a dot indicator
 // in the muted state.
 // -----------------------------------------------------------------------
@@ -474,7 +474,7 @@ function DayCard({
 }
 
 // -----------------------------------------------------------------------
-// Slot groups — morning + afternoon labels above pill grids. Mobile
+// Slot groups, morning + afternoon labels above pill grids. Mobile
 // stays comfortable with 2 columns; wider screens open up to 3/4/5.
 // -----------------------------------------------------------------------
 
@@ -565,7 +565,7 @@ function SlotPill({
 }
 
 // -----------------------------------------------------------------------
-// Skeleton — shows while /api/booking/slots is in flight. Matches the
+// Skeleton, shows while /api/booking/slots is in flight. Matches the
 // final layout (two groups, pill grid) so the swap doesn't jolt.
 // -----------------------------------------------------------------------
 
@@ -597,7 +597,7 @@ function SkeletonGroup({ label, count }: { label: string; count: number }) {
 
 // -----------------------------------------------------------------------
 // Empty state when a day has no available slots (owner fully booked,
-// or every slot is in the past — Google side has already filtered).
+// or every slot is in the past. Google side has already filtered).
 // -----------------------------------------------------------------------
 
 function EmptyDay() {
@@ -640,7 +640,7 @@ function EmptyDay() {
 }
 
 // -----------------------------------------------------------------------
-// Confirmation card — appears only after a slot is picked. Mini day
+// Confirmation card, appears only after a slot is picked. Mini day
 // chip + full long-form date + duration + Confirm button. Review step
 // so the client isn't booking from a bare "Book 10:00" primary.
 // -----------------------------------------------------------------------
@@ -670,7 +670,7 @@ function ConfirmCard({
     >
       <SectionLabel>Confirm your call</SectionLabel>
       <div className="mt-3 flex items-start gap-4">
-        {/* Mini date chip — gradient to echo the empty-state icon tile
+        {/* Mini date chip, gradient to echo the empty-state icon tile
             and the EmptyState block elsewhere in the app. */}
         <div
           className="relative shrink-0 flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-xl text-white"

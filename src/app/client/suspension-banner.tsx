@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 
 // Renders a locked banner at the top of every client page when the account
-// is suspended. Server component — reads status from getCurrentUser which
+// is suspended. Server component, reads status from getCurrentUser which
 // already runs per page load. Returns null for active accounts.
 export async function ClientSuspensionBanner() {
   const me = await getCurrentUser();

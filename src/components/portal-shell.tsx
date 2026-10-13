@@ -71,7 +71,7 @@ export function PortalShell<K extends string>({
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Close the drawer on route change — the client component
+  // Close the drawer on route change, the client component
   // persists across navigations, so we need to notice pathname
   // moving even though it's set to false onItemClick as well.
   useEffect(() => {
@@ -101,7 +101,7 @@ export function PortalShell<K extends string>({
 
   return (
     <div className="min-h-full">
-      {/* Backdrop + drawer — mobile only. Rendered unconditionally
+      {/* Backdrop + drawer, mobile only. Rendered unconditionally
           so the transform animation fires on open;
           `pointer-events-none` keeps it inert when closed. */}
       <div

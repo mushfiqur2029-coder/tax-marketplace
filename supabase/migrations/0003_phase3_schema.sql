@@ -1,4 +1,4 @@
--- Phase 3 schema — messages RLS + Realtime publications for chat and queue notifications.
+-- Phase 3 schema, messages RLS + Realtime publications for chat and queue notifications.
 -- Apply after 0002_phase2_schema.sql.
 
 -- ---------- RLS: messages ----------

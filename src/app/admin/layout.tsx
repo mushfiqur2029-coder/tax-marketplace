@@ -9,7 +9,7 @@ import { getAdminNavCounts } from "./admin-counts";
 // every admin page renders inside a consistent chrome and the sidebar
 // doesn't re-render on client-side navigation.
 //
-// Pages themselves stop using DashboardShell — they emit
+// Pages themselves stop using DashboardShell, they emit
 // <AdminPageHeader> + content directly and this layout wraps them.
 export default async function AdminLayout({
   children,
@@ -46,7 +46,7 @@ export default async function AdminLayout({
           come from Promise.all over these tables in admin-counts.ts;
           adding more subscriptions here will keep them in sync.
           Tables not yet in the realtime publication (users, accountant_
-          profiles) stale until next navigation — acceptable since
+          profiles) stale until next navigation, acceptable since
           admins typically navigate to the page they want to action. */}
       <RealtimeRefresh
         channel={`admin-layout-${me.id}`}

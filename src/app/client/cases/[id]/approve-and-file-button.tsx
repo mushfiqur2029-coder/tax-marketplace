@@ -50,7 +50,7 @@ export function ApproveAndFileButton({ approve }: Props) {
               const res = await approve();
               if (res.ok) {
                 // Status moves to `filed`; the whole case detail page
-                // changes its CTA + progress bar + banner — refresh so
+                // changes its CTA + progress bar + banner, refresh so
                 // the next view is accurate without a manual reload.
                 router.refresh();
               } else setError(res.error);

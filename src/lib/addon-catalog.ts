@@ -8,7 +8,7 @@
 //     value in amount_pence. Today there's one: __custom_max__ (migration
 //     0076) which caps the amount a custom add-on can be submitted at.
 //
-// Keep the caller free of the string literal — any new config row should
+// Keep the caller free of the string literal, any new config row should
 // land here as a named export.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -24,7 +24,7 @@ export const CUSTOM_ADDON_CAP_FALLBACK_PENCE = 500_000;
 
 // Returns the current cap in pence. On any read error OR a missing row,
 // falls back to the pre-migration constant. The caller does not need to
-// distinguish between "no row yet" and "DB error" — both are safe-defaults.
+// distinguish between "no row yet" and "DB error", both are safe-defaults.
 export async function getCustomAddonCapPence(
   supabase: SupabaseClient,
 ): Promise<number> {

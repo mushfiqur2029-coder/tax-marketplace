@@ -73,7 +73,7 @@ export default async function PeriodDocsPage({
     redirect(`/client/cases/${id}/onboarding`);
   }
   if (!caseRow.period_start_date || !caseRow.period_end_date) {
-    // Accountant hasn't set the dates yet — send client back to the case
+    // Accountant hasn't set the dates yet, send client back to the case
     // page where the "awaiting accountant" state shows.
     redirect(`/client/cases/${id}`);
   }
@@ -92,7 +92,7 @@ export default async function PeriodDocsPage({
     (d) => d.requirement_key === SECTION_A_PAYE_UPLOAD_ID,
   );
 
-  // Section C answer drives the PAYE summary hard-override — if the
+  // Section C answer drives the PAYE summary hard-override, if the
   // client said No to needing PAYE registration, the PAYE slot
   // disappears regardless of the payroll flag or any orphaned
   // Section A PAYE cert upload.

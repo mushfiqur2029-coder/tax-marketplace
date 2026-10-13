@@ -43,7 +43,7 @@ export function WithdrawalRequestForm({
             setAccountNumber("");
             setSaved(true);
             // The Available / Pending stat cards and the "Withdrawal
-            // history" list above are all server-component data —
+            // history" list above are all server-component data.
             // refresh so the new request appears instantly instead of
             // after a manual reload.
             router.refresh();

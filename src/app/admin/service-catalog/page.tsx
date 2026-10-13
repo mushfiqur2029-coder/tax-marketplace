@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminServiceCatalogPage() {
   await requireRole("admin");
 
-  // Admin needs the full picture — inactive + admin-only tiers too.
+  // Admin needs the full picture, inactive + admin-only tiers too.
   // The wizard filters inactive out at render time; this page is the
   // only surface where admin can bring one back.
   const all = await getAllTiers({

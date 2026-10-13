@@ -78,7 +78,7 @@ $$;
 -- ==========================================================================
 -- RPC: get_company_auth_code
 -- Decrypt + return plaintext. Auth: admin or the case's assigned
--- accountant. The client themselves do NOT need to read it back — they
+-- accountant. The client themselves do NOT need to read it back, they
 -- supplied it. Returns null if never set, lets caller distinguish empty
 -- from set-but-wrong-key via the error path.
 -- ==========================================================================

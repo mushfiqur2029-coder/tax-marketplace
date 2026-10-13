@@ -254,7 +254,7 @@ function renderCard(c: Row, tier: PlanTier | null) {
   const isMine = !!c.accountant_id;
   const companyName = companyNameFromAnswers(c.intake_answers, c.segment);
   // Cases hit the queue the moment payment lands, not after the client
-  // submits onboarding — so some entries will still be mid-checklist.
+  // submits onboarding, so some entries will still be mid-checklist.
   // Flag that visibly so the accountant knows whether they're picking
   // up a complete submission or stepping in to help a client who's
   // partway through. Applies to both Personal and Limited Company.

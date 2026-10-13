@@ -246,7 +246,7 @@ export default async function AdminClientDetail({
             )}
           </section>
 
-          {/* Payment history — same shape as /client/payments */}
+          {/* Payment history, same shape as /client/payments */}
           <section className="card-sl p-6">
             <h2
               className="text-sm font-semibold uppercase tracking-wider text-slate"

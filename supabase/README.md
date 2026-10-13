@@ -19,7 +19,7 @@ Re-enable this before production.
 
 ## Bootstrap the very first admin
 
-Public registration only creates clients and accountants — the `/register`
+Public registration only creates clients and accountants, the `/register`
 form has no admin option and the `signUpAction` server action rejects any
 attempt to smuggle `role=admin` through metadata.
 
@@ -36,7 +36,7 @@ existing admin at launch, so bootstrap the first one via SQL:
     where email = 'you@example.com';
    ```
 
-3. Log out and log back in — you'll land on `/admin`.
+3. Log out and log back in, you'll land on `/admin`.
 
 From there use `/admin/admins` to add more admins without touching SQL again.
 
@@ -54,6 +54,6 @@ Accountants that existed before Phase 5 are grandfathered as approved by the
 
 Migrations create these buckets automatically:
 
-- `case-documents` — private, 50 MB per file (client docs + chat attachments
+- `case-documents` ,  private, 50 MB per file (client docs + chat attachments
   under `msg/…` + payout receipts under `receipts/…`).
-- `avatars` — public, 5 MB per file. Profile pictures.
+- `avatars` ,  public, 5 MB per file. Profile pictures.

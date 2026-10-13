@@ -1,7 +1,7 @@
 -- Deadline + urgent now applies to Limited Company too (same client-
 -- picked filing-deadline mechanic Personal already uses, reinstated for
--- LC in the same wizard step). The trigger body is unchanged — the
--- urgent branch has always been segment-agnostic — but 0048's inline
+-- LC in the same wizard step). The trigger body is unchanged, the
+-- urgent branch has always been segment-agnostic, but 0048's inline
 -- comment claimed "Limited Company never sets is_urgent so this is a
 -- no-op there". That is no longer true: LC sets is_urgent on urgent
 -- cases exactly like Personal, and the trigger adds urgent_fee_pence /

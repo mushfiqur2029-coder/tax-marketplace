@@ -5,7 +5,7 @@
 --
 -- Dormant companies skip the period and the second-stage docs entirely.
 -- The approval cycle still runs for Dormant (no CT to pay on a nil
--- return — the approval card just says so).
+-- return, the approval card just says so).
 --
 -- Status machine stays shape-unchanged: for the limited-company path,
 -- accountant moves in_review → client_approval directly via

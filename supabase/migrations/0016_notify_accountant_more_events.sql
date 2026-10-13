@@ -6,7 +6,7 @@
 --   • withdrawal_paid: inline in markWithdrawalPaidAction
 --
 -- Missing coverage this migration adds:
---   • Client approves and files — a status transition the accountant did NOT
+--   • Client approves and files, a status transition the accountant did NOT
 --     initiate. Extends notify_case_change to also notify the accountant
 --     on the specific client_approval -> filed transition.
 --   • Reassignment (admin moves case to / from an accountant): handled

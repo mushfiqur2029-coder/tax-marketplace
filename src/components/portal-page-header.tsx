@@ -1,4 +1,4 @@
-// Shared top block for every signed-in-portal page — eyebrow + h1 +
+// Shared top block for every signed-in-portal page, eyebrow + h1 +
 // optional description. Pages emit this inside the portal layout, which
 // supplies the sidebar + top bar.
 

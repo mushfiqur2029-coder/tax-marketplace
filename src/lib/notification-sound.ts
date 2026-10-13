@@ -34,6 +34,6 @@ export function playNotificationBeep() {
     osc.stop(t0 + 0.34);
     setTimeout(() => ctx.close(), 500);
   } catch {
-    // Browsers block audio until a user gesture — silent failure is fine.
+    // Browsers block audio until a user gesture, silent failure is fine.
   }
 }

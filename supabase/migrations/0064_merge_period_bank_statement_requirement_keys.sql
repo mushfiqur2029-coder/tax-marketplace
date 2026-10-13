@@ -16,7 +16,7 @@
 -- this, uploads tied to the old ids would appear orphaned (empty new
 -- slot) and the required-missing count would misreport.
 --
--- Idempotent — the IN clause is a no-op if the old ids are already
+-- Idempotent, the IN clause is a no-op if the old ids are already
 -- gone, and the new id has no uniqueness constraint on
 -- (case_id, requirement_key) so re-tagging two rows to the same id
 -- on the same case is fine.

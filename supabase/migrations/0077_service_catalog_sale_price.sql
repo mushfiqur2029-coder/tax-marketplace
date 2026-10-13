@@ -3,7 +3,7 @@
 -- Marketing pages (homepage pricing, service pages) show the catalog's
 -- price_gbp. When admin wants to run a "was £X now £Y" promotion we
 -- need somewhere to park the discounted price without clobbering the
--- regular one — restoring from a struck price is a code change today.
+-- regular one, restoring from a struck price is a code change today.
 --
 -- Shape:
 --   • sale_price_gbp integer null

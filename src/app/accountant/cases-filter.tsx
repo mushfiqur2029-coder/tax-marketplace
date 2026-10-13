@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 // "assigned" surfaces admin-assigned cases (bespoke flow) that are
-// still in draft or submitted — the accountant can see the case the
+// still in draft or submitted, the accountant can see the case the
 // moment it lands, before the client has done their part. Historical
 // behaviour forced status to in_review on assign to make the case
 // visible, which was wrong for a case the client hadn't paid for yet.
@@ -19,10 +19,10 @@ export type UrgencyFilter = "all" | "safe" | "soon" | "urgent";
 // Twelve tiers (nine Personal + three LC flat-fee) don't fit a per-tier
 // dropdown, and accountants typically pick by complexity-of-work which
 // correlates with fee. Boundaries map to the current catalogue:
-//   under_300  — dormant £150, five Personal £199 tiers, landlord_small
+//   under_300, dormant £150, five Personal £199 tiers, landlord_small
 //                £250, cis £299
-//   300_to_600 — non_resident £399, landlord_multi £599
-//   over_600   — non_vat_reg £700, vat_reg £1000, complex_international £1000
+//   300_to_600, non_resident £399, landlord_multi £599
+//   over_600, non_vat_reg £700, vat_reg £1000, complex_international £1000
 export type FeeFilter = "all" | "under_300" | "300_to_600" | "over_600";
 export type DateFilter = "all" | "7d" | "30d" | "90d";
 
@@ -82,7 +82,7 @@ export function AccountantCasesFilter({
   );
 }
 
-// View tabs get a count badge — the same count that would render if you
+// View tabs get a count badge, the same count that would render if you
 // clicked into the tab. Updated live via the RealtimeCaseRefresh sibling.
 function ViewTabRow({
   current,

@@ -56,7 +56,7 @@ export default async function ClientAccountPage() {
       <RealtimeRefresh
         channel={`client-profile-${me.id}`}
         subscriptions={[
-          // Admin approves / rejects the pending change — the status
+          // Admin approves / rejects the pending change, the status
           // field drives the "awaiting review" banner on this page.
           {
             table: "pending_profile_changes",

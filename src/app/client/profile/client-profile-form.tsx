@@ -50,7 +50,7 @@ export function ClientProfileForm({
             setOk(true);
             setAvatarFile(null);
             // The "pending edit" banner at the top is driven by a
-            // server-component prop — refresh so it appears
+            // server-component prop, refresh so it appears
             // immediately after the first submit (before refresh the
             // banner would stay hidden until a manual reload even
             // though the request is already queued server-side).

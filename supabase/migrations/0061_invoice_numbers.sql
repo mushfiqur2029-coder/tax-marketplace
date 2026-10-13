@@ -16,7 +16,7 @@
 -- Atomicity: a BEFORE UPDATE trigger assigns NEW.invoice_number via
 -- nextval() in the same transaction that flips stripe_payment_status
 -- (cases) or status (case_addons) to the paid state. Postgres
--- sequences are MVCC-safe — two concurrent transactions each get a
+-- sequences are MVCC-safe, two concurrent transactions each get a
 -- unique value with no row-level locking. The columns themselves are
 -- UNIQUE constrained as a belt-and-braces defense.
 

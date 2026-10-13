@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 
 // Personal flow uses the four-step state machine. Limited-company
-// collapses "prepared" into client_approval — the move from in_review is
+// collapses "prepared" into client_approval, the move from in_review is
 // handled by the PrepareApprovalCard, so this map leaves in_review with
 // no button and the component suppresses it.
 const NEXT_PERSONAL: Record<string, { label: string; next: string } | null> = {
@@ -23,7 +23,7 @@ const NEXT_LIMITED_COMPANY: Record<
   { label: string; next: string } | null
 > = {
   submitted: { label: "Start review", next: "in_review" },
-  // in_review handled by PrepareApprovalCard — rendered elsewhere.
+  // in_review handled by PrepareApprovalCard, rendered elsewhere.
   in_review: null,
   // "prepared" doesn't exist on this flow but keep the map total.
   prepared: null,
@@ -70,7 +70,7 @@ export function StatusTransition({
                 return;
               }
               // Status pill + available next-transition button both
-              // read `current` from the parent server component —
+              // read `current` from the parent server component.
               // refresh so the whole case page reflects the new status
               // without a manual reload.
               router.refresh();

@@ -183,7 +183,7 @@ function PresetForm({
           if (res.ok) {
             setOk("Sent to the client for payment.");
             // Addons list on this page is server-rendered from
-            // case_addons — refresh so the newly requested row appears
+            // case_addons, refresh so the newly requested row appears
             // without needing a manual reload.
             router.refresh();
           } else setError(res.error);

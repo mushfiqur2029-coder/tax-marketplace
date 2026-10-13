@@ -53,7 +53,7 @@ export async function flattenCssAndFonts(exportDir, devServerBase) {
   if (!cssPath) {
     // Already-flattened or missing. If styles.css exists, nothing to do.
     if (existsSync(join(exportDir, "styles.css"))) {
-      console.log("styles.css already present — skip CSS extraction");
+      console.log("styles.css already present, skip CSS extraction");
       return;
     }
     throw new Error("No CSS found in _next/static/chunks/ to flatten");
@@ -134,7 +134,7 @@ async function rewriteHtmlFiles(exportDir) {
 export function rewriteHtml(html) {
   // Replace the Next CSS stylesheet <link> (whatever its hash) with
   // the flat /styles.css. There may be preload <link rel="preload"
-  // as="style"> and the real <link rel="stylesheet"> — both go.
+  // as="style"> and the real <link rel="stylesheet"> ,  both go.
   html = html.replace(
     /<link[^>]*href="\/_next\/static\/chunks\/[^"]+\.css"[^>]*\/?>/g,
     "",

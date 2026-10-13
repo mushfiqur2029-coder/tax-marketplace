@@ -38,7 +38,7 @@ export function SuspendActions({
       const res = await setStatus(accountantId, next, note || null);
       if (res.ok) {
         setNote("");
-        // Current-status prop drives the button label — refresh so it
+        // Current-status prop drives the button label, refresh so it
         // flips between Suspend ↔ Reinstate on the same click.
         router.refresh();
       } else setError(res.error);

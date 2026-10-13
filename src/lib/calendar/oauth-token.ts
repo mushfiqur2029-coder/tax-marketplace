@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // token, we encrypt + persist it in public.google_oauth_token via the
 // set_google_refresh_token RPC. Subsequent calendar calls read the
 // token here, hand it to an OAuth2Client, and act AS the calendar
-// owner — which is the whole point: lets us invite real attendees and
+// owner, which is the whole point: lets us invite real attendees and
 // attach a Meet link, both of which the service-account path can't
 // do on a personal Gmail calendar.
 
@@ -19,7 +19,7 @@ export const OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   // Send-only Gmail scope. Powers the booking confirmation + inbox-
   // notification emails via src/lib/email.ts → sendEmailViaGmail.
-  // Note: Google scopes are additive only through a fresh consent —
+  // Note: Google scopes are additive only through a fresh consent.
   // if the stored refresh token predates this line, the connected
   // admin must go back through /api/auth/google/connect once to
   // grant the new scope. Existing calendar calls keep working with
@@ -50,7 +50,7 @@ export function getRedirectUri(): string {
   return `${base.replace(/\/$/, "")}/api/auth/google/callback`;
 }
 
-// Factory — a fresh OAuth2Client each call. OAuth2Client caches its
+// Factory, a fresh OAuth2Client each call. OAuth2Client caches its
 // current access token on the instance, so for repeated use within one
 // serverless invocation prefer getOwnerOAuthClient() below which
 // stashes the instance.
@@ -126,7 +126,7 @@ export async function getOwnerOAuthClient(): Promise<OAuth2Client | null> {
   if (!ownerClientSingleton) {
     ownerClientSingleton = newOAuthClient();
   }
-  // setCredentials is idempotent — overwriting on every call keeps the
+  // setCredentials is idempotent, overwriting on every call keeps the
   // in-memory state in sync if an admin re-consents and the token
   // rotates.
   ownerClientSingleton.setCredentials({ refresh_token: token.refreshToken });

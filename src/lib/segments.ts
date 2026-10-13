@@ -38,7 +38,7 @@ export type Segment = {
 
 export const SEGMENTS: Segment[] = [
   {
-    // Personal — single flat-fee segment. The service is picked by
+    // Personal, single flat-fee segment. The service is picked by
     // tier (9 flat-fee options in src/lib/plans.ts), not by segment.
     // No intake form: the engagement letter and the per-tier doc
     // checklist (handled downstream) carry the scoping.

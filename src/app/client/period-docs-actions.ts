@@ -67,7 +67,7 @@ async function assertCaseInPeriodUpload(caseId: string) {
   };
 }
 
-// Section A PAYE presence check — used to promote the period PAYE
+// Section A PAYE presence check, used to promote the period PAYE
 // summary from optional to required, matching the spec's "shows
 // automatically if they uploaded a PAYE Certificate earlier".
 async function sectionAPayeUploaded(
@@ -144,7 +144,7 @@ export async function uploadPeriodDocumentAction(
   try {
     const { me, supabase, tier, caseRow } = await assertCaseInPeriodUpload(caseId);
 
-    // Visibility respects the Section C PAYE answer — if the client
+    // Visibility respects the Section C PAYE answer, if the client
     // said "No" to PAYE registration, the PAYE summary slot
     // disappears entirely, so an upload posted against that key is
     // rejected with "slot doesn't exist".
@@ -283,7 +283,7 @@ export async function submitPeriodDocsAction(
         .filter((k): k is string => !!k),
     );
 
-    // "I don't have this" skips the upload requirement — the row is
+    // "I don't have this" skips the upload requirement, the row is
     // flagged for admin/accountant visibility rather than blocked.
     const answers = (caseRow as unknown as {
       intake_answers: Record<string, string> | null;

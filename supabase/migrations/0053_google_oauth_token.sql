@@ -1,12 +1,12 @@
 -- Single-row table storing the Google OAuth2 refresh token granted
 -- by the calendar owner during the one-time admin consent flow at
 -- /api/auth/google/connect. The refresh token lets our server mint
--- short-lived access tokens that act AS the owner — unlocking the two
+-- short-lived access tokens that act AS the owner, unlocking the two
 -- things service-account auth can't do on a personal Gmail calendar:
 --
---   1. attendees — Google sends the client a native calendar invite
+--   1. attendees. Google sends the client a native calendar invite
 --      with the Meet link, no custom email required.
---   2. conferenceData/hangoutsMeet — Meet links auto-attach to events.
+--   2. conferenceData/hangoutsMeet. Meet links auto-attach to events.
 --
 -- Encryption mirrors the company_auth_code pattern (migration 0028):
 -- pgp_sym_encrypt with a passphrase passed in from the app's
@@ -31,7 +31,7 @@ create table if not exists public.google_oauth_token (
 );
 
 alter table public.google_oauth_token enable row level security;
--- Deliberately no SELECT/UPDATE/INSERT policies — every path goes
+-- Deliberately no SELECT/UPDATE/INSERT policies, every path goes
 -- through the two SECURITY DEFINER RPCs below, called from server
 -- code only via the service role.
 

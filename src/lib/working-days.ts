@@ -6,7 +6,7 @@ import fallback from "./uk-holidays-fallback.json";
 export const MIN_WORKING_DAYS = 5;
 
 // Constant the urgent fee is stored at per-row on cases.urgent_fee_pence.
-// Server-side authoritative — never read this from a form field.
+// Server-side authoritative, never read this from a form field.
 export const URGENT_FEE_PENCE = 100_00;
 
 // UK (England and Wales) bank holidays. Fetched from gov.uk with a 24h
@@ -31,7 +31,7 @@ async function getUkHolidays(): Promise<Set<string>> {
       const events = data["england-and-wales"]?.events ?? [];
       const dates = new Set<string>(events.map((e) => e.date));
       // Merge in the fallback in case gov.uk trims older / very-future dates
-      // — cheap belt-and-braces, doesn't hurt correctness.
+      // ,  cheap belt-and-braces, doesn't hurt correctness.
       for (const d of fallback.dates) dates.add(d);
       cache = { fetchedAt: now, dates };
       return dates;
@@ -65,7 +65,7 @@ export function todayLondon(): string {
 }
 
 // Add n calendar days to a YYYY-MM-DD string. Works via a UTC-anchored Date
-// so DST doesn't perturb the arithmetic — we're incrementing civil day
+// so DST doesn't perturb the arithmetic, we're incrementing civil day
 // count, not wall-clock seconds.
 function addDays(ymd: string, n: number): string {
   const [y, m, d] = ymd.split("-").map(Number);

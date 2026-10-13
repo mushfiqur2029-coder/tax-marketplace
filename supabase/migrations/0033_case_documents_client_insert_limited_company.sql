@@ -2,7 +2,7 @@
 -- the client's case_documents insert + delete policies were pinned to
 -- status='draft'. That matches the personal flow (intake → documents →
 -- checkout where status flips to 'submitted' only on pay), but it
--- blocks every post-payment upload in the limited-company flow —
+-- blocks every post-payment upload in the limited-company flow.
 -- onboarding (Sections A/B/C/[D]) AND period docs. The server actions
 -- that call these inserts/deletes already enforce the fine-grained
 -- "is this slot open right now?" rules (onboarding_submitted_at not
@@ -11,7 +11,7 @@
 -- case at all". Opening the policy for paid limited-company cases
 -- removes the production block without widening the attack surface.
 --
--- Caught by the Batch 4 DB/API E2E — client inserts failed with
+-- Caught by the Batch 4 DB/API E2E, client inserts failed with
 -- "new row violates row-level security policy for table
 -- case_documents" even on paid cases past onboarding.
 

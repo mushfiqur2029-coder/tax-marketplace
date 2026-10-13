@@ -43,7 +43,7 @@ export function AddAdminForm({
             setEmail("");
             setPassword("");
             // "Current admins (N)" list on the left is server-rendered
-            // — refresh so the new admin appears without needing a
+            // ,  refresh so the new admin appears without needing a
             // manual reload.
             router.refresh();
           } else {

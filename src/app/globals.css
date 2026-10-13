@@ -310,7 +310,7 @@
   }
   .scroll-row::-webkit-scrollbar { display: none; }
 
-  /* Scroll reveal — transition lives on .in so applying .reveal snaps to hidden
+  /* Scroll reveal, transition lives on .in so applying .reveal snaps to hidden
      without a fade-out flash. Reveal component only adds .reveal to elements
      below the fold; above-fold elements go straight to .reveal.in with no
      property change, so nothing animates. */
@@ -346,7 +346,7 @@
   @keyframes drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-30px,40px) scale(1.08); } }
   @keyframes drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(40px,-30px) scale(1.06); } }
 
-  /* Nav pill — frosted glass, opaque enough to read against dark sections */
+  /* Nav pill, frosted glass, opaque enough to read against dark sections */
   .sl-nav-shell { padding: 14px 0; transition: padding 0.3s ease; }
   .sl-nav-shell.scrolled { padding: 8px 0; }
   .sl-nav-inner {

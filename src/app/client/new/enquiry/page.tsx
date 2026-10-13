@@ -20,7 +20,7 @@ export default async function ClientEnquiryPage({
   const me = await requireRole("client");
 
   // The enquiry form only accepts bespoke tiers. Anything else routes
-  // back to /client/new where the normal picker runs — avoids the
+  // back to /client/new where the normal picker runs, avoids the
   // enquiry form becoming an alternative entry point for flat-fee
   // tiers (and the server action would reject the submit anyway).
   const tier = await getTier(service ?? null);
@@ -29,7 +29,7 @@ export default async function ClientEnquiryPage({
   }
 
   // Pre-fill contact details from the client's profile. The enquirer
-  // can edit each one — the person inside the company who wants the
+  // can edit each one, the person inside the company who wants the
   // service isn't always the one who set up the Sterling Ledger
   // account.
   const admin = createAdminClient();

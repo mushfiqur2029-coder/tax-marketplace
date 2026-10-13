@@ -1,18 +1,18 @@
-# Sterling Ledger — static marketing site
+# Sterling Ledger, static marketing site
 
 This folder is the deployable static marketing site. Upload its
 contents into cPanel's `public_html/` and the domain
 `sterlingledger.co.uk` is live. Nothing in here needs Node, PHP, or
-any runtime — it's plain HTML + CSS + JS.
+any runtime, it's plain HTML + CSS + JS.
 
 ## What's where
 
 ```
 public_html/
-  index.html             — / homepage
-  about/index.html       — /about
-  calculators/index.html — /calculators
-  guides/index.html      — /guides
+  index.html             ,  / homepage
+  about/index.html       ,  /about
+  calculators/index.html ,  /calculators
+  guides/index.html      ,  /guides
   self-employed/index.html
   landlords/index.html
   first-time-filers/index.html
@@ -25,8 +25,8 @@ public_html/
   vat-business/index.html
   making-tax-digital/index.html
   tax-advice/index.html
-  _next/static/...       — CSS + fonts the pages reference
-  sterling.js            — mobile menu, FAQ, tabs, live pricing
+  _next/static/...       ,  CSS + fonts the pages reference
+  sterling.js, mobile menu, FAQ, tabs, live pricing
   (plus every file from the project's /public/)
 ```
 
@@ -35,7 +35,7 @@ description for SEO. Prices are populated at build time as a fallback
 and refreshed live on page load from the admin-edited catalog at
 `https://apisterlingledger.co.uk/api/public/pricing`.
 
-## Live pricing — how it works
+## Live pricing, how it works
 
 `sterling.js` fetches the public pricing endpoint on every page load
 and swaps the HTML text inside any element with the attribute
@@ -45,7 +45,7 @@ sale is set on a tier (`salePriceGbp` non-null), the swap renders
 + `.price-now`) you can style with CSS.
 
 If the API call fails (network, CORS, DNS), the HTML's built-in
-price stays visible — users never see a blank price card.
+price stays visible, users never see a blank price card.
 
 ## Internal links
 
@@ -79,6 +79,6 @@ Then upload the regenerated `marketing-static-export/` to cPanel.
 
 Each page is a standalone HTML file. Add structured data
 (`<script type="application/ld+json">`), tweak meta descriptions,
-add Open Graph tags, drop in a Plausible snippet, etc. — all
+add Open Graph tags, drop in a Plausible snippet, etc. ,  all
 without touching the Next.js app or doing a code deploy. Just edit
 the HTML and re-upload.

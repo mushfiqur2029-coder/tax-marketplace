@@ -68,7 +68,7 @@ export async function getBellState(userId: string): Promise<BellState> {
 
 // Every helper below inserts on a best-effort basis: a failed notification
 // must not roll back the underlying business action (paid withdrawal, taken
-// case, etc.). But silent failures cost hours of debugging — see the
+// case, etc.). But silent failures cost hours of debugging, see the
 // missing `addon_pending_admin` enum value that shipped this behaviour to
 // production and was invisible until someone asked "why didn't admin see
 // this?". Any insert error is checked and logged with enough context to
@@ -221,7 +221,7 @@ export async function insertReassignmentNotifications(params: {
 }
 
 // Notify every admin when an accountant requests a custom add-on that needs
-// review before the client can see it. Preset add-ons skip this — they go
+// review before the client can see it. Preset add-ons skip this, they go
 // straight to the client for payment.
 export async function insertAddonPendingAdminNotifications(params: {
   caseId: string;
@@ -763,7 +763,7 @@ export async function insertCasePaymentStalledNotification(params: {
 }
 
 // Admin fan-out when a Stripe Checkout session for an add-on either
-// expires or fails. Deliberately NO client email here — add-ons
+// expires or fails. Deliberately NO client email here, add-ons
 // aren't swept by the stale-draft job so there's no deletion
 // threat to warn about, and the client already sees the pending
 // status on their case page. This is admin visibility only, so

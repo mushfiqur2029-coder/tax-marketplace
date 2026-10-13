@@ -27,7 +27,7 @@ export default async function CheckoutPage({
     redirect(`/client/cases/${id}`);
   }
   // Both Personal (new 9-up catalogue) and Limited Company gate on the
-  // engagement letter — intake was retired. If the letter isn't signed,
+  // engagement letter, intake was retired. If the letter isn't signed,
   // push them back to the engagement page.
   if (!data.progress.engagementSigned) {
     redirect(`/client/cases/${id}/engagement`);

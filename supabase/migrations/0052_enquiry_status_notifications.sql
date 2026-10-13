@@ -1,6 +1,6 @@
 -- Client-facing notifications for the two enquiry-status transitions
 -- admin can drive from /admin/enquiries. A client submitting a bespoke
--- enquiry shouldn't be left wondering what happened — "contacted" and
+-- enquiry shouldn't be left wondering what happened ,  "contacted" and
 -- "closed" both get surfaced in the client's bell.
 --
 -- Admin side already has notify_service_enquiry fanning the initial

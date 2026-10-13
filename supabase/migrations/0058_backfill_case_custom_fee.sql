@@ -4,7 +4,7 @@
 -- already-created cases. Going forward, createCaseAction + the bespoke
 -- action snapshot cases.custom_fee_pence at insert time. This migration
 -- backfills every historic case that still has NULL custom_fee_pence
--- using the CURRENT service_catalog price for its tier — which equals
+-- using the CURRENT service_catalog price for its tier, which equals
 -- the quoted price those cases were created under, since the catalogue
 -- hasn't been edited yet at the time this migration runs.
 --

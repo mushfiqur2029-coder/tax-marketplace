@@ -232,7 +232,7 @@ function ConfirmationCard({
 }) {
   const [booked, setBooked] = useState<BookingResult | null>(null);
 
-  // Description sent to Google — this is what the calendar event
+  // Description sent to Google, this is what the calendar event
   // itself shows. Keep it tight; the client already sees a nicer
   // version on-screen.
   const description = [
