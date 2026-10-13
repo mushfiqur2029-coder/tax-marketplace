@@ -420,19 +420,48 @@ export async function POST(req: NextRequest) {
           // notification. Nothing extra needed on the admin side.
           // The accountant doesn't get status_change from that
           // trigger (it only fans to client + admins) so push an
-          // explicit note here.
+          // explicit note here. Wrapped in try/catch and logged to
+          // post_payment_delivery_failures (migration 0072) on
+          // failure, because the DB flip has already committed and
+          // Stripe won't retry effectively (status-filter guard
+          // above would 0-row the retry). Without this marker a
+          // silent notification drop is invisible until an angry
+          // email.
           const accountantId = flipped[0]?.accountant_id as
             | string
             | null
             | undefined;
           if (accountantId) {
-            await admin.from("notifications").insert({
-              recipient_id: accountantId,
-              type: "case_status_change" as const,
-              case_id: caseId,
-              message:
-                "Bespoke balance paid and client approved. Case is now Filed. You can submit to HMRC / Companies House.",
-            });
+            try {
+              const { error: notifErr } = await admin
+                .from("notifications")
+                .insert({
+                  recipient_id: accountantId,
+                  type: "case_status_change" as const,
+                  case_id: caseId,
+                  message:
+                    "Bespoke balance paid and client approved. Case is now Filed. You can submit to HMRC / Companies House.",
+                });
+              if (notifErr) throw new Error(notifErr.message);
+            } catch (notifThrow) {
+              const msg =
+                notifThrow instanceof Error
+                  ? notifThrow.message
+                  : String(notifThrow);
+              console.error(
+                `[webhook] balance accountant notification failed for case ${caseId}: ${msg}`,
+              );
+              await admin.from("post_payment_delivery_failures").insert({
+                case_id: caseId,
+                stage: "balance_notification",
+                error_message: msg,
+                context: {
+                  accountant_id: accountantId,
+                  session_id: session.id,
+                  payment_intent: paymentIntentId,
+                },
+              });
+            }
           }
 
           // Balance receipt email + branded invoice PDF. Mirrors the
@@ -542,10 +571,27 @@ export async function POST(req: NextRequest) {
               }
             }
           } catch (mailErr) {
+            // Durable marker: the DB flip is already committed and
+            // Stripe's retry would skip this step on re-fire, so a
+            // silent log is a bug. Insert a row admins can query
+            // + resolve manually (resend the invoice email once
+            // they've addressed the underlying issue).
+            const msg =
+              mailErr instanceof Error
+                ? mailErr.message
+                : String(mailErr);
             console.error(
-              "[webhook] balance receipt email threw:",
-              mailErr,
+              `[webhook] balance receipt email failed for case ${caseId}: ${msg}`,
             );
+            await admin.from("post_payment_delivery_failures").insert({
+              case_id: caseId,
+              stage: "balance_email",
+              error_message: msg,
+              context: {
+                session_id: session.id,
+                payment_intent: paymentIntentId,
+              },
+            });
           }
         }
         break;
