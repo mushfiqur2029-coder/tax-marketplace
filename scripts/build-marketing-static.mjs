@@ -341,6 +341,26 @@ async function main() {
     }
   }
 
+  // Flatten /_next/* out of the export so uploaded sites don't depend
+  // on preserving Next's internal path structure. Moves the CSS to
+  // /styles.css + fonts to /fonts/<hash>.woff2, rewrites @font-face
+  // urls inside the CSS, and strips the stale /_next/ references
+  // from each HTML. See scripts/flatten-static-export.mjs for the
+  // detailed reasoning — this reuses that module's helpers.
+  console.log("\nFlattening /_next into /styles.css + /fonts ...");
+  const { flattenCssAndFonts, rewriteHtml } = await import("./flatten-static-export.mjs");
+  await flattenCssAndFonts(OUT, BASE);
+  // Rewrite the HTML we just wrote so it points at /styles.css instead
+  // of /_next/.../*.css. Order matters: pages were written before this
+  // flatten step so they still hold the old /_next/ hrefs.
+  for (const p of PAGES) {
+    const htmlPath = join(OUT, p.out);
+    const original = await readFile(htmlPath, "utf8");
+    const next = rewriteHtml(original);
+    if (next !== original) await writeFile(htmlPath, next);
+  }
+  await rm(join(OUT, "_next"), { recursive: true, force: true });
+
   // Copy /public/* into the export root.
   console.log("\nCopying /public assets...");
   await copyDir(join(PROJECT_ROOT, "public"), OUT);
