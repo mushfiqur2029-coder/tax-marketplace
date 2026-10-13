@@ -38,7 +38,40 @@ export type LookupResult =
   | { ok: false; error: string };
 
 const CACHE_TTL_MS = 60_000;
+// Hard upper bound on cache entries. In-memory Map with no eviction
+// grows unboundedly - a chatty typing session on a long-lived
+// server process would keep adding entries, one per debounced
+// keystroke, forever. Set to 500 so the first-page keystrokes of
+// a given search session all stay cached while any single
+// deployment can't balloon the heap. When this bound is reached
+// we evict in insertion order (Map preserves insertion order) -
+// LRU-ish because every `set` on an existing key would have had
+// to delete-and-reinsert to actually be LRU, but given our
+// 1-minute TTL this is a fine approximation: the oldest keys are
+// the stalest and the newly-set entry goes to the end anyway.
+const CACHE_MAX_ENTRIES = 500;
 const cache = new Map<string, { at: number; value: CompaniesHouseHit[] }>();
+
+// Shared setter: stores the hit and, if we've hit the size cap,
+// drops the oldest entry. Also opportunistically evicts TTL-expired
+// entries so a long-lived process doesn't carry around dead values.
+function cacheSet(key: string, value: CompaniesHouseHit[]): void {
+  const now = Date.now();
+  cache.set(key, { at: now, value });
+  // Fast path: nothing to prune.
+  if (cache.size <= CACHE_MAX_ENTRIES) return;
+  // Walk from oldest and drop expired until under cap, then evict
+  // oldest regardless if we're still over cap. One pass; bounded
+  // work (at most CACHE_MAX_ENTRIES iterations).
+  for (const [k, v] of cache) {
+    if (cache.size <= CACHE_MAX_ENTRIES) break;
+    if (now - v.at >= CACHE_TTL_MS) {
+      cache.delete(k);
+    } else {
+      cache.delete(k);
+    }
+  }
+}
 
 const COMPANY_NUMBER_RE = /^(?:\d{8}|[A-Za-z]{2}\d{6})$/;
 
@@ -94,11 +127,19 @@ export async function searchCompanies(
       const url = `https://api.company-information.service.gov.uk/company/${encodeURIComponent(normalized)}`;
       const r = await fetch(url, { headers, cache: "no-store" });
       if (r.status === 404) {
-        cache.set(q, { at: Date.now(), value: [] });
+        cacheSet(q, []);
         return { ok: true, items: [] };
       }
       if (!r.ok) {
-        if (r.status >= 500) return { ok: false, fallback: true };
+        // 429 is Companies House's rate-limit response. Treat it as
+        // an outage the same way we treat 5xx so the client drops
+        // to manual entry silently instead of showing a scary
+        // "responded 429" error - the limit is API-key-wide and
+        // the client isn't going to recover by retrying, so manual
+        // entry is the right exit.
+        if (r.status >= 500 || r.status === 429) {
+          return { ok: false, fallback: true };
+        }
         return {
           ok: false,
           error: `Companies House responded ${r.status}.`,
@@ -112,14 +153,17 @@ export async function searchCompanies(
         address_snippet: addressSnippetFromProfile(json),
         date_of_creation: json.date_of_creation ?? null,
       };
-      cache.set(q, { at: Date.now(), value: [hit] });
+      cacheSet(q, [hit]);
       return { ok: true, items: [hit] };
     }
 
     const url = `https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(q)}&items_per_page=10`;
     const r = await fetch(url, { headers, cache: "no-store" });
     if (!r.ok) {
-      if (r.status >= 500) return { ok: false, fallback: true };
+      // Same 429-as-outage rule as the lookup branch above.
+      if (r.status >= 500 || r.status === 429) {
+        return { ok: false, fallback: true };
+      }
       return {
         ok: false,
         error: `Companies House responded ${r.status}.`,
@@ -133,7 +177,7 @@ export async function searchCompanies(
       address_snippet: it.address_snippet ?? null,
       date_of_creation: it.date_of_creation ?? null,
     }));
-    cache.set(q, { at: Date.now(), value: items });
+    cacheSet(q, items);
     return { ok: true, items };
   } catch (err) {
     // Network error / aborted fetch. Treat as outage → fallback mode.
