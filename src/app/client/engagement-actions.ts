@@ -208,7 +208,7 @@ export async function signEngagementAction(
     const { data: caseRow, error: caseErr } = await supabase
       .from("cases")
       .select(
-        "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence, deposit_pence, balance_pence",
+        "id, client_id, accountant_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence, deposit_pence, balance_pence",
       )
       .eq("id", caseId)
       .single();
@@ -296,6 +296,28 @@ export async function signEngagementAction(
       feeRow.balance_pence > 0;
     const depositFee = hasSplit ? formatFeeGbp(feeRow.deposit_pence!) : null;
     const balanceFee = hasSplit ? formatFeeGbp(feeRow.balance_pence!) : null;
+
+    // Pull the assigned accountant's own legal identity (migration
+    // 0074). The template falls back to the historical Shann / NAFH
+    // hardcode when these are null, so cases without an accountant
+    // yet (or accountants who haven't filled their legal identity in)
+    // still produce a valid letter.
+    let accountantLegalName: string | null = null;
+    let accountantCompanyNumber: string | null = null;
+    let accountantTradingName: string | null = null;
+    if (caseRow.accountant_id) {
+      const { data: accProfile } = await admin
+        .from("accountant_profiles")
+        .select("legal_name, legal_company_number, trading_name")
+        .eq("user_id", caseRow.accountant_id)
+        .maybeSingle();
+      if (accProfile) {
+        accountantLegalName = accProfile.legal_name;
+        accountantCompanyNumber = accProfile.legal_company_number;
+        accountantTradingName = accProfile.trading_name;
+      }
+    }
+
     const letterHtml = renderEngagementLetterHtml({
       effectiveDate: signDate,
       variant: isCompany ? "limited_company" : "personal",
@@ -308,6 +330,9 @@ export async function signEngagementAction(
       totalFee: feeLabel,
       depositFee,
       balanceFee,
+      accountantLegalName,
+      accountantCompanyNumber,
+      accountantTradingName,
       signatureDataUrl,
       signDate,
     });

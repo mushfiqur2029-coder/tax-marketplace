@@ -37,7 +37,7 @@ export default async function EngagementPage({
   const { data: caseRow } = await supabase
     .from("cases")
     .select(
-      "id, client_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence, deposit_pence, balance_pence",
+      "id, client_id, accountant_id, segment, tier, status, engagement_signed_at, intake_answers, custom_fee_pence, deposit_pence, balance_pence",
     )
     .eq("id", id)
     .single();
@@ -107,6 +107,29 @@ export default async function EngagementPage({
     feeRow.deposit_pence > 0 &&
     feeRow.balance_pence != null &&
     feeRow.balance_pence > 0;
+
+  // Same accountant legal-identity lookup as the signing action
+  // (engagement-actions.ts). Null fields fall back to the hardcoded
+  // Shann / NAFH values inside the template so legacy / unassigned
+  // cases still render.
+  let accountantLegalName: string | null = null;
+  let accountantCompanyNumber: string | null = null;
+  let accountantTradingName: string | null = null;
+  const accountantId = (caseRow as unknown as { accountant_id: string | null })
+    .accountant_id;
+  if (accountantId) {
+    const { data: accProfile } = await admin
+      .from("accountant_profiles")
+      .select("legal_name, legal_company_number, trading_name")
+      .eq("user_id", accountantId)
+      .maybeSingle();
+    if (accProfile) {
+      accountantLegalName = accProfile.legal_name;
+      accountantCompanyNumber = accProfile.legal_company_number;
+      accountantTradingName = accProfile.trading_name;
+    }
+  }
+
   const previewHtml = renderEngagementLetterHtml({
     effectiveDate: todayLong,
     variant: isCompany ? "limited_company" : "personal",
@@ -119,6 +142,9 @@ export default async function EngagementPage({
     totalFee: feeLabel,
     depositFee: hasSplit ? formatFeeGbp(feeRow.deposit_pence!) : null,
     balanceFee: hasSplit ? formatFeeGbp(feeRow.balance_pence!) : null,
+    accountantLegalName,
+    accountantCompanyNumber,
+    accountantTradingName,
     signatureDataUrl: null,
     signDate: null,
   });

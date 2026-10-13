@@ -29,6 +29,15 @@ export type EngagementLetterFields = {
   // cases and legacy single-fee bespoke engagements.
   depositFee?: string | null;  // e.g. "£500"
   balanceFee?: string | null;  // e.g. "£1,000"
+  // Assigned accountant's own legal identity. Looked up from the
+  // accountant_profiles row for the case's accountant_id (columns
+  // added in migration 0074). All three nullable: when any is null
+  // the renderer falls back to the historical Shann / NAFH hardcode
+  // for that row only. Admin UI to populate these is a follow-up;
+  // until then the fallback produces the same letter as before.
+  accountantLegalName?: string | null;    // e.g. "SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD"
+  accountantCompanyNumber?: string | null;// e.g. "12636834"
+  accountantTradingName?: string | null;  // e.g. "NAFH ACCOUNTANTS"
   // Signature embedded in the PDF. Null for the pre-sign in-browser
   // preview, present after the client signs for the stored PDF.
   signatureDataUrl: string | null;
@@ -90,30 +99,40 @@ export function renderEngagementLetterHtml(
   const signDateBlock = f.signDate ? esc(f.signDate) : "-";
 
   const variant: EngagementLetterVariant = f.variant ?? "limited_company";
+  // Accountant identity: prefer the assigned accountant's own legal
+  // identity from accountant_profiles (migration 0074). Fall back to
+  // the historical Shann / NAFH hardcode when any of the three
+  // fields is missing - keeps letters valid for accountants who
+  // haven't filled in their legal identity yet, and preserves
+  // backward compatibility with previews that don't pass these.
+  const legalName =
+    f.accountantLegalName?.trim() ||
+    "SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD";
+  const legalCompanyNumber =
+    f.accountantCompanyNumber?.trim() || "12636834";
+  const tradingName = f.accountantTradingName?.trim() || "NAFH ACCOUNTANTS";
+  const accountantRows = `
+    <dt>Accountant (legal name)</dt><dd>${esc(legalName)}, Company number ${esc(legalCompanyNumber)}</dd>
+    <dt>Accountant trading name</dt><dd>${esc(tradingName)}</dd>
+    <dt>Platform (legal name)</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
+    <dt>Platform trading name</dt><dd>Sterling Ledger</dd>`;
+
   // Parties block differs by variant. Personal has no company name /
   // number and uses Client Name/Email/Phone instead of Director. LC
   // keeps the full director labels under a Company Name + Number
-  // header.
+  // header. Both variants share the same accountantRows block above.
   const partiesRows =
     variant === "personal"
       ? `
     <dt>Client Name</dt><dd>${esc(f.clientName)}</dd>
     <dt>Client Email</dt><dd>${esc(f.clientEmail)}</dd>
-    <dt>Client Phone</dt><dd>${esc(f.clientPhone)}</dd>
-    <dt>Accountant (legal name)</dt><dd>SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD, Company number 12636834</dd>
-    <dt>Accountant trading name</dt><dd>NAFH ACCOUNTANTS</dd>
-    <dt>Platform (legal name)</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
-    <dt>Platform trading name</dt><dd>Sterling Ledger</dd>`
+    <dt>Client Phone</dt><dd>${esc(f.clientPhone)}</dd>${accountantRows}`
       : `
     <dt>Company Name</dt><dd>${esc(f.companyName) || "-"}</dd>
     <dt>Company Number</dt><dd>${esc(f.companyNumber) || "-"}</dd>
     <dt>Director Name</dt><dd>${esc(f.clientName)}</dd>
     <dt>Director Email</dt><dd>${esc(f.clientEmail)}</dd>
-    <dt>Director Number</dt><dd>${esc(f.clientPhone)}</dd>
-    <dt>Accountant (legal name)</dt><dd>SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD, Company number 12636834</dd>
-    <dt>Accountant trading name</dt><dd>NAFH ACCOUNTANTS</dd>
-    <dt>Platform (legal name)</dt><dd>STERLING LEDGER ADVISORY LTD</dd>
-    <dt>Platform trading name</dt><dd>Sterling Ledger</dd>`;
+    <dt>Director Number</dt><dd>${esc(f.clientPhone)}</dd>${accountantRows}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -544,9 +563,8 @@ export function renderEngagementLetterHtml(
   </div>
 
   <div class="footer">
-    Sterling Ledger Advisory Ltd &middot; Shann Accountancy and Financial
-    Services Ltd (trading as NAFH Accountants) &middot; England &amp;
-    Wales
+    Sterling Ledger Advisory Ltd &middot; ${esc(legalName)} (trading as
+    ${esc(tradingName)}) &middot; England &amp; Wales
   </div>
 
 </div>
