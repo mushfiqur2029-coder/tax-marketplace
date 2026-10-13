@@ -787,6 +787,46 @@ export async function reassignCaseAction(
 }
 
 // -------------------------------------------------------------------------
+// Admin editor for an accountant's legal identity (legal_name, trading_name,
+// legal_company_number on accountant_profiles - migration 0074). These
+// values flow into the engagement letter renderer: when any of them is
+// null the letter falls back to Shann / NAFH / 12636834 hardcoded in the
+// template, so leaving them unset is OK for legacy / early accounts.
+// Each field is optional and trimmed-to-null; blank string clears it.
+// -------------------------------------------------------------------------
+export async function setAccountantLegalIdentityAction(
+  accountantId: string,
+  input: {
+    legalName: string;
+    tradingName: string;
+    legalCompanyNumber: string;
+  },
+): Promise<ActionResult> {
+  try {
+    await requireRole("admin");
+    const admin = createAdminClient();
+
+    const normalize = (s: string) => (s.trim() ? s.trim() : null);
+    const patch = {
+      legal_name: normalize(input.legalName),
+      trading_name: normalize(input.tradingName),
+      legal_company_number: normalize(input.legalCompanyNumber),
+    };
+
+    const { error } = await admin
+      .from("accountant_profiles")
+      .update(patch)
+      .eq("user_id", accountantId);
+    if (error) throw new Error(error.message);
+
+    revalidatePath(`/admin/accountants/${accountantId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// -------------------------------------------------------------------------
 // Mark a withdrawal as paid + upload receipt.
 // Receipt goes to case-documents/receipts/{requestId}/... via admin client
 // (server-only, no RLS complexity for a rarely-used bucket subfolder).

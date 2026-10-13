@@ -15,9 +15,11 @@ import {
   setAccountantStatusAction,
   getAccountantDeletionCheck,
   deleteAccountantAccountAction,
+  setAccountantLegalIdentityAction,
 } from "@/app/admin/actions";
 import { SuspendActions } from "./suspend-actions";
 import { DeleteAccountCard } from "@/components/admin/delete-account-card";
+import { LegalIdentityForm } from "./legal-identity-form";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +39,9 @@ export default async function AdminAccountantDetail({
     admin.from("users").select("id, email, status").eq("id", id).single(),
     admin
       .from("accountant_profiles")
-      .select("user_id, name, contact_number, company_email, company_name, avatar_path, approval_status")
+      .select(
+        "user_id, name, contact_number, company_email, company_name, avatar_path, approval_status, legal_name, trading_name, legal_company_number",
+      )
       .eq("user_id", id)
       .single(),
   ]);
@@ -197,6 +201,35 @@ export default async function AdminAccountantDetail({
             <MiniStat label="Pending" value={money(pending)} />
             <MiniStat label="Withdrawn" value={money(paid)} />
           </div>
+
+          {/* Legal identity (feeds engagement letter) */}
+          <section className="card-sl p-6">
+            <h2
+              className="text-sm font-semibold uppercase tracking-wider text-slate"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              Legal identity for engagement letter
+            </h2>
+            <p className="mt-2 text-xs text-slate">
+              Prints on the signed PDF. Each field is optional - leave
+              blank to fall back to the Sterling Ledger defaults in the
+              template.
+            </p>
+            <div className="mt-4">
+              <LegalIdentityForm
+                accountantId={user.id}
+                initial={{
+                  legalName: profile.legal_name ?? "",
+                  tradingName: profile.trading_name ?? "",
+                  legalCompanyNumber: profile.legal_company_number ?? "",
+                }}
+                save={async (accId, input) => {
+                  "use server";
+                  return setAccountantLegalIdentityAction(accId, input);
+                }}
+              />
+            </div>
+          </section>
 
           {/* Cases handled */}
           <section className="card-sl p-6">
