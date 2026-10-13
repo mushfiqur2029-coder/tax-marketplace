@@ -143,10 +143,21 @@ export async function createCaseAction(
     const urgentFee = isUrgent ? URGENT_FEE_PENCE : 0;
 
     // Snapshot the quoted fee onto the case at creation. Future admin
-     // edits of service_catalog.price_gbp must not retroactively change
-     // what this client was quoted — custom_fee_pence is read by
-     // effectiveFeePence everywhere a case price is displayed or charged.
-    const quotedFeePence = tierDef.priceGbp * 100;
+    // edits of service_catalog.price_gbp (or sale_price_gbp) must not
+    // retroactively change what this client was quoted —
+    // custom_fee_pence is read by effectiveFeePence everywhere a case
+    // price is displayed or charged.
+    //
+    // Precedence matches the live-pricing API + marketing display:
+    // sale_price_gbp wins over price_gbp when set. Without this, a
+    // client picks a sale-priced tier and sees £sale on marketing +
+    // picker but gets charged £regular at checkout, because
+    // effectiveFeePence prefers the snapshot over the live tier read.
+    const quotedPriceGbp =
+      tierDef.salePriceGbp != null && tierDef.salePriceGbp > 0
+        ? tierDef.salePriceGbp
+        : tierDef.priceGbp;
+    const quotedFeePence = quotedPriceGbp * 100;
 
     const supabase = await createClient();
     const { data, error } = await supabase
