@@ -6228,3 +6228,52 @@
   justify-content: center;
   margin-top: 1.5rem;
 }
+
+/* ---- D2: focus-visible rings for keyboard a11y. Explicit outline so
+   tab-navigation shows exactly where focus is. Mouse clicks do not
+   trigger :focus-visible so the sighted-mouse UX is unchanged. ---- */
+:focus-visible {
+  outline: 2px solid var(--color-focus, #199cd9);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline-offset: 3px;
+}
+/* Inputs inside bordered cards already carry their own focus ring, do
+   not stack a second one. */
+.contact-input:focus-visible {
+  outline: none;
+}
+
+/* ---- D5: semantic color tokens. Layered on top of the raw palette
+   so re-skinning the brand later is a 6-line change rather than a
+   codebase-wide sweep. ---- */
+:root {
+  --color-primary: var(--navy-deep, #0b3b7a);
+  --color-primary-light: var(--sky, #199cd9);
+  --color-success: #0e9e77;
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-success-border: rgba(16, 185, 129, 0.25);
+  --color-danger: #b91c1c;
+  --color-danger-bg: rgba(239, 68, 68, 0.1);
+  --color-danger-border: rgba(239, 68, 68, 0.25);
+  --color-warning: #b57e12;
+  --color-warning-bg: rgba(217, 159, 25, 0.14);
+  --color-info: #1472a6;
+  --color-info-bg: rgba(25, 156, 217, 0.14);
+  --color-text-primary: var(--ink, #0f172a);
+  --color-text-muted: var(--slate, #64748b);
+  --color-text-subtle: #94a3b8;
+  --color-surface: var(--paper, #ffffff);
+  --color-surface-raised: #ffffff;
+  --color-surface-muted: var(--cloud, #f8fafc);
+  --color-border: var(--line, #e2e8f0);
+  --color-focus: var(--sky, #199cd9);
+}
