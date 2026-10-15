@@ -6336,3 +6336,35 @@ select:focus-visible,
 .guide-prose a:hover {
   color: var(--navy-deep, #0b3b7a);
 }
+
+/* ---- Contrast fixes for buttons on colored backgrounds. The two
+   rules below correct cases where a button class's text color gets
+   either overridden by a container rule or sits on a dark background
+   that renders its default navy text unreadable. ---- */
+
+/* Mobile menu panel: the generic `.mobile-panel a { color: var(--ink) }`
+   rule was overriding `.btn-sl-primary`'s white text, giving the
+   "Start your return" button dark text on the navy-to-sky gradient.
+   Exclude button-styled anchors from the ink override so each btn-sl
+   variant keeps its own text color. */
+.mobile-panel a.btn-sl,
+.mobile-panel a.btn-sl-primary,
+.mobile-panel a.btn-sl-mint,
+.mobile-panel a.btn-sl-outline,
+.mobile-panel a.btn-sl-ghost {
+  color: #fff;
+}
+.mobile-panel a.btn-sl-outline {
+  color: var(--navy-deep);
+}
+
+/* Consult-band is a dark navy-to-sky gradient. The default
+   `.btn-sl-ghost` paints its text in navy-deep, which disappears
+   against the dark end of the gradient. Force white text (and a
+   faintly tinted hover) when a ghost button sits inside the band. */
+.consult-band .btn-sl-ghost {
+  color: #fff;
+}
+.consult-band .btn-sl-ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
