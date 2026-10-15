@@ -107,6 +107,9 @@ const PERSONAL_BASE_FEATURE = "Prepared and filed Self Assessment, signed off by
 const PERSONAL_FOOTER = "Flat fee, no surprises.";
 
 export const PLAN_TIERS: PlanTier[] = [
+  // Personal, 9 flat-fee services. Order here mirrors the DB
+  // service_catalog.display_order (migration 0078) so the fallback
+  // path renders the same sequence the live DB would.
   {
     id: "uber_driver",
     group: "personal",
@@ -123,31 +126,19 @@ export const PLAN_TIERS: PlanTier[] = [
     footerLine: PERSONAL_FOOTER,
   },
   {
-    id: "cis_subcontractor",
+    // Tier id stays `gig_worker` (Postgres case_tier enum value,
+    // referenced across historical cases and five fee-table migrations).
+    // Display fields renamed to drop the "gig workers" phrasing.
+    id: "gig_worker",
     group: "personal",
-    title: "CIS subcontractors",
-    tagline: "Reconcile your deductions and claim what HMRC owes you.",
-    priceGbp: 299,
-    priceGbpSubtitle: "one-off",
-    features: [
-      PERSONAL_BASE_FEATURE,
-      "CIS deductions reconciled and refund position calculated",
-      "Vehicle, tools, and materials claimed where allowable",
-      "Full HMRC letter + enquiry support",
-    ],
-    footerLine: PERSONAL_FOOTER,
-  },
-  {
-    id: "sole_trader",
-    group: "personal",
-    title: "Sole trader / self-employed",
-    tagline: "Sole traders and freelancers. All your allowable expenses captured.",
+    title: "Delivery Drivers",
+    tagline: "Deliveroo, Uber Eats, Amazon Flex, Just Eat. Delivery income done right.",
     priceGbp: 199,
     priceGbpSubtitle: "one-off",
     features: [
       PERSONAL_BASE_FEATURE,
-      "Trading income and allowable expenses captured in full",
-      "Cash-basis treatment where it suits your situation",
+      "Platform earnings and allowable expenses captured",
+      "Mileage and vehicle costs reviewed with you",
       "Accuracy guarantee + accountant message during filing",
     ],
     footerLine: PERSONAL_FOOTER,
@@ -168,6 +159,36 @@ export const PLAN_TIERS: PlanTier[] = [
     footerLine: PERSONAL_FOOTER,
   },
   {
+    id: "sole_trader",
+    group: "personal",
+    title: "Sole trader / self-employed",
+    tagline: "Sole traders and freelancers. All your allowable expenses captured.",
+    priceGbp: 199,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "Trading income and allowable expenses captured in full",
+      "Cash-basis treatment where it suits your situation",
+      "Accuracy guarantee + accountant message during filing",
+    ],
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
+    id: "cis_subcontractor",
+    group: "personal",
+    title: "CIS subcontractors",
+    tagline: "Reconcile your deductions and claim what HMRC owes you.",
+    priceGbp: 299,
+    priceGbpSubtitle: "one-off",
+    features: [
+      PERSONAL_BASE_FEATURE,
+      "CIS deductions reconciled and refund position calculated",
+      "Vehicle, tools, and materials claimed where allowable",
+      "Full HMRC letter + enquiry support",
+    ],
+    footerLine: PERSONAL_FOOTER,
+  },
+  {
     id: "non_resident_landlord",
     group: "personal",
     title: "Non-resident landlord",
@@ -179,21 +200,6 @@ export const PLAN_TIERS: PlanTier[] = [
       "Non-Resident Landlord Scheme (NRLS) treatment included",
       "Rental income, mortgage interest, and expenses captured",
       "Guidance on withholding tax and gross-payment status",
-    ],
-    footerLine: PERSONAL_FOOTER,
-  },
-  {
-    id: "gig_worker",
-    group: "personal",
-    title: "Delivery / gig workers",
-    tagline: "Deliveroo, Uber Eats, Amazon Flex, Just Eat. Gig income done right.",
-    priceGbp: 199,
-    priceGbpSubtitle: "one-off",
-    features: [
-      PERSONAL_BASE_FEATURE,
-      "Platform earnings and allowable expenses captured",
-      "Mileage and vehicle costs reviewed with you",
-      "Accuracy guarantee + accountant message during filing",
     ],
     footerLine: PERSONAL_FOOTER,
   },
