@@ -6277,3 +6277,62 @@ select:focus-visible,
   --color-border: var(--line, #e2e8f0);
   --color-focus: var(--sky, #199cd9);
 }
+
+/* ---- Guide article prose. Used by /guides/<slug>/ pages. Keeps
+   headings tight to the body, bullets visible, and the <strong>
+   semi-emphatic rather than loud. Scoped to .guide-prose so we do
+   not accidentally restyle other markdown-like areas. ---- */
+.guide-prose {
+  color: var(--color-text-primary, #0f172a);
+  font-size: 16px;
+  line-height: 1.7;
+}
+.guide-prose h2 {
+  font-family: var(--font-heading, var(--font-space-grotesk, sans-serif));
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--navy-deep, #0b3b7a);
+  margin: 2.25rem 0 0.75rem;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.guide-prose h2:first-child {
+  margin-top: 0;
+}
+.guide-prose h3 {
+  font-family: var(--font-heading, var(--font-space-grotesk, sans-serif));
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--navy-deep, #0b3b7a);
+  margin: 1.75rem 0 0.5rem;
+  letter-spacing: -0.005em;
+}
+.guide-prose p {
+  margin: 0 0 1.1rem;
+  color: var(--slate, #334155);
+}
+.guide-prose ul {
+  margin: 0 0 1.1rem;
+  padding-left: 1.4rem;
+  list-style: disc;
+}
+.guide-prose ul li {
+  margin: 0.35rem 0;
+  color: var(--slate, #334155);
+}
+.guide-prose strong {
+  color: var(--navy-deep, #0b3b7a);
+  font-weight: 600;
+}
+.guide-prose em {
+  font-style: italic;
+  color: var(--navy-deep, #0b3b7a);
+}
+.guide-prose a {
+  color: var(--sky, #199cd9);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.guide-prose a:hover {
+  color: var(--navy-deep, #0b3b7a);
+}

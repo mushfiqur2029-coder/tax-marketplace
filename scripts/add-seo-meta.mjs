@@ -109,6 +109,8 @@ function pageUrl(slug) {
 
 function pageType(slug) {
   if (ARTICLE_SLUGS.has(slug)) return "article";
+  // Sub-pages under /guides/ are articles too.
+  if (slug.startsWith("guides/")) return "article";
   if (SERVICE_PAGES.has(slug)) return "website";
   return "website";
 }
