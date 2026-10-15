@@ -62,7 +62,7 @@ const TERMS_BODY = `
 
 <h2>2. The service</h2>
 <p>You pick a service tier at a flat fee, sign an engagement letter with an assigned accountant, pay via Stripe, upload your documents, and your accountant prepares and files your return. For bespoke engagements (large companies, VAT over &pound;200k turnover) we scope the work on a call before quoting.</p>
-<p>Every accountant on the platform is independently verified as a member of ACCA, CIMA, CTA, or an equivalent UK professional body before being approved to take cases.</p>
+<p>Every accountant on the platform is independently verified as a member of ACCA, CIMA, or an equivalent UK professional body before being approved to take cases.</p>
 
 <h2>3. Your account</h2>
 <p>You must be at least 18 and provide accurate information when registering. Keep your login credentials secret &mdash; you are responsible for everything done through your account. Notify us at the email below if you suspect unauthorised access.</p>
