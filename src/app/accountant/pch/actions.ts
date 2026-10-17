@@ -207,6 +207,40 @@ export async function applyPchOverrideAction(
 // reason = 'Revert', which the "current state" fold interprets as
 // "field is no longer overridden; show the engine's calculated value".
 // -------------------------------------------------------------------
+// -------------------------------------------------------------------
+// SA302 reconciliation: save the values pasted from the filing
+// software so the accountant can diff them against the engine. One
+// record per case stored on pch_cases.sa302_comparison; a save replaces
+// the previous blob entirely (no history needed — the final SA302 is
+// the latest paste).
+// -------------------------------------------------------------------
+export async function savePchSa302ComparisonAction(
+  caseId: string,
+  values: Record<string, number | null>,
+): Promise<ActionResult> {
+  const { me } = await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  // Normalise: numeric → number, blank → null. Numeric keys only,
+  // plus the recorded_at/by metadata we add.
+  const normalised: Record<string, number | null | string> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (v === null || v === undefined || Number.isNaN(v as number)) {
+      normalised[k] = null;
+    } else if (typeof v === "number" && Number.isFinite(v)) {
+      normalised[k] = v;
+    }
+  }
+  normalised.recorded_at = new Date().toISOString();
+  normalised.recorded_by = me.id;
+  const { error } = await admin
+    .from("pch_cases")
+    .update({ sa302_comparison: normalised })
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
 export async function revertPchOverrideAction(
   caseId: string,
   fieldPath: string,

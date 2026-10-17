@@ -58,6 +58,7 @@ export default async function PchAccountantPage({
       approvalName={head.data?.client_approval_name ?? null}
       overrideHistory={overrideHistory.data ?? []}
       userDisplayNames={Object.fromEntries(userById)}
+      sa302Comparison={head.data?.sa302_comparison ?? null}
     />
   );
 }

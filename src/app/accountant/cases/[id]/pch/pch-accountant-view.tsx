@@ -8,6 +8,7 @@ import {
   requestClientFilingAction,
   applyPchOverrideAction,
   revertPchOverrideAction,
+  savePchSa302ComparisonAction,
 } from "@/app/accountant/pch/actions";
 import {
   PCH_OVERRIDE_FIELDS,
@@ -16,6 +17,12 @@ import {
   reasonRequired,
   type FieldDef,
 } from "@/lib/pch/overrides";
+import {
+  SA302_COMPARE_FIELDS,
+  diffStatus,
+  type Sa302Comparison,
+  type Sa302Group,
+} from "@/lib/pch/sa302";
 
 type CheckItem = { item_number: number; area: string; description: string };
 type CheckStatus = {
@@ -34,6 +41,7 @@ export function PchAccountantView(props: {
   approvalName: string | null;
   overrideHistory: OverrideRow[];
   userDisplayNames: Record<string, string | null>;
+  sa302Comparison: Sa302Comparison | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -117,6 +125,19 @@ export function PchAccountantView(props: {
           <OverridesPanel
             history={props.overrideHistory}
             userDisplayNames={props.userDisplayNames} />
+        </>
+      )}
+
+      {/* SA302 reconciliation */}
+      {props.snapshot && (
+        <>
+          <h2 className="text-lg font-bold mt-10 mb-3">SA302 reconciliation</h2>
+          <Sa302Reconciliation
+            caseId={props.caseId}
+            snapshot={props.snapshot}
+            overrideHistory={props.overrideHistory}
+            saved={props.sa302Comparison}
+          />
         </>
       )}
 
@@ -359,6 +380,208 @@ function OverridesPanel({
         </tbody>
       </table>
     </div>
+  );
+}
+
+// -------------------- SA302 reconciliation --------------------
+
+// Reads the "effective" engine value for a comparison field. Engine
+// value defaults to the field's own extractor; overrides take precedence
+// where they exist (because the SA302 compare should reflect what the
+// accountant actually plans to file, not the raw engine output).
+function engineValueForCompare(
+  snapshot: TaxEngineOutput,
+  overrideHistory: OverrideRow[],
+  key: string,
+): number {
+  const field = SA302_COMPARE_FIELDS.find((f) => f.key === key);
+  if (!field) return 0;
+  const base = field.read(snapshot);
+  // Match the override field_path format (dot path on snapshot) for
+  // the SA103S boxes + taxable profit + IT + C4 that overlap.
+  // sa302 field keys mirror the box key but the override paths carry
+  // the parent namespace. Translate here.
+  const overridePath = key.startsWith("box")
+    ? "sa103s." + key
+    : key === "sa302_income_tax" ? "tax.incomeTax"
+    : key === "sa302_class4" ? "tax.class4"
+    // Other SA302 totals (profit, balancing, POA) don't have an
+    // override field defined; fall back to engine's own calc.
+    : null;
+  if (!overridePath) return base;
+  const eff = effectiveValues(snapshot, overrideHistory).get(overridePath);
+  return eff ? eff.value : base;
+}
+
+function Sa302Reconciliation({
+  caseId, snapshot, overrideHistory, saved,
+}: {
+  caseId: string;
+  snapshot: TaxEngineOutput;
+  overrideHistory: OverrideRow[];
+  saved: Sa302Comparison | null;
+}) {
+  const router = useRouter();
+  // Local state: software values, keyed by SA302 field key.
+  const [pasted, setPasted] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    if (saved) {
+      for (const f of SA302_COMPARE_FIELDS) {
+        const v = saved[f.key];
+        if (typeof v === "number") initial[f.key] = String(v);
+      }
+    }
+    return initial;
+  });
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const rows = useMemo(() => SA302_COMPARE_FIELDS.map((f) => {
+    const engine = engineValueForCompare(snapshot, overrideHistory, f.key);
+    const raw = pasted[f.key];
+    const software = raw === undefined || raw === "" || Number.isNaN(Number(raw))
+      ? null : Number(raw);
+    const { diff, match } = diffStatus(engine, software, f.scope);
+    return { field: f, engine, software, diff, match };
+  }), [pasted, snapshot, overrideHistory]);
+
+  const populated = rows.filter((r) => r.software !== null);
+  const mismatches = populated.filter((r) => r.match === false);
+  const allPopulatedMatch = populated.length > 0 && mismatches.length === 0;
+  const allFilled = populated.length === SA302_COMPARE_FIELDS.length;
+
+  const bannerClass = mismatches.length > 0
+    ? "border-red-300 bg-red-50 text-red-800"
+    : allPopulatedMatch
+      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+      : "border-slate-200 bg-slate-50 text-slate-600";
+  const bannerText = mismatches.length > 0
+    ? `${mismatches.length} ${mismatches.length === 1 ? "box" : "boxes"} differ — resolve before filing`
+    : allFilled && allPopulatedMatch
+      ? "SA302 matches tab 8 — safe to file"
+      : populated.length === 0
+        ? "No software figures pasted yet"
+        : `${populated.length} of ${SA302_COMPARE_FIELDS.length} pasted, all matching so far`;
+
+  const save = () => start(async () => {
+    const values: Record<string, number | null> = {};
+    for (const f of SA302_COMPARE_FIELDS) {
+      const raw = pasted[f.key];
+      values[f.key] = raw === undefined || raw === ""
+        ? null : Number(raw);
+    }
+    const r = await savePchSa302ComparisonAction(caseId, values);
+    if (!r.ok) { setErr(r.error); setMsg(null); return; }
+    setErr(null); setMsg("Saved");
+    router.refresh();
+  });
+
+  const groups: Sa302Group[] = ["SA103S boxes", "SA302 totals"];
+  return (
+    <div className="space-y-4">
+      <div className={"rounded-lg border p-3 text-sm " + bannerClass}>
+        {mismatches.length === 0 && allPopulatedMatch && <span className="mr-1">✓</span>}
+        {mismatches.length > 0 && <span className="mr-1">!</span>}
+        {bannerText}
+        {saved?.recorded_at && (
+          <span className="float-right text-xs opacity-70">
+            Last saved {new Date(String(saved.recorded_at)).toLocaleString()}
+          </span>
+        )}
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wide">
+            <tr>
+              <th className="text-left py-2 px-3">Field</th>
+              <th className="text-right py-2 px-3 w-32">Engine £</th>
+              <th className="text-right py-2 px-3 w-36">Software SA302 £</th>
+              <th className="text-right py-2 px-3 w-24">Diff</th>
+              <th className="text-center py-2 px-3 w-12"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g) => (
+              <GroupRows
+                key={g}
+                group={g}
+                rows={rows.filter((r) => r.field.group === g)}
+                pasted={pasted}
+                setPasted={setPasted}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={save} disabled={pending}
+          className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
+          {pending ? "Saving..." : "Save SA302 figures"}
+        </button>
+        {err && <span className="text-red-600 text-xs">{err}</span>}
+        {msg && <span className="text-emerald-700 text-xs">{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
+function GroupRows({
+  group, rows, pasted, setPasted,
+}: {
+  group: Sa302Group;
+  rows: Array<{
+    field: typeof SA302_COMPARE_FIELDS[number];
+    engine: number;
+    software: number | null;
+    diff: number | null;
+    match: boolean | null;
+  }>;
+  pasted: Record<string, string>;
+  setPasted: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+}) {
+  const fmt = (n: number, decimals: number) =>
+    n.toLocaleString("en-GB", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return (
+    <>
+      <tr className="bg-slate-50/50 border-t border-slate-100">
+        <td colSpan={5} className="py-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          {group}
+        </td>
+      </tr>
+      {rows.map((r) => {
+        const decimals = r.field.scope === "wholePound" ? 0 : 2;
+        return (
+          <tr key={r.field.key} className="border-t border-slate-100">
+            <td className="py-2 px-3 text-slate-700">{r.field.label}</td>
+            <td className="py-2 px-3 text-right text-slate-700 tabular-nums">
+              {fmt(r.engine, decimals)}
+            </td>
+            <td className="py-2 px-3 text-right">
+              <input
+                type="number"
+                step={r.field.scope === "wholePound" ? "1" : "0.01"}
+                className="w-full rounded border border-slate-300 px-2 py-1 text-right text-sm tabular-nums"
+                value={pasted[r.field.key] ?? ""}
+                onChange={(e) => setPasted((p) => ({ ...p, [r.field.key]: e.target.value }))}
+                placeholder="paste"
+              />
+            </td>
+            <td className={"py-2 px-3 text-right tabular-nums " +
+              (r.match === true ? "text-emerald-700"
+                : r.match === false ? "text-red-700 font-semibold"
+                : "text-slate-400")}>
+              {r.diff === null ? "—" : (r.diff > 0 ? "+" : "") + fmt(r.diff, decimals)}
+            </td>
+            <td className="py-2 px-3 text-center">
+              {r.match === true ? <span className="text-emerald-700">✓</span>
+                : r.match === false ? <span className="text-red-700">Δ</span>
+                : <span className="text-slate-300">·</span>}
+            </td>
+          </tr>
+        );
+      })}
+    </>
   );
 }
 
