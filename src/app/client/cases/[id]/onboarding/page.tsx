@@ -47,6 +47,15 @@ export default async function OnboardingPage({
     .eq("id", id)
     .single();
   if (!caseRow || caseRow.client_id !== me.id) notFound();
+
+  // PCH automated cases do not use this generic onboarding page.
+  // Defensive redirect, independent of the startCheckoutAction
+  // success_url, so a hand-typed URL or a stale bookmark still routes
+  // the client to the right workspace. Mirrors the short-circuit on
+  // /client/cases/[id]/page.tsx.
+  if (caseRow.tier === "uber_phv_automated") {
+    redirect(`/client/cases/${id}/pch${paid ? "?paid=1" : ""}`);
+  }
   if (
     caseRow.segment !== "limited_company_vat" &&
     caseRow.segment !== "personal"

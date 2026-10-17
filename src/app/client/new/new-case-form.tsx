@@ -171,7 +171,7 @@ export function NewCaseForm({
             active={mode === "personal"}
             onClick={() => onPickMode("personal")}
             title="Personal"
-            tagline="Self Assessment for individuals. Nine flat-fee services by situation."
+            tagline="Self Assessment for individuals. Flat-fee services by situation."
           />
           <ModeCard
             active={mode === "company"}
