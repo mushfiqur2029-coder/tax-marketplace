@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
@@ -13,6 +13,11 @@ import {
   runEngineAndSnapshotAction,
   recordClientApprovalAction,
 } from "@/app/client/pch/actions";
+import {
+  validateClientTab,
+  canRunDraft,
+  warnBoxMismatch,
+} from "@/lib/pch/validation";
 
 // Compact one-page workspace for the automated PCH flow. Sections:
 //   1. Documents (24 slots)
@@ -64,6 +69,21 @@ export function PchClientWorkspace(props: {
 }) {
   const h2 = "text-lg font-bold mt-10 mb-3 border-b border-slate-200 pb-2";
   const card = "rounded-lg border border-slate-200 bg-white p-4";
+  // Readiness check uses the last-saved income + vehicle state (what
+  // the engine would read on Run draft). Live edits in the forms do not
+  // flip the readiness state until the user hits Save in each tab.
+  const readiness = useMemo(() => canRunDraft(
+    props.incomeLines.map((l) => ({
+      grossTakings: (l.gross_takings_pence ?? 0) / 100,
+      type: l.line_type,
+    })),
+    props.vehicle ? {
+      odo_start: Number(props.vehicle.odo_start ?? 0) || null,
+      odo_end: Number(props.vehicle.odo_end ?? 0) || null,
+      method_choice: (props.vehicle.method_choice ?? null) as string | null,
+      business_pct_override: Number(props.vehicle.business_pct_override ?? 0) || null,
+    } : null,
+  ), [props.incomeLines, props.vehicle]);
   return (
     <main className="mx-auto max-w-4xl p-6">
       <div className="mb-6">
@@ -106,6 +126,7 @@ export function PchClientWorkspace(props: {
         caseId={props.caseId}
         snapshot={props.engineSnapshot}
         snapshotAt={props.engineSnapshotAt}
+        readiness={readiness}
       />
 
       <h2 className={h2}>7. Approval</h2>
@@ -250,6 +271,23 @@ function ClientTabForm({ caseId, initial }: { caseId: string; initial: Head }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [state, setState] = useState<Head>(initial);
   const field = (k: string) => (state[k] ?? "") as string | number;
+  // Per-field validation errors, recomputed on every state change.
+  // Keys match the validator (cl_utr, cl_nino, cl_postcode, cl_dob,
+  // cl_start_date, cl_stop_date). Non-validated fields are absent.
+  const errors = useMemo(() => validateClientTab({
+    cl_utr: (state.cl_utr ?? "") as string,
+    cl_nino: (state.cl_nino ?? "") as string,
+    cl_postcode: (state.cl_postcode ?? "") as string,
+    cl_dob: (state.cl_dob ?? null) as string | null,
+    cl_start_date: (state.cl_start_date ?? null) as string | null,
+    cl_stop_date: (state.cl_stop_date ?? null) as string | null,
+  }), [state]);
+  const inputCls = (k: string) =>
+    "mt-1 w-full rounded border px-2 py-1 text-sm " +
+    (errors[k] ? "border-red-400" : "border-slate-300");
+  const fieldErr = (k: string) => errors[k]
+    ? <span className="mt-1 block text-xs text-red-600">{errors[k]}</span>
+    : null;
   const num = (k: string) => Number(state[k] ?? 0);
   const set = (k: string, v: string | number | boolean | null) =>
     setState((s) => ({ ...s, [k]: v }));
@@ -301,20 +339,24 @@ function ClientTabForm({ caseId, initial }: { caseId: string; initial: Head }) {
           <input className={input} value={String(field("cl_name"))}
             onChange={(e) => set("cl_name", e.target.value)} /></label>
         <label className="block"><span className={label}>UTR</span>
-          <input className={input} value={String(field("cl_utr"))}
-            onChange={(e) => set("cl_utr", e.target.value)} /></label>
+          <input className={inputCls("cl_utr")} value={String(field("cl_utr"))}
+            onChange={(e) => set("cl_utr", e.target.value)} />
+          {fieldErr("cl_utr")}</label>
         <label className="block"><span className={label}>NI number</span>
-          <input className={input} value={String(field("cl_nino"))}
-            onChange={(e) => set("cl_nino", e.target.value)} /></label>
+          <input className={inputCls("cl_nino")} value={String(field("cl_nino"))}
+            onChange={(e) => set("cl_nino", e.target.value)} />
+          {fieldErr("cl_nino")}</label>
         <label className="block"><span className={label}>Date of birth</span>
-          <input type="date" className={input} value={String(field("cl_dob"))}
-            onChange={(e) => set("cl_dob", e.target.value)} /></label>
+          <input type="date" className={inputCls("cl_dob")} value={String(field("cl_dob"))}
+            onChange={(e) => set("cl_dob", e.target.value)} />
+          {fieldErr("cl_dob")}</label>
         <label className="block sm:col-span-2"><span className={label}>Address</span>
           <input className={input} value={String(field("cl_address"))}
             onChange={(e) => set("cl_address", e.target.value)} /></label>
         <label className="block"><span className={label}>Postcode</span>
-          <input className={input} value={String(field("cl_postcode"))}
-            onChange={(e) => set("cl_postcode", e.target.value)} /></label>
+          <input className={inputCls("cl_postcode")} value={String(field("cl_postcode"))}
+            onChange={(e) => set("cl_postcode", e.target.value)} />
+          {fieldErr("cl_postcode")}</label>
         <label className="block"><span className={label}>Mobile</span>
           <input className={input} value={String(field("cl_phone"))}
             onChange={(e) => set("cl_phone", e.target.value)} /></label>
@@ -329,11 +371,13 @@ function ClientTabForm({ caseId, initial }: { caseId: string; initial: Head }) {
           <input className={input} value={String(field("cl_platforms"))}
             onChange={(e) => set("cl_platforms", e.target.value)} /></label>
         <label className="block"><span className={label}>Started driving (if after 6 Apr 2025)</span>
-          <input type="date" className={input} value={String(field("cl_start_date"))}
-            onChange={(e) => set("cl_start_date", e.target.value)} /></label>
+          <input type="date" className={inputCls("cl_start_date")} value={String(field("cl_start_date"))}
+            onChange={(e) => set("cl_start_date", e.target.value)} />
+          {fieldErr("cl_start_date")}</label>
         <label className="block"><span className={label}>Stopped (if before 5 Apr 2026)</span>
-          <input type="date" className={input} value={String(field("cl_stop_date"))}
-            onChange={(e) => set("cl_stop_date", e.target.value)} /></label>
+          <input type="date" className={inputCls("cl_stop_date")} value={String(field("cl_stop_date"))}
+            onChange={(e) => set("cl_stop_date", e.target.value)} />
+          {fieldErr("cl_stop_date")}</label>
       </div>
 
       <h3 className="text-sm font-bold mt-4">Other income (6 Apr 2025 to 5 Apr 2026)</h3>
@@ -398,11 +442,15 @@ function ClientTabForm({ caseId, initial }: { caseId: string; initial: Head }) {
       </div>
 
       <div className="flex items-center gap-3 pt-2">
-        <button type="button" onClick={save} disabled={pending}
+        <button type="button" onClick={save}
+          disabled={pending || Object.keys(errors).length > 0}
           className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
           {pending ? "Saving..." : "Save details"}
         </button>
         {msg && <span className={msg === "Saved" ? "text-emerald-700 text-xs" : "text-red-600 text-xs"}>{msg}</span>}
+        {Object.keys(errors).length > 0 && !msg && (
+          <span className="text-xs text-red-600">Fix the errors above before saving.</span>
+        )}
       </div>
     </div>
   );
@@ -552,7 +600,9 @@ function ExpenseSection({ caseId, initial }: { caseId: string; initial: ExpenseR
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
+          {rows.map((r, i) => {
+            const boxWarn = warnBoxMismatch(r.category, Number(r.sa103s_box));
+            return (
             <tr key={i}>
               <td className="py-1 pr-2"><input className={inp} value={r.label} onChange={(e) => upd(i, { label: e.target.value })} /></td>
               <td className="py-1 pr-2"><input type="number" step="0.01" className={inp} value={r.amount_paid_pence}
@@ -561,11 +611,18 @@ function ExpenseSection({ caseId, initial }: { caseId: string; initial: ExpenseR
                 <option>Yes</option><option>No</option><option>Phone</option></select></td>
               <td className="py-1 pr-2"><select className={inp} value={r.category} onChange={(e) => upd(i, { category: e.target.value })}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></td>
-              <td className="py-1 pr-2"><select className={inp} value={r.sa103s_box} onChange={(e) => upd(i, { sa103s_box: Number(e.target.value) as 12 | 14 | 16 | 17 | 18 | 19 })}>
-                {[12, 14, 16, 17, 18, 19].map((b) => <option key={b} value={b}>{b}</option>)}</select></td>
+              <td className="py-1 pr-2">
+                <select
+                  className={inp + (boxWarn ? " border-amber-400 bg-amber-50" : "")}
+                  value={r.sa103s_box}
+                  onChange={(e) => upd(i, { sa103s_box: Number(e.target.value) as 12 | 14 | 16 | 17 | 18 | 19 })}
+                  title={boxWarn ?? ""}>
+                  {[12, 14, 16, 17, 18, 19].map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </td>
               <td className="py-1"><button type="button" onClick={() => del(i)} className="text-slate-500 hover:text-red-600">×</button></td>
             </tr>
-          ))}
+          );})}
         </tbody>
       </table>
       <div className="flex items-center gap-3">
@@ -700,9 +757,10 @@ function VehicleForm({ caseId, initial }: { caseId: string; initial: Vehicle }) 
 // -------------------- 6. Draft output --------------------
 
 function DraftSection({
-  caseId, snapshot, snapshotAt,
+  caseId, snapshot, snapshotAt, readiness,
 }: {
   caseId: string; snapshot: TaxEngineOutput | null; snapshotAt: string | null;
+  readiness: { ok: boolean; blockers: string[] };
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -715,8 +773,16 @@ function DraftSection({
   });
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+      {!readiness.ok && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold mb-1">Not ready to run the draft:</p>
+          <ul className="list-disc list-inside space-y-0.5 text-xs">
+            {readiness.blockers.map((b) => <li key={b}>{b}</li>)}
+          </ul>
+        </div>
+      )}
       <div className="flex items-center gap-3">
-        <button type="button" onClick={run} disabled={pending}
+        <button type="button" onClick={run} disabled={pending || !readiness.ok}
           className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
           {pending ? "Running..." : snapshot ? "Re-run draft" : "Run draft"}
         </button>

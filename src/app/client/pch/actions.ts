@@ -20,6 +20,11 @@ import {
   computeAll,
   UK_TAX_RATES_2025_26,
 } from "@/lib/tax-engine";
+import {
+  validateClientTab,
+  validateVehicle,
+  canRunDraft,
+} from "@/lib/pch/validation";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -182,6 +187,11 @@ export async function savePchClientTabAction(
   patch: ClientTabPatch,
 ): Promise<ActionResult> {
   await requirePchCase(caseId);
+  // Server-side validation mirrors the client UI; the client could
+  // POST a hand-crafted body otherwise.
+  const errs = validateClientTab(patch);
+  const first = Object.values(errs)[0];
+  if (first) return { ok: false, error: first };
   const admin = createAdminClient();
   const { error } = await admin
     .from("pch_cases")
@@ -288,6 +298,22 @@ export async function savePchVehicleAction(
 ): Promise<ActionResult> {
   await requirePchCase(caseId);
   const admin = createAdminClient();
+  // Mileage consistency check needs the current income totals from
+  // DB (not the patch) because the client UI doesn't send them with
+  // the vehicle save. Pull the aggregates and run the validator.
+  const { data: inc } = await admin
+    .from("pch_income_lines")
+    .select("on_trip_miles, dead_miles")
+    .eq("case_id", caseId);
+  const onTrip = (inc ?? []).reduce((n, r) => n + (r.on_trip_miles ?? 0), 0);
+  const dead = (inc ?? []).reduce((n, r) => n + (r.dead_miles ?? 0), 0);
+  const errs = validateVehicle(
+    patch as Parameters<typeof validateVehicle>[0],
+    onTrip, dead,
+    Number((patch as Record<string, unknown>).other_business_miles ?? 0),
+  );
+  const first = Object.values(errs)[0];
+  if (first) return { ok: false, error: first };
   const { error } = await admin.from("pch_vehicle").upsert(
     { case_id: caseId, ...patch },
     { onConflict: "case_id" },
@@ -406,6 +432,21 @@ export async function runEngineAndSnapshotAction(
   const admin = createAdminClient();
   try {
     const inputs = await hydrateInputsFromDb(caseId, admin);
+    // Readiness gate: refuse to run on a half-filled case (zero income
+    // or no vehicle method/mileage). Mirrors the UI's disabled state;
+    // belt-and-braces against hand-crafted POSTs.
+    const readiness = canRunDraft(
+      inputs.income.map((l) => ({ grossTakings: l.grossTakings, type: l.type })),
+      {
+        odo_start: inputs.vehicle.odoStart ?? null,
+        odo_end: inputs.vehicle.odoEnd ?? null,
+        method_choice: inputs.vehicle.methodChoice ?? null,
+        business_pct_override: inputs.vehicle.businessPctOverride ?? null,
+      },
+    );
+    if (!readiness.ok) {
+      return { ok: false, error: readiness.blockers.join(" ") };
+    }
     const snapshot = computeAll(inputs);
     const { error } = await admin
       .from("pch_cases")

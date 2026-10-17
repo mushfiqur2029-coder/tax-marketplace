@@ -23,6 +23,7 @@ import {
   PCH_OVERRIDE_FIELD_BY_PATH,
   reasonRequired,
 } from "@/lib/pch/overrides";
+import { canRequestFiling } from "@/lib/pch/validation";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -104,6 +105,26 @@ export async function requestClientFilingAction(
   if ((resolved ?? 0) < (totalItems ?? 33)) {
     return { ok: false, error:
       `Checklist incomplete: ${resolved ?? 0} of ${totalItems ?? 33} items resolved. Mark every item Done or N/A first.` };
+  }
+
+  // Evidence gate: every positive-amount expense must have a method
+  // code (receipts, bank statement, estimate E2, etc.) before filing.
+  // Mirrors the Est_Flag convention from tab 3 of the workbook. The
+  // 33-check item on evidence covers the review-side obligation; this
+  // gate is the mechanical belt-and-braces that no case can slip to
+  // approval with blank-evidence rows still sitting in the data.
+  const { data: expenses } = await admin
+    .from("pch_expense_lines")
+    .select("amount_paid_pence, evidence")
+    .eq("case_id", caseId);
+  const evidenceCheck = canRequestFiling(
+    (expenses ?? []).map((r) => ({
+      amountPaid: (r.amount_paid_pence ?? 0) / 100,
+      evidence: r.evidence ?? null,
+    })),
+  );
+  if (!evidenceCheck.ok) {
+    return { ok: false, error: evidenceCheck.blockers.join(" ") };
   }
   // Silence the lint for the unused "notDone" count — kept for future
   // reporting on which rows the client objected to.
