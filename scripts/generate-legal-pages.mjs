@@ -218,7 +218,7 @@ const CONTACT_BODY = `
       <p class="step-done-body">We&rsquo;ve got your message. If you booked a call you&rsquo;ll get a Google Calendar invite with the meeting link. We reply to messages inside one working day.</p>
       <div class="step-done-actions">
         <a href="/" class="btn-sl btn-sl-primary">Back to homepage</a>
-        <a href="/guides" class="btn-sl btn-sl-ghost">Read the guides</a>
+        <a href="/guides" class="btn-sl btn-sl-outline">Read the guides</a>
       </div>
     </div>
   </section>

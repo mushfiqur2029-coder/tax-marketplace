@@ -6636,4 +6636,16 @@ select:focus-visible,
   overflow: hidden;
 }
 .step-actions-secondary { margin-top: 10px; }
-.step-done-meet { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+/* 0.75rem gap matches .step-done-actions so the dynamically-injected
+   Meet-link row and the static Back-to-homepage row align visually. */
+.step-done-meet { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
+
+/* Nudge .btn-sl-ghost's hover state so it reads unambiguously as a
+   clickable element even in isolated contexts. The resting state
+   stays intentionally subtle (navy text, no border, no background);
+   hover now bumps the background noticeably + lifts text to sky.
+   The focus-visible ring from the global rule still applies on top. */
+.btn-sl-ghost:hover {
+  background: rgba(31, 58, 125, 0.10);
+  color: var(--sky, #199cd9);
+}

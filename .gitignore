@@ -47,3 +47,5 @@ next-env.d.ts
 sterling-marketing.zip
 _pw_reset_check.mjs
 _*.mjs
+
+.env*

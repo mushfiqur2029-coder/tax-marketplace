@@ -555,11 +555,14 @@
         meetEl.hidden = false;
         meetEl.innerHTML =
           '<a class="btn-sl btn-sl-primary" href="' + escAttr(meetLink) + '" target="_blank" rel="noopener">Join the video call</a>' +
-          (htmlLink ? ' <a class="btn-sl btn-sl-ghost" href="' + escAttr(htmlLink) + '" target="_blank" rel="noopener">Open the calendar event</a>' : "");
+          (htmlLink ? ' <a class="btn-sl btn-sl-outline" href="' + escAttr(htmlLink) + '" target="_blank" rel="noopener">Open the calendar event</a>' : "");
       } else if (htmlLink) {
+        // No Meet link yet (service-account path), so the calendar
+        // event is the only action. Promote to primary so visitors
+        // see one clear button instead of a vague secondary.
         meetEl.hidden = false;
         meetEl.innerHTML =
-          '<a class="btn-sl btn-sl-ghost" href="' + escAttr(htmlLink) + '" target="_blank" rel="noopener">Open the calendar event</a>';
+          '<a class="btn-sl btn-sl-primary" href="' + escAttr(htmlLink) + '" target="_blank" rel="noopener">Open the calendar event</a>';
       }
     }
     var trigger = document.querySelector("[data-booking-picker]");
