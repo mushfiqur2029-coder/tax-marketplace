@@ -89,15 +89,26 @@ export type AuthContext = {
 };
 
 async function getAuthContext(): Promise<AuthContext> {
+  // Prefer the OAuth2 owner path when a refresh token is on file: lets
+  // us invite attendees and attach a Meet link. If the refresh itself
+  // fails (stale token, revoked consent, rotated client secret, etc.)
+  // fall through to the service-account JWT rather than failing the
+  // whole request. An admin can restore the OAuth path by visiting
+  // /api/auth/google/connect and re-consenting.
   const oauth: OAuth2Client | null = await getOwnerOAuthClient();
   if (oauth) {
-    const { token } = await oauth.getAccessToken();
-    if (!token) {
-      throw new Error(
-        "Could not obtain Google access token from the owner OAuth2 refresh token. Reconnect at /api/auth/google/connect.",
+    try {
+      const { token } = await oauth.getAccessToken();
+      if (token) return { kind: "owner", accessToken: token };
+      console.warn(
+        "[calendar auth] owner OAuth returned no token, falling back to service account",
+      );
+    } catch (e) {
+      console.warn(
+        "[calendar auth] owner OAuth refresh failed, falling back to service account:",
+        e instanceof Error ? e.message : e,
       );
     }
-    return { kind: "owner", accessToken: token };
   }
   const jwt = getJwt();
   if (!jwt) {
