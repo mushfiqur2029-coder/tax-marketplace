@@ -30,13 +30,21 @@ export default async function PchAccountantPage({
     redirect(`/accountant/cases/${id}`);
   }
 
-  const [checksMeta, checkStatus, head] = await Promise.all([
+  const [checksMeta, checkStatus, head, overrideHistory, users] = await Promise.all([
     admin.from("pch_check_items").select("*").order("sort_order"),
     admin.from("pch_check_status").select("*").eq("case_id", id),
     admin.from("pch_cases").select("*").eq("case_id", id).single(),
+    admin.from("pch_overrides").select("*").eq("case_id", id)
+      .order("overridden_at", { ascending: false }),
+    // Resolve the display names for the audit trail author column.
+    // Keep this query cheap; we only need id + full_name.
+    admin.from("users").select("id, full_name"),
   ]);
 
   const snapshot = (head.data?.engine_snapshot ?? null) as TaxEngineOutput | null;
+  const userById = new Map(
+    (users.data ?? []).map((u) => [u.id, u.full_name as string | null]),
+  );
 
   return (
     <PchAccountantView
@@ -48,6 +56,8 @@ export default async function PchAccountantPage({
       snapshotAt={head.data?.engine_snapshot_at ?? null}
       approvalAt={head.data?.client_approval_at ?? null}
       approvalName={head.data?.client_approval_name ?? null}
+      overrideHistory={overrideHistory.data ?? []}
+      userDisplayNames={Object.fromEntries(userById)}
     />
   );
 }

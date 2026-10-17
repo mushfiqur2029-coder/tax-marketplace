@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
   setPchCheckStatusAction,
   requestClientFilingAction,
+  applyPchOverrideAction,
+  revertPchOverrideAction,
 } from "@/app/accountant/pch/actions";
+import {
+  PCH_OVERRIDE_FIELDS,
+  type OverrideRow,
+  effectiveValues,
+  reasonRequired,
+  type FieldDef,
+} from "@/lib/pch/overrides";
 
 type CheckItem = { item_number: number; area: string; description: string };
 type CheckStatus = {
@@ -23,6 +32,8 @@ export function PchAccountantView(props: {
   snapshotAt: string | null;
   approvalAt: string | null;
   approvalName: string | null;
+  overrideHistory: OverrideRow[];
+  userDisplayNames: Record<string, string | null>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -85,17 +96,31 @@ export function PchAccountantView(props: {
         </p>
       </div>
 
-      {/* Engine snapshot (read-only in phase 2a) */}
+      {/* Engine snapshot with inline overrides */}
       <h2 className="text-lg font-bold mb-3">Engine snapshot</h2>
       {!props.snapshot
         ? <p className="text-sm text-slate-500">No draft has been run by the client yet.</p>
-        : <SnapshotTable s={props.snapshot} at={props.snapshotAt} />}
+        : <OverridableSnapshot
+            caseId={props.caseId}
+            snapshot={props.snapshot}
+            snapshotAt={props.snapshotAt}
+            history={props.overrideHistory} />}
+
+      {/* Override audit log */}
+      {props.overrideHistory.length > 0 && (
+        <>
+          <h2 className="text-lg font-bold mt-10 mb-3">
+            Overrides audit log <span className="text-sm font-normal text-slate-500">
+              ({props.overrideHistory.length})
+            </span>
+          </h2>
+          <OverridesPanel
+            history={props.overrideHistory}
+            userDisplayNames={props.userDisplayNames} />
+        </>
+      )}
 
       <h2 className="text-lg font-bold mt-10 mb-3">33-point review checklist</h2>
-      <p className="text-xs text-slate-500 mb-3">
-        Phase 2a: mark each item Done / N/A / Not started with an optional note. Override of
-        engine figures with full audit log ships in phase 2b.
-      </p>
       <div className="space-y-2">
         {props.checksMeta.map((item) => (
           <CheckRow
@@ -110,53 +135,234 @@ export function PchAccountantView(props: {
   );
 }
 
-function SnapshotTable({ s, at }: { s: TaxEngineOutput; at: string | null }) {
-  const money = (n: number) =>
-    "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const row = (label: string, v: string | number) => (
-    <tr><td className="py-1 pr-4 text-slate-600">{label}</td>
-      <td className="py-1 font-medium text-right">{typeof v === "number" ? money(v) : v}</td></tr>
-  );
+// -------------------- Snapshot with override cells --------------------
+
+function money(n: number): string {
+  return "£" + n.toLocaleString("en-GB", {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+}
+
+function OverridableSnapshot({
+  caseId, snapshot, snapshotAt, history,
+}: {
+  caseId: string;
+  snapshot: TaxEngineOutput;
+  snapshotAt: string | null;
+  history: OverrideRow[];
+}) {
+  const effective = useMemo(() => effectiveValues(snapshot, history), [snapshot, history]);
+  const groups: Array<"P&L" | "Tax & NIC" | "SA103S boxes"> = [
+    "P&L", "Tax & NIC", "SA103S boxes",
+  ];
+  const fieldsByGroup = useMemo(() => {
+    const m = new Map<string, FieldDef[]>();
+    for (const f of PCH_OVERRIDE_FIELDS) {
+      const arr = m.get(f.group) ?? [];
+      arr.push(f);
+      m.set(f.group, arr);
+    }
+    return m;
+  }, []);
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <p className="text-xs text-slate-500 mb-3">
-        Snapshot last run: {at ? new Date(at).toLocaleString() : "—"}
+        Snapshot last run: {snapshotAt ? new Date(snapshotAt).toLocaleString() : "—"}
+        {" · "}
+        <span className="text-slate-400">Click any value to override.</span>
       </p>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-sm">
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">P&amp;L</h4>
-          <table className="w-full"><tbody>
-            {row("Turnover", s.pl.turnover)}
-            {row("Expenses", s.pl.expensesTotal)}
-            {row("Net profit", s.pl.netProfit)}
-            {row("CA claim", s.pl.capitalAllowances)}
-            {row("Taxable profit", s.pl.taxableProfit)}
-          </tbody></table>
-        </div>
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Tax &amp; NIC</h4>
-          <table className="w-full"><tbody>
-            {row("Income tax", s.tax.incomeTax)}
-            {row("Class 4", s.tax.class4)}
-            {row("Total due", s.tax.totalTaxAndNic)}
-            {row("Balancing (31 Jan)", s.tax.balancingPayment)}
-            {row("POA each", s.tax.poaForNextYear)}
-          </tbody></table>
-        </div>
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">SA103S boxes</h4>
-          <table className="w-full"><tbody>
-            {row("9 Turnover", s.sa103s.box9_turnover)}
-            {row("20 Expenses", s.sa103s.box20_totalAllowable)}
-            {row("21 Net profit", s.sa103s.box21_netProfit)}
-            {row("25 CA", s.sa103s.box25_otherCapitalAllowances)}
-            {row("31 Taxable", s.sa103s.box31_totalTaxableProfits)}
-          </tbody></table>
-        </div>
+        {groups.map((g) => (
+          <div key={g}>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">{g}</h4>
+            <table className="w-full">
+              <tbody>
+                {(fieldsByGroup.get(g) ?? []).map((f) => {
+                  const eff = effective.get(f.path)!;
+                  return (
+                    <OverridableRow
+                      key={f.path}
+                      caseId={caseId}
+                      field={f}
+                      value={eff.value}
+                      calculated={eff.calculated}
+                      isOverride={eff.isOverride}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
+
+function OverridableRow({
+  caseId, field, value, calculated, isOverride,
+}: {
+  caseId: string; field: FieldDef;
+  value: number; calculated: number; isOverride: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>(String(value));
+  const [reason, setReason] = useState("");
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const router = useRouter();
+
+  const open = () => {
+    setDraft(String(value));
+    setReason("");
+    setErr(null);
+    setEditing(true);
+  };
+  const cancel = () => setEditing(false);
+
+  const parsed = Number(draft);
+  const needsReason = Number.isFinite(parsed)
+    ? reasonRequired(value, parsed, field.scope)
+    : false;
+  const canSave = Number.isFinite(parsed)
+    && (!needsReason || reason.trim().length >= 3)
+    && parsed !== value;
+
+  const save = () => start(async () => {
+    const r = await applyPchOverrideAction(
+      caseId, field.path, parsed, reason.trim() || null,
+    );
+    if (!r.ok) { setErr(r.error); return; }
+    setEditing(false);
+    router.refresh();
+  });
+
+  const revert = () => start(async () => {
+    const r = await revertPchOverrideAction(caseId, field.path);
+    if (!r.ok) { setErr(r.error); return; }
+    setEditing(false);
+    router.refresh();
+  });
+
+  if (editing) {
+    return (
+      <tr>
+        <td colSpan={2} className="py-1">
+          <div className="rounded border border-sky-200 bg-sky-50/40 p-2 space-y-2">
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              <span className="font-semibold">{field.label}</span>
+              <span className="text-slate-400">Calculated: {money(calculated)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" step="0.01" value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                className="w-32 rounded border border-slate-300 px-2 py-1 text-sm text-right"
+                autoFocus />
+              <button type="button" onClick={save} disabled={!canSave || pending}
+                className="rounded bg-slate-900 px-3 py-1 text-white text-xs disabled:opacity-50">
+                {pending ? "Saving..." : "Save"}
+              </button>
+              <button type="button" onClick={cancel} disabled={pending}
+                className="rounded border border-slate-300 bg-white px-3 py-1 text-xs">
+                Cancel
+              </button>
+              {isOverride && (
+                <button type="button" onClick={revert} disabled={pending}
+                  className="rounded border border-slate-300 bg-white px-3 py-1 text-xs text-slate-600 hover:text-red-700">
+                  Revert to calculated
+                </button>
+              )}
+            </div>
+            {needsReason && (
+              <div>
+                <input
+                  type="text" value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Reason required (3+ chars)"
+                  className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Change of £{Math.abs(parsed - value).toFixed(2)} needs a short rationale for the audit trail.
+                </p>
+              </div>
+            )}
+            {err && <p className="text-xs text-red-600">{err}</p>}
+          </div>
+        </td>
+      </tr>
+    );
+  }
+  return (
+    <tr>
+      <td className="py-1 pr-4 text-slate-600">{field.label}</td>
+      <td className="py-1 text-right">
+        <button type="button" onClick={open}
+          className={"font-medium hover:underline underline-offset-2 " +
+            (isOverride ? "text-amber-700" : "text-slate-900")}>
+          {money(value)}
+        </button>
+        {isOverride && (
+          <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+            override
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// -------------------- Audit log panel --------------------
+
+function OverridesPanel({
+  history, userDisplayNames,
+}: {
+  history: OverrideRow[]; userDisplayNames: Record<string, string | null>;
+}) {
+  const fieldLabel = (path: string) =>
+    PCH_OVERRIDE_FIELDS.find((f) => f.path === path)?.label ?? path;
+  const fmt = (v: string | null) =>
+    v === null ? "—"
+    : Number.isFinite(Number(v)) ? money(Number(v))
+    : v;
+  const author = (uid: string | null) =>
+    uid && userDisplayNames[uid] ? userDisplayNames[uid] : (uid ?? "unknown");
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wide">
+          <tr>
+            <th className="text-left py-2 px-3">When</th>
+            <th className="text-left py-2 px-3">Field</th>
+            <th className="text-right py-2 px-3">From</th>
+            <th className="text-right py-2 px-3">To</th>
+            <th className="text-left py-2 px-3">Reason</th>
+            <th className="text-left py-2 px-3">By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((h) => (
+            <tr key={h.id} className="border-t border-slate-100">
+              <td className="py-2 px-3 text-xs text-slate-500 whitespace-nowrap">
+                {new Date(h.overridden_at).toLocaleString()}
+              </td>
+              <td className="py-2 px-3">{fieldLabel(h.field_path)}</td>
+              <td className="py-2 px-3 text-right text-slate-500">{fmt(h.old_value)}</td>
+              <td className="py-2 px-3 text-right font-medium">
+                {h.new_value === null
+                  ? <span className="text-slate-500 italic">reverted</span>
+                  : fmt(h.new_value)}
+              </td>
+              <td className="py-2 px-3 text-xs text-slate-600">{h.reason || "—"}</td>
+              <td className="py-2 px-3 text-xs text-slate-600">{author(h.overridden_by)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// -------------------- 33-check row (unchanged from phase 2a) --------------------
 
 function CheckRow({
   caseId, item, status,
