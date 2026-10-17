@@ -34,10 +34,16 @@ export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 // GOOGLE_CALENDAR_* names predate the Vercel Projects conventions, the
 // newer GOOGLE_SERVICE_ACCOUNT_* names align with the generic Google
 // service-account pattern. Either works, both accepted everywhere.
+//
+// Preference order prefers the newer names when both are present, so a
+// re-setup under the GOOGLE_SERVICE_ACCOUNT_* naming is not shadowed by
+// a stale value left under the legacy GOOGLE_CALENDAR_* names. This
+// matters because the email + private key MUST come from the same key
+// pair, if they do not Google's token exchange returns invalid_grant.
 function serviceAccountEmail(): string | undefined {
   return (
-    process.env.GOOGLE_CALENDAR_CLIENT_EMAIL ||
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+    process.env.GOOGLE_CALENDAR_CLIENT_EMAIL
   );
 }
 
@@ -127,6 +133,12 @@ async function getAuthContext(): Promise<AuthContext> {
 //     envs under the generic service-account naming don't need to
 //     re-add vars under the GOOGLE_CALENDAR_ names.
 function resolvePrivateKey(): string | null {
+  // Prefer the newer-naming raw PEM when present; it pairs with
+  // GOOGLE_SERVICE_ACCOUNT_EMAIL which is also preferred first.
+  // Falls back to the legacy GOOGLE_CALENDAR_PRIVATE_KEY_BASE64 /
+  // _PRIVATE_KEY pair only when the new name is not set.
+  const newRaw = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (newRaw) return newRaw.replace(/\\n/g, "\n");
   const b64 = process.env.GOOGLE_CALENDAR_PRIVATE_KEY_BASE64;
   if (b64) {
     try {
@@ -135,9 +147,7 @@ function resolvePrivateKey(): string | null {
       return null;
     }
   }
-  const raw =
-    process.env.GOOGLE_CALENDAR_PRIVATE_KEY ||
-    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  const raw = process.env.GOOGLE_CALENDAR_PRIVATE_KEY;
   if (raw) return raw.replace(/\\n/g, "\n");
   return null;
 }
