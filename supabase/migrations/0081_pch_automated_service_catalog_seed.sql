@@ -18,7 +18,7 @@ values
     'Automated self-assessment for Uber, Bolt and other private-hire drivers.',
     null,
     array[
-      'Guided questionnaire — tabs follow HMRC''s own SA103S boxes',
+      'Guided questionnaire, tabs follow HMRC''s own SA103S boxes',
       'Instant draft P&L and tax computation from your figures',
       'Accountant review before anything is filed',
       '24-item document checklist built in'

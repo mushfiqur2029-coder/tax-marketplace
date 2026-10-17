@@ -216,7 +216,7 @@ create table if not exists public.pch_doc_status (
   primary key (case_id, slot_code)
 );
 
--- Seed the 24 slots verbatim from Client Documents – PCH xlsx.
+-- Seed the 24 slots verbatim from Client Documents xlsx.
 insert into public.pch_doc_slots
   (code, section, display_name, why_we_need_it, accepted_formats, required_rule, sort_order)
 values
@@ -228,12 +228,12 @@ values
   ('PCH-06','Vehicle','Purchase invoice and HP / PCP finance statement','Capital allowances; finance interest','PDF','If bought / financed',60),
   ('PCH-07','Vehicle','Car rental / PCO hire agreement and payments','Rental cost (box 12)','PDF','If renting',70),
   ('PCH-08','Vehicle','MOT history (odometer readings)','Total miles and business-use %','Screenshot from GOV.UK','Required',80),
-  ('PCH-09','Running costs','Fuel / charging – receipts or highlighted bank lines','Fuel cost (box 12)','Photo / statement','Required (actual-cost method)',90),
+  ('PCH-09','Running costs','Fuel / charging, receipts or highlighted bank lines','Fuel cost (box 12)','Photo / statement','Required (actual-cost method)',90),
   ('PCH-10','Running costs','Repairs, servicing, tyres, MOT and road tax receipts','Repairs (box 12)','Photo / PDF','If paid',100),
   ('PCH-11','Running costs','Congestion charge, ULEZ and parking receipts','Allowable charges (not fines)','TfL account export','If paid',110),
   ('PCH-12','Licences','PHV driver and vehicle licence fees','Licence costs (box 19)','Receipt / email','Required',120),
   ('PCH-13','Other costs','Mobile phone bill','Phone cost × business %','PDF','If claiming',130),
-  ('PCH-14','Bank','Bank statements – account receiving platform payouts','Check all income; spot cash deposits','PDF','Required',140),
+  ('PCH-14','Bank','Bank statements, account receiving platform payouts','Check all income; spot cash deposits','PDF','Required',140),
   ('PCH-15','VAT','Uber VAT statements (VAT-registered TfL drivers only)','VAT top-up and VAT return figures','PDF','If VAT registered',150),
   ('PCH-16','Employment','P60 for every job held at 5 April 2026','Pay and tax deducted (SA102 boxes 1-2)','PDF / photo','If employed',160),
   ('PCH-17','Employment','P45 for any job that ended in the year','Pay and tax for jobs left during the year','PDF / photo','If a job ended',170),
