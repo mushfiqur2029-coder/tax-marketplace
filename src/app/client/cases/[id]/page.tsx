@@ -61,6 +61,19 @@ export default async function CaseDetailPage({
   const { id } = await params;
   const { paid, addon_paid, balance_paid } = await searchParams;
 
+  // PCH automated cases have their own workspace at /pch. Short-circuit
+  // here so the client never sees the generic manual case detail for a
+  // PCH case (which would be mostly empty of relevant actions).
+  {
+    const admin = createAdminClient();
+    const { data: tierRow } = await admin
+      .from("cases").select("tier").eq("id", id).maybeSingle();
+    if (tierRow?.tier === "uber_phv_automated") {
+      const { redirect } = await import("next/navigation");
+      redirect(`/client/cases/${id}/pch`);
+    }
+  }
+
   if (paid === "1") {
     try {
       await reconcilePaymentAction(id);

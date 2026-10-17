@@ -86,6 +86,21 @@ export default async function AccountantCaseDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // PCH automated cases have their own accountant workspace. Short-
+  // circuit here so the accountant lands straight on the 33-check
+  // review instead of the generic manual flow.
+  {
+    const { createAdminClient: adminFactory } = await import("@/lib/supabase/admin");
+    const admin = adminFactory();
+    const { data: tierRow } = await admin
+      .from("cases").select("tier").eq("id", id).maybeSingle();
+    if (tierRow?.tier === "uber_phv_automated") {
+      const { redirect } = await import("next/navigation");
+      redirect(`/accountant/cases/${id}/pch`);
+    }
+  }
+
   const load = await loadAccountantCase(id);
 
   // If the case has been taken by a different accountant, render a

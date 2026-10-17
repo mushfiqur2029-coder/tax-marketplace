@@ -25,6 +25,11 @@ export type TierId =
   | "freelancer_consultant"
   | "landlord_multi"
   | "complex_international"
+  // Phase 2 of the automated service rollout. "uber_phv_automated" is a
+  // structured intake flow backed by src/lib/tax-engine. Separate from
+  // the existing "uber_driver" manual tier, which keeps the current
+  // document-upload-only flow unchanged.
+  | "uber_phv_automated"
   // Personal, retired tiers. Enum values stay in Postgres; the wizard
   // filters them out and the server guard in createCaseAction rejects
   // them. Kept in the union so legacy references still typecheck.
