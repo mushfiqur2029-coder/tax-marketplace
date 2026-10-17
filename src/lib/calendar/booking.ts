@@ -30,30 +30,26 @@ export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 // is enough to list slots + create events, the picker should surface
 // as long as GOOGLE_CALENDAR_ID is set and at least one auth path has
 // its env vars present.
-// Service account env is read under two naming schemes. The original
-// GOOGLE_CALENDAR_* names predate the Vercel Projects conventions, the
-// newer GOOGLE_SERVICE_ACCOUNT_* names align with the generic Google
-// service-account pattern. Either works, both accepted everywhere.
+// Service account env is read under one naming scheme only. The
+// GOOGLE_SERVICE_ACCOUNT_* pair is the single source of truth. The
+// legacy GOOGLE_CALENDAR_CLIENT_EMAIL / GOOGLE_CALENDAR_PRIVATE_KEY[_BASE64]
+// names are NOT read anywhere, if any of them exist on your Vercel
+// project they are dead weight and should be removed. Leaving them in
+// place is harmless but confusing: a future reader will wonder which
+// one is authoritative.
 //
-// Preference order prefers the newer names when both are present, so a
-// re-setup under the GOOGLE_SERVICE_ACCOUNT_* naming is not shadowed by
-// a stale value left under the legacy GOOGLE_CALENDAR_* names. This
-// matters because the email + private key MUST come from the same key
-// pair, if they do not Google's token exchange returns invalid_grant.
+// Why single-source: the email and the private key MUST come from the
+// same key pair; mixing one half from each produces an invalid_grant
+// from Google's token exchange that is painful to diagnose. Keeping
+// both halves under one explicit prefix removes that failure mode.
 function serviceAccountEmail(): string | undefined {
-  return (
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
-    process.env.GOOGLE_CALENDAR_CLIENT_EMAIL
-  );
+  return process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 }
 
 export function isCalendarConfigured(): boolean {
   if (!process.env.GOOGLE_CALENDAR_ID) return false;
-  const hasServiceAccountKey =
-    !!process.env.GOOGLE_CALENDAR_PRIVATE_KEY ||
-    !!process.env.GOOGLE_CALENDAR_PRIVATE_KEY_BASE64 ||
-    !!process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-  const hasServiceAccount = !!serviceAccountEmail() && hasServiceAccountKey;
+  const hasServiceAccount =
+    !!serviceAccountEmail() && !!process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
   const hasOAuth =
     !!process.env.GOOGLE_OAUTH_CLIENT_ID &&
     !!process.env.GOOGLE_OAUTH_CLIENT_SECRET;
@@ -118,38 +114,21 @@ async function getAuthContext(): Promise<AuthContext> {
   return { kind: "service_account", accessToken: token };
 }
 
-// Private key accepts three sources (checked in order):
+// Private key reader: the raw PEM straight from the key file, with
+// literal "\n" escape sequences converted back to real newlines. Set
+// GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY on Vercel to the value of the
+// `private_key` field from the JSON key file.
 //
-//   - GOOGLE_CALENDAR_PRIVATE_KEY_BASE64: base64 of the full PEM.
-//     Preferred for Vercel/CI envs because the Vercel CLI plugin
-//     rejects any `--value` that starts with a dash (and a PEM
-//     begins with "-----BEGIN"). base64 is pure a-zA-Z0-9+/= so it
-//     never collides with CLI flag parsing.
-//   - GOOGLE_CALENDAR_PRIVATE_KEY: the raw PEM. If the value came
-//     via dotenv with literal \n escape sequences we convert them
-//     back to real newlines before passing to the JWT signer.
-//   - GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: the newer-naming raw PEM,
-//     same \n-escape handling. Accepted so projects that provisioned
-//     envs under the generic service-account naming don't need to
-//     re-add vars under the GOOGLE_CALENDAR_ names.
+// On the Vercel dashboard the stored value should visibly contain real
+// newlines (multiple lines, starting with "-----BEGIN PRIVATE KEY-----"
+// and ending with "-----END PRIVATE KEY-----"). If it is one long line
+// with literal "\n" sequences, this reader converts them, but it is
+// safer to see real newlines in the dashboard, so re-add via
+// `vercel env add` pasting the real multi-line value if in doubt.
 function resolvePrivateKey(): string | null {
-  // Prefer the newer-naming raw PEM when present; it pairs with
-  // GOOGLE_SERVICE_ACCOUNT_EMAIL which is also preferred first.
-  // Falls back to the legacy GOOGLE_CALENDAR_PRIVATE_KEY_BASE64 /
-  // _PRIVATE_KEY pair only when the new name is not set.
-  const newRaw = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-  if (newRaw) return newRaw.replace(/\\n/g, "\n");
-  const b64 = process.env.GOOGLE_CALENDAR_PRIVATE_KEY_BASE64;
-  if (b64) {
-    try {
-      return Buffer.from(b64, "base64").toString("utf-8");
-    } catch {
-      return null;
-    }
-  }
-  const raw = process.env.GOOGLE_CALENDAR_PRIVATE_KEY;
-  if (raw) return raw.replace(/\\n/g, "\n");
-  return null;
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (!raw) return null;
+  return raw.replace(/\\n/g, "\n");
 }
 
 async function getAccessToken(): Promise<string> {
