@@ -6,7 +6,13 @@
   "use strict";
 
   var API_PRICING_URL = "https://apisterlingledger.co.uk/api/public/pricing";
+  var API_BOOKING_SLOTS = "https://apisterlingledger.co.uk/api/public/booking/slots";
+  var API_BOOKING_CREATE = "https://apisterlingledger.co.uk/api/public/booking/create";
   var CONTACT_FORM_URL = "https://script.google.com/macros/s/AKfycbyCpxrGTxr5C19pPUjkoJsO19LuHzKRjZwa_ZE2u4v0E8Zho4N8q23BDCjWbP4OkNrr/exec";
+
+  // Captured from step 1 so the step-2 picker can POST the booking
+  // without asking the user to re-type their details.
+  var contactFields = { name: "", phone: "", email: "", message: "" };
 
   // --- Contact form submit ---------------------------------------
   // Posts to the Apps Script Web App which appends a row to the
@@ -43,7 +49,14 @@
     fetch(CONTACT_FORM_URL, { method: "POST", mode: "no-cors", body: body })
       .then(function () {
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Continue"; }
+        contactFields = {
+          name: fields.name,
+          phone: fields.phone,
+          email: fields.email,
+          message: fields.message,
+        };
         advanceStep(form, 2);
+        initBookingPicker();
       })
       .catch(function () {
         setStatus(
@@ -215,5 +228,379 @@
     document.addEventListener("DOMContentLoaded", fetchPricing);
   } else {
     fetchPricing();
+  }
+
+  // --- Booking picker (contact page step 2) ------------------------
+  // Vanilla equivalent of src/components/booking/booking-picker.tsx.
+  // Called when step 1 submits; walks the user through
+  //   pick day -> pick 15-min slot -> confirm -> POST /api/public/
+  //   booking/create -> advance to step 3 with Meet link.
+  // Honeypot field is in the markup; empty on success means human.
+  //
+  // State is per-page (one picker instance). Multiple contact pages
+  // on one page is not a thing we ship, so no instance guard needed.
+
+  var DAYS_TO_SHOW = 10;
+  var PAGE_STEP = 5;
+  var MAX_WORKING_DAYS = 40;
+  var SLOT_MINUTES = 15;
+  var picker = {
+    initialised: false,
+    startOffset: 0,
+    selectedDate: null,
+    slots: null,
+    slotsLoading: false,
+    pickedSlot: null,
+    busy: false,
+  };
+
+  function pickerEls() {
+    var root = document.querySelector("[data-booking-picker]");
+    if (!root) return null;
+    return {
+      root: root,
+      daysRow: root.querySelector("[data-booking-days]"),
+      prev: root.querySelector("[data-booking-prev]"),
+      next: root.querySelector("[data-booking-next]"),
+      slotsBox: root.querySelector("[data-booking-slots]"),
+      confirmBox: root.querySelector("[data-booking-confirm]"),
+      errorEl: root.querySelector("[data-booking-error]"),
+      honeypot: root.querySelector('input[name="_website_url"]'),
+    };
+  }
+
+  function toLondonYmd(d) {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/London",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  }
+
+  function isWorkingDay(ymd) {
+    var p = ymd.split("-");
+    var dow = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    return dow >= 1 && dow <= 5;
+  }
+
+  function getWorkingDaysWindow(startOffset, windowSize) {
+    var out = [];
+    var start = new Date();
+    var collected = 0;
+    for (var cal = 0; collected < startOffset + windowSize && cal < 200; cal++) {
+      var d = new Date(start);
+      d.setDate(d.getDate() + cal);
+      var ymd = toLondonYmd(d);
+      if (!isWorkingDay(ymd)) continue;
+      if (collected >= startOffset) out.push(ymd);
+      collected += 1;
+    }
+    return out;
+  }
+
+  function parseDayParts(ymd) {
+    var p = ymd.split("-");
+    var dt = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+    return {
+      dayName: dt.toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" }),
+      dateNum: String(+p[2]),
+      month: dt.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" }),
+      isToday: toLondonYmd(new Date()) === ymd,
+    };
+  }
+
+  function longHumanDate(iso) {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Europe/London",
+    });
+  }
+
+  function humanTime(iso) {
+    var time = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London",
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+    return longHumanDate(iso) + " at " + time;
+  }
+
+  function renderDays() {
+    var els = pickerEls();
+    if (!els) return;
+    var days = getWorkingDaysWindow(picker.startOffset, DAYS_TO_SHOW);
+    if (picker.selectedDate && days.indexOf(picker.selectedDate) === -1) {
+      picker.selectedDate = days[0] || null;
+    }
+    if (!picker.selectedDate) picker.selectedDate = days[0] || null;
+    els.daysRow.innerHTML = "";
+    days.forEach(function (ymd) {
+      var p = parseDayParts(ymd);
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "booking-day-card" + (ymd === picker.selectedDate ? " active" : "");
+      btn.setAttribute("data-ymd", ymd);
+      btn.setAttribute("aria-pressed", ymd === picker.selectedDate ? "true" : "false");
+      btn.innerHTML =
+        '<span class="booking-day-name">' + p.dayName + "</span>" +
+        '<span class="booking-day-num">' + p.dateNum + "</span>" +
+        '<span class="booking-day-month">' + p.month + "</span>" +
+        (p.isToday && ymd !== picker.selectedDate ? '<span class="booking-day-today-dot" aria-hidden="true"></span>' : "");
+      btn.addEventListener("click", function () {
+        picker.selectedDate = ymd;
+        picker.pickedSlot = null;
+        renderDays();
+        renderConfirm();
+        loadSlots();
+      });
+      els.daysRow.appendChild(btn);
+    });
+    els.prev.disabled = picker.startOffset <= 0;
+    els.next.disabled = picker.startOffset + DAYS_TO_SHOW >= MAX_WORKING_DAYS;
+  }
+
+  function pageBy(delta) {
+    var next = Math.max(0, Math.min(picker.startOffset + delta, Math.max(0, MAX_WORKING_DAYS - DAYS_TO_SHOW)));
+    if (next === picker.startOffset) return;
+    picker.startOffset = next;
+    renderDays();
+    loadSlots();
+  }
+
+  function loadSlots() {
+    if (!picker.selectedDate) return;
+    var els = pickerEls();
+    if (!els) return;
+    picker.slots = null;
+    picker.slotsLoading = true;
+    picker.pickedSlot = null;
+    renderSlots();
+    renderConfirm();
+    var url = API_BOOKING_SLOTS + "?date=" + encodeURIComponent(picker.selectedDate);
+    fetch(url, { credentials: "omit" })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        picker.slotsLoading = false;
+        if (!res.ok) {
+          showError(res.data && res.data.error ? res.data.error : "Could not load times.");
+          picker.slots = [];
+        } else {
+          clearError();
+          picker.slots = Array.isArray(res.data.slots) ? res.data.slots : [];
+        }
+        renderSlots();
+      })
+      .catch(function () {
+        picker.slotsLoading = false;
+        picker.slots = [];
+        showError("Could not load times. Check your connection and try again.");
+        renderSlots();
+      });
+  }
+
+  function splitMorningAfternoon(slots) {
+    var m = [], a = [];
+    for (var i = 0; i < slots.length; i++) {
+      var hour = parseInt(String(slots[i].label).slice(0, 2), 10);
+      if (hour < 12) m.push(slots[i]); else a.push(slots[i]);
+    }
+    return { morning: m, afternoon: a };
+  }
+
+  function renderSlots() {
+    var els = pickerEls();
+    if (!els) return;
+    var box = els.slotsBox;
+    box.setAttribute("aria-busy", picker.slotsLoading ? "true" : "false");
+    if (picker.slotsLoading) {
+      box.innerHTML = skeletonHtml();
+      return;
+    }
+    if (!picker.slots || picker.slots.length === 0) {
+      box.innerHTML = emptyDayHtml();
+      return;
+    }
+    var g = splitMorningAfternoon(picker.slots);
+    var html = "";
+    if (g.morning.length) html += groupHtml("Morning", g.morning);
+    if (g.afternoon.length) html += groupHtml("Afternoon", g.afternoon);
+    box.innerHTML = html;
+    box.querySelectorAll(".booking-slot-pill").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var i = +btn.getAttribute("data-slot-i");
+        var g2 = splitMorningAfternoon(picker.slots);
+        var group = btn.getAttribute("data-slot-group") === "morning" ? g2.morning : g2.afternoon;
+        picker.pickedSlot = group[i];
+        renderSlots();
+        renderConfirm();
+      });
+    });
+  }
+
+  function groupHtml(label, slots) {
+    var items = slots.map(function (s, i) {
+      var active = picker.pickedSlot && picker.pickedSlot.startIso === s.startIso;
+      return '<button type="button" class="booking-slot-pill' + (active ? " active" : "") +
+        '" data-slot-group="' + label.toLowerCase() + '" data-slot-i="' + i + '" aria-pressed="' + (active ? "true" : "false") + '">' +
+        escHtml(s.label) + "</button>";
+    }).join("");
+    return '<div class="booking-slot-group">' +
+      '<div class="booking-slot-group-label">' + label + "</div>" +
+      '<div class="booking-slot-grid">' + items + "</div>" +
+      "</div>";
+  }
+
+  function skeletonHtml() {
+    var pills = "";
+    for (var i = 0; i < 20; i++) pills += '<div class="booking-slot-skeleton"></div>';
+    return '<div class="booking-slot-group">' +
+      '<div class="booking-slot-group-label">Loading</div>' +
+      '<div class="booking-slot-grid">' + pills + "</div>" +
+      "</div>";
+  }
+
+  function emptyDayHtml() {
+    return '<div class="booking-empty-day">' +
+      '<p class="booking-empty-title">No times available on this day.</p>' +
+      '<p class="booking-empty-body">Try another day from the row above.</p>' +
+      "</div>";
+  }
+
+  function renderConfirm() {
+    var els = pickerEls();
+    if (!els) return;
+    if (!picker.pickedSlot) {
+      els.confirmBox.hidden = true;
+      els.confirmBox.innerHTML = "";
+      return;
+    }
+    var slot = picker.pickedSlot;
+    var p = parseDayParts(toLondonYmd(new Date(slot.startIso)));
+    els.confirmBox.hidden = false;
+    els.confirmBox.innerHTML =
+      '<div class="booking-section-label">Confirm your call</div>' +
+      '<div class="booking-confirm-row">' +
+        '<div class="booking-confirm-chip" aria-hidden="true">' +
+          '<span class="booking-day-name">' + p.dayName + "</span>" +
+          '<span class="booking-day-num">' + p.dateNum + "</span>" +
+          '<span class="booking-day-month">' + p.month + "</span>" +
+        "</div>" +
+        '<div class="booking-confirm-copy">' +
+          '<div class="booking-confirm-date">' + escHtml(longHumanDate(slot.startIso)) + "</div>" +
+          '<div class="booking-confirm-time"><strong>' + escHtml(slot.label) + "</strong> &middot; " + SLOT_MINUTES + " minutes</div>" +
+          '<div class="booking-confirm-note">Video call link to <strong>' + escHtml(contactFields.email || "your email") + "</strong>.</div>" +
+        "</div>" +
+      "</div>" +
+      '<button type="button" data-booking-confirm-btn class="btn-sl btn-sl-primary booking-confirm-btn">Confirm booking</button>';
+    els.confirmBox.querySelector("[data-booking-confirm-btn]").addEventListener("click", submitBooking);
+  }
+
+  function submitBooking() {
+    if (picker.busy || !picker.pickedSlot) return;
+    var els = pickerEls();
+    if (!els) return;
+    picker.busy = true;
+    clearError();
+    var btn = els.confirmBox.querySelector("[data-booking-confirm-btn]");
+    if (btn) { btn.disabled = true; btn.textContent = "Booking..."; }
+    var payload = {
+      startIso: picker.pickedSlot.startIso,
+      attendeeName: contactFields.name,
+      attendeeEmail: contactFields.email,
+      attendeePhone: contactFields.phone,
+      message: contactFields.message,
+      _website_url: els.honeypot ? els.honeypot.value : "",
+    };
+    fetch(API_BOOKING_CREATE, {
+      method: "POST",
+      mode: "cors",
+      credentials: "omit",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
+      .then(function (res) {
+        picker.busy = false;
+        if (!res.ok) {
+          showError(res.data && res.data.error ? res.data.error : "Could not book that time.");
+          if (btn) { btn.disabled = false; btn.textContent = "Confirm booking"; }
+          // Race: slot taken while picking. Refresh slots.
+          if (res.status === 500) loadSlots();
+          return;
+        }
+        advanceToDoneWithMeet(res.data.meetLink, res.data.htmlLink, picker.pickedSlot.startIso);
+      })
+      .catch(function (err) {
+        picker.busy = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Confirm booking"; }
+        showError("Could not reach the booking service. Try again.");
+      });
+  }
+
+  function advanceToDoneWithMeet(meetLink, htmlLink, startIso) {
+    var meetEl = document.querySelector("[data-booking-done-meet]");
+    var bodyEl = document.querySelector("[data-booking-done-body]");
+    if (bodyEl) {
+      bodyEl.textContent =
+        "Your call is confirmed for " + humanTime(startIso) + ". We've also sent a confirmation email to " +
+        contactFields.email + ".";
+    }
+    if (meetEl) {
+      if (meetLink) {
+        meetEl.hidden = false;
+        meetEl.innerHTML =
+          '<a class="btn-sl btn-sl-primary" href="' + escAttr(meetLink) + '" target="_blank" rel="noopener">Join the video call</a>' +
+          (htmlLink ? ' <a class="btn-sl btn-sl-ghost" href="' + escAttr(htmlLink) + '" target="_blank" rel="noopener">Open the calendar event</a>' : "");
+      } else if (htmlLink) {
+        meetEl.hidden = false;
+        meetEl.innerHTML =
+          '<a class="btn-sl btn-sl-ghost" href="' + escAttr(htmlLink) + '" target="_blank" rel="noopener">Open the calendar event</a>';
+      }
+    }
+    var trigger = document.querySelector("[data-booking-picker]");
+    if (trigger) advanceStep(trigger, 3);
+  }
+
+  function showError(text) {
+    var els = pickerEls();
+    if (!els || !els.errorEl) return;
+    els.errorEl.textContent = text;
+    els.errorEl.hidden = false;
+  }
+  function clearError() {
+    var els = pickerEls();
+    if (!els || !els.errorEl) return;
+    els.errorEl.textContent = "";
+    els.errorEl.hidden = true;
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+  function escAttr(s) { return escHtml(s); }
+
+  function initBookingPicker() {
+    var els = pickerEls();
+    if (!els) return;
+    if (!picker.initialised) {
+      els.prev.addEventListener("click", function () { pageBy(-PAGE_STEP); });
+      els.next.addEventListener("click", function () { pageBy(PAGE_STEP); });
+      picker.initialised = true;
+    }
+    picker.startOffset = 0;
+    picker.pickedSlot = null;
+    picker.selectedDate = null;
+    renderDays();
+    loadSlots();
   }
 })();

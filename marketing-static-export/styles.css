@@ -6368,3 +6368,272 @@ select:focus-visible,
 .consult-band .btn-sl-ghost:hover {
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* ---- Contact-page booking picker. Vanilla equivalent of the React
+   BookingPicker component. Scoped under .contact-booking-picker so
+   none of these rules bleed into other pages or the service grid. ---- */
+.contact-booking-picker {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.booking-section-label {
+  font-family: var(--font-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--slate);
+  font-size: 11px;
+  font-weight: 700;
+}
+.booking-section-label-time { margin-top: 2px; }
+
+.booking-day-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.booking-arrow {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--slate);
+  cursor: pointer;
+  transition: transform .15s, border-color .15s, color .15s;
+}
+.booking-arrow:not(:disabled):hover {
+  transform: translateY(-1px);
+  border-color: var(--sky);
+  color: var(--navy-deep);
+}
+.booking-arrow:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.booking-days {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.booking-days::-webkit-scrollbar { display: none; }
+.booking-day-card {
+  position: relative;
+  flex-shrink: 0;
+  width: 64px;
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-radius: 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform .15s, border-color .15s, box-shadow .2s;
+}
+.booking-day-card:hover:not(.active) {
+  transform: translateY(-1px);
+  border-color: rgba(25,156,217,0.5);
+  box-shadow: 0 8px 18px -14px rgba(25,156,217,0.45);
+}
+.booking-day-card.active {
+  background: var(--sky);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 10px 26px -14px rgba(25,156,217,0.65);
+}
+.booking-day-name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+.booking-day-card.active .booking-day-name,
+.booking-day-card.active .booking-day-month {
+  color: rgba(255,255,255,0.85);
+}
+.booking-day-num {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+}
+.booking-day-card.active .booking-day-num { color: #fff; }
+.booking-day-month {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+.booking-day-today-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--sky);
+}
+
+.booking-slots { min-height: 56px; }
+.booking-slot-group + .booking-slot-group { margin-top: 14px; }
+.booking-slot-group-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 8px;
+}
+.booking-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 8px;
+}
+@media (min-width: 640px) {
+  .booking-slot-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+}
+@media (min-width: 768px) {
+  .booking-slot-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+}
+@media (min-width: 1024px) {
+  .booking-slot-grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
+}
+.booking-slot-pill {
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform .15s, border-color .15s, color .15s;
+}
+.booking-slot-pill:hover:not(.active) {
+  transform: translateY(-1px);
+  border-color: rgba(25,156,217,0.6);
+  color: var(--navy-deep);
+}
+.booking-slot-pill.active {
+  background: var(--sky);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 10px 26px -14px rgba(25,156,217,0.65);
+}
+.booking-slot-skeleton {
+  height: 42px;
+  border-radius: 999px;
+  background: var(--cloud);
+  animation: slotPulse 1.4s ease-in-out infinite;
+}
+@keyframes slotPulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: .85; }
+}
+
+.booking-empty-day {
+  padding: 22px;
+  border-radius: 14px;
+  border: 1px dashed var(--line);
+  background: rgba(248,250,252,0.5);
+  text-align: center;
+}
+.booking-empty-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 15px;
+}
+.booking-empty-body {
+  margin-top: 4px;
+  color: var(--slate);
+  font-size: 13px;
+}
+
+.booking-confirm {
+  margin-top: 4px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(25,156,217,0.4);
+  background: linear-gradient(180deg, rgba(25,156,217,0.05), rgba(25,156,217,0.015));
+}
+.booking-confirm-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.booking-confirm-chip {
+  flex-shrink: 0;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--navy), var(--sky));
+}
+.booking-confirm-chip .booking-day-name,
+.booking-confirm-chip .booking-day-month {
+  color: rgba(255,255,255,0.85);
+}
+.booking-confirm-chip .booking-day-num {
+  color: #fff;
+  font-size: 20px;
+}
+.booking-confirm-copy { flex: 1; min-width: 0; }
+.booking-confirm-date {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.booking-confirm-time {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--slate);
+}
+.booking-confirm-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--slate);
+}
+.booking-confirm-btn { margin-top: 16px; width: 100%; }
+@media (min-width: 640px) {
+  .booking-confirm-btn { width: auto; }
+}
+
+.booking-honeypot {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.step-actions-secondary { margin-top: 10px; }
+.step-done-meet { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }

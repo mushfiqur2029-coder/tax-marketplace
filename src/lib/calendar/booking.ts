@@ -30,13 +30,24 @@ export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 // is enough to list slots + create events, the picker should surface
 // as long as GOOGLE_CALENDAR_ID is set and at least one auth path has
 // its env vars present.
+// Service account env is read under two naming schemes. The original
+// GOOGLE_CALENDAR_* names predate the Vercel Projects conventions, the
+// newer GOOGLE_SERVICE_ACCOUNT_* names align with the generic Google
+// service-account pattern. Either works, both accepted everywhere.
+function serviceAccountEmail(): string | undefined {
+  return (
+    process.env.GOOGLE_CALENDAR_CLIENT_EMAIL ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
+  );
+}
+
 export function isCalendarConfigured(): boolean {
   if (!process.env.GOOGLE_CALENDAR_ID) return false;
   const hasServiceAccountKey =
     !!process.env.GOOGLE_CALENDAR_PRIVATE_KEY ||
-    !!process.env.GOOGLE_CALENDAR_PRIVATE_KEY_BASE64;
-  const hasServiceAccount =
-    !!process.env.GOOGLE_CALENDAR_CLIENT_EMAIL && hasServiceAccountKey;
+    !!process.env.GOOGLE_CALENDAR_PRIVATE_KEY_BASE64 ||
+    !!process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  const hasServiceAccount = !!serviceAccountEmail() && hasServiceAccountKey;
   const hasOAuth =
     !!process.env.GOOGLE_OAUTH_CLIENT_ID &&
     !!process.env.GOOGLE_OAUTH_CLIENT_SECRET;
@@ -54,7 +65,7 @@ export async function getAuthKind(): Promise<AuthContext["kind"]> {
 let jwtSingleton: JWT | null = null;
 function getJwt(): JWT | null {
   if (jwtSingleton) return jwtSingleton;
-  const clientEmail = process.env.GOOGLE_CALENDAR_CLIENT_EMAIL;
+  const clientEmail = serviceAccountEmail();
   const privateKey = resolvePrivateKey();
   if (!clientEmail || !privateKey) return null;
   jwtSingleton = new JWT({
@@ -101,7 +112,7 @@ async function getAuthContext(): Promise<AuthContext> {
   return { kind: "service_account", accessToken: token };
 }
 
-// Private key accepts two formats so deployment is easy on any env:
+// Private key accepts three sources (checked in order):
 //
 //   - GOOGLE_CALENDAR_PRIVATE_KEY_BASE64: base64 of the full PEM.
 //     Preferred for Vercel/CI envs because the Vercel CLI plugin
@@ -111,9 +122,10 @@ async function getAuthContext(): Promise<AuthContext> {
 //   - GOOGLE_CALENDAR_PRIVATE_KEY: the raw PEM. If the value came
 //     via dotenv with literal \n escape sequences we convert them
 //     back to real newlines before passing to the JWT signer.
-//
-// Checked in that order so adding the base64 form later doesn't
-// require removing the raw form.
+//   - GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: the newer-naming raw PEM,
+//     same \n-escape handling. Accepted so projects that provisioned
+//     envs under the generic service-account naming don't need to
+//     re-add vars under the GOOGLE_CALENDAR_ names.
 function resolvePrivateKey(): string | null {
   const b64 = process.env.GOOGLE_CALENDAR_PRIVATE_KEY_BASE64;
   if (b64) {
@@ -123,7 +135,9 @@ function resolvePrivateKey(): string | null {
       return null;
     }
   }
-  const raw = process.env.GOOGLE_CALENDAR_PRIVATE_KEY;
+  const raw =
+    process.env.GOOGLE_CALENDAR_PRIVATE_KEY ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
   if (raw) return raw.replace(/\\n/g, "\n");
   return null;
 }

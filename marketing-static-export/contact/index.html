@@ -43,17 +43,31 @@
 
   <section data-step="2" class="contact-step" hidden>
     <div class="step-head">
-      <h2>Pick a 30-minute slot</h2>
-      <p>Pick any time that works for you. Your accountant will join by phone or video.</p>
+      <h2>Pick a 15-minute slot</h2>
+      <p>Pick any time that works for you. Your accountant will join by video call.</p>
     </div>
-    <div class="contact-booking">
-      <iframe src="https://calendar.app.google/XrzpFp1NbH4QjdLF6" title="Pick a consultation slot" loading="lazy"></iframe>
+    <div data-booking-picker class="contact-booking-picker">
+      <div class="booking-section-label">Pick a day</div>
+      <div class="booking-day-row">
+        <button type="button" data-booking-prev class="booking-arrow" aria-label="Earlier dates" disabled>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <div data-booking-days class="booking-days"></div>
+        <button type="button" data-booking-next class="booking-arrow" aria-label="Later dates">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      </div>
+      <div class="booking-section-label booking-section-label-time">Pick a time</div>
+      <div data-booking-slots class="booking-slots" aria-live="polite" aria-busy="false"></div>
+      <div data-booking-confirm class="booking-confirm" hidden></div>
+      <div class="booking-honeypot" aria-hidden="true">
+        <label>Website<input type="text" name="_website_url" tabindex="-1" autocomplete="off" value=""></label>
+      </div>
+      <p data-booking-error class="contact-status error" hidden></p>
     </div>
-    <div class="step-actions">
-      <button type="button" data-step-done="2" class="btn-sl btn-sl-primary">I&rsquo;ve booked my time</button>
-      <button type="button" data-step-skip="2" class="btn-sl btn-sl-ghost">Skip this for now</button>
+    <div class="step-actions step-actions-secondary">
+      <button type="button" data-step-skip="2" class="btn-sl btn-sl-ghost">Skip for now, just send my message</button>
     </div>
-    <p class="step-fallback">Calendar not loading in the frame? <a href="https://calendar.app.google/XrzpFp1NbH4QjdLF6" target="_blank" rel="noopener">Open it in a new tab</a>.</p>
   </section>
 
   <section data-step="3" class="contact-step" hidden>
@@ -62,7 +76,8 @@
         <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 10 18 20 6"></polyline></svg>
       </div>
       <h2>You&rsquo;re all set.</h2>
-      <p class="step-done-body">We&rsquo;ve got your message. If you booked a call you&rsquo;ll get a Google Calendar invite with the meeting link. We reply to messages inside one working day.</p>
+      <p class="step-done-body" data-booking-done-body>We&rsquo;ve got your message. If you booked a call you&rsquo;ll get a Google Calendar invite with the meeting link. We reply to messages inside one working day.</p>
+      <div data-booking-done-meet class="step-done-meet" hidden></div>
       <div class="step-done-actions">
         <a href="/" class="btn-sl btn-sl-primary">Back to homepage</a>
         <a href="/guides" class="btn-sl btn-sl-ghost">Read the guides</a>
