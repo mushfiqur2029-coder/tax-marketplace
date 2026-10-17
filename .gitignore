@@ -49,3 +49,8 @@ _pw_reset_check.mjs
 _*.mjs
 
 .env*
+
+# Local reference material (real client PII: filed returns, bank
+# statements, Uber tax summaries). Never commit. Used only for porting
+# calculation logic and validating the tax engine against real data.
+/reference/
