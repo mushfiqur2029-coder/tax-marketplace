@@ -1178,7 +1178,7 @@ export async function removeVatReturnDocAction(
   }
 }
 
-// Accountant assembles the approval payload (box 1 to 9 + optional note)
+// Accountant assembles the approval payload (box 1, 9 + optional note)
 // and transitions the cycle to client_approval. Preconditions: cycle
 // at in_review, VAT return PDF uploaded, client docs submitted.
 // Box arithmetic is validated to catch obvious transcription errors

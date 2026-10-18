@@ -77,7 +77,7 @@ export type IncomeLine = {
 // status drives estimate-reliance. category is the P&L heading
 // (10 fixed options), sa103sBox is the SA103S short-return box.
 export type ExpenseLine = {
-  // Human label (free text, e.g. "Fuel", "ULEZ") — informational only,
+  // Human label (free text, e.g. "Fuel", "ULEZ"), informational only,
   // computations use category + carCost + box.
   label: string;
   amountPaid: number;
@@ -269,10 +269,10 @@ export type Sa103sBoxes = {
   box25_otherCapitalAllowances: number;
   box26_balancingCharges: number;
   box31_totalTaxableProfits: number;
-  box36_voluntaryClass2: string;         // "Ask client – tick to pay £182" / "Leave blank"
+  box36_voluntaryClass2: string;         // "Ask client, tick to pay £182" / "Leave blank"
 };
 
-// Zero-tax reverse check (tab 6b) — compliance aid.
+// Zero-tax reverse check (tab 6b), compliance aid.
 export type ZeroTaxCheck = {
   turnover: number;
   expenses: number;

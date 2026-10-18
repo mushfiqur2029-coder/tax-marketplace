@@ -171,7 +171,7 @@ export function computePeriodLabel(
   const s = parseYmd(startYmd);
   const e = parseYmd(endYmd);
   if (f === "Monthly") {
-    // "January 2026" if whole month, else "1 to 15 Jan 2026" fallback.
+    // "January 2026" if whole month, else "1, 15 Jan 2026" fallback.
     const wholeMonth =
       s.y === e.y &&
       s.m === e.m &&
@@ -267,7 +267,7 @@ export const VAT_PERIOD_FOOTER_NOTE =
 export type VatApprovalPayload = {
   // All amounts in pence to stay integer. Positive = owed to HMRC;
   // negative values are allowed on Box 4 reclaim and Box 5 net (refund
-  // from HMRC). Boxes 6 to 9 are turnover totals, always >= 0.
+  // from HMRC). Boxes 6, 9 are turnover totals, always >= 0.
   box_1_pence: number; // VAT due on sales
   box_2_pence: number; // VAT due on acquisitions from EU
   box_3_pence: number; // Total VAT due (box 1 + box 2)

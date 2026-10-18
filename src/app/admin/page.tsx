@@ -115,6 +115,9 @@ export default async function AdminDashboard({
     { count: paidCount },
     { count: assignedCount },
     { count: unassignedPaidCount },
+    { count: pchTotal },
+    { count: pchAwaitingApproval },
+    { count: pchFiled },
   ] = await Promise.all([
     admin.from("cases").select("id", { count: "exact", head: true }),
     admin
@@ -149,6 +152,20 @@ export default async function AdminDashboard({
       .is("accountant_id", null)
       .eq("status", "submitted")
       .eq("stripe_payment_status", "succeeded"),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("tier", "uber_phv_automated"),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("tier", "uber_phv_automated")
+      .eq("status", "client_approval"),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("tier", "uber_phv_automated")
+      .in("status", ["filed", "complete"]),
   ]);
 
   const totalCases = allCount ?? 0;
@@ -227,6 +244,26 @@ export default async function AdminDashboard({
           value={`${assignedCases} / ${unassignedPaid}`}
         />
       </div>
+
+      {/* PCH automated flow */}
+      {(pchTotal ?? 0) > 0 ? (
+        <section className="mb-8">
+          <h2
+            className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            PCH automated
+          </h2>
+          <Link
+            href="/admin/pch"
+            className="card-sl grid gap-3 p-5 transition hover:border-sky/40 sm:grid-cols-3"
+          >
+            <PchStat label="Total" value={pchTotal ?? 0} />
+            <PchStat label="Awaiting client approval" value={pchAwaitingApproval ?? 0} />
+            <PchStat label="Filed / complete" value={pchFiled ?? 0} />
+          </Link>
+        </section>
+      ) : null}
 
       {/* Per-accountant workload */}
       <section className="mb-10">
@@ -515,6 +552,25 @@ function StaleDraftIntro({ callerIsPrimary }: { callerIsPrimary: boolean }) {
           here for visibility.
         </>
       )}
+    </div>
+  );
+}
+
+function PchStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div
+        className="text-[11px] font-semibold uppercase tracking-wider text-slate"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
+        {label}
+      </div>
+      <div
+        className="mt-1 text-2xl font-bold text-ink"
+        style={{ fontFamily: "var(--font-heading)" }}
+      >
+        {value}
+      </div>
     </div>
   );
 }

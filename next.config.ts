@@ -31,6 +31,21 @@ const nextConfig: NextConfig = {
       "./node_modules/@sparticuz/chromium/bin/**/*",
     ],
   },
+  // PCH document uploads can be up to 50MB (bank statements, V5C scans,
+  // high-resolution receipt photos). Server actions default to 1MB; raise
+  // the limit so a legitimate upload isn't rejected before our own 50MB
+  // check in uploadPchDocumentAction gets a say. Plus a few MB of
+  // multipart headroom per the Next docs guidance.
+  experimental: {
+    // Server action body limit (default 1MB) + the Next 16 proxy layer
+    // body limit (default 10MB) both have to clear the 50MB client-side
+    // doc upload budget. Both set to 55mb so a 50MB file plus the few
+    // extra KB of multipart overhead fits comfortably.
+    serverActions: {
+      bodySizeLimit: "55mb",
+    },
+    proxyClientMaxBodySize: "55mb",
+  },
 };
 
 export default nextConfig;

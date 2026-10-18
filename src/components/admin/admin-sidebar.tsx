@@ -94,6 +94,18 @@ const GROUPS: ReadonlyArray<PortalNavGroup<AdminCountKey>> = [
     ],
   },
   {
+    key: "automated",
+    heading: "Automated flows",
+    items: [
+      {
+        href: "/admin/pch",
+        label: "PCH automated",
+        activePrefix: "/admin/pch",
+        countKey: "pchCases",
+      },
+    ],
+  },
+  {
     key: "account",
     items: [{ href: "/admin/profile", label: "Account", activePrefix: "/admin/profile" }],
   },
@@ -119,6 +131,7 @@ export function AdminShell({
     profileChanges: counts.profileChanges,
     addonRequests: counts.addonRequests,
     enquiries: counts.enquiries,
+    pchCases: counts.pchCases,
   };
   return (
     <PortalShell

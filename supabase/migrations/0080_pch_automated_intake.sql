@@ -147,7 +147,7 @@ create table if not exists public.pch_expense_lines (
       'VAT paid (Flat Rate Scheme)'
     )),
   sa103s_box integer not null
-    check (sa103s_box in (12, 14, 16, 17, 18, 19)),
+    check (sa103s_box in (12 to 14 to 16 to 17 to 18 to 19)),
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
@@ -224,7 +224,7 @@ values
   ('PCH-02','Income','Weekly / monthly platform statements','Rebuild the tax-year income if no annual summary','PDF','If no annual summary',20),
   ('PCH-03','Income','Cash and account-work log','Income not paid through an app','Excel / photo of notebook','If any cash work',30),
   ('PCH-04','Vehicle','Vehicle insurance schedule (hire & reward)','Insurance cost (box 12)','PDF','Required',40),
-  ('PCH-05','Vehicle','V5C log book','Ownership, CO2 (capital allowance rate), registration date','Photo','Required',50),
+  ('PCH-05','Vehicle','V5C log book','Ownership, CO2 (capital allowance rate), registration date. Optional, your accountant may ask for it on a specific case.','Photo','Optional, accountant may request',50),
   ('PCH-06','Vehicle','Purchase invoice and HP / PCP finance statement','Capital allowances; finance interest','PDF','If bought / financed',60),
   ('PCH-07','Vehicle','Car rental / PCO hire agreement and payments','Rental cost (box 12)','PDF','If renting',70),
   ('PCH-08','Vehicle','MOT history (odometer readings)','Total miles and business-use %','Screenshot from GOV.UK','Required',80),

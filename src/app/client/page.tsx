@@ -11,6 +11,15 @@ import { SLLink } from "@/components/sl-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
+import { PchProgressTracker } from "@/components/case/pch-progress-tracker";
+import { ValidatedBadge } from "@/components/case/validated-badge";
+import { computeSa302ValidationState, type Sa302Comparison } from "@/lib/pch/sa302";
+import type { TaxEngineOutput } from "@/lib/tax-engine";
+import { deadlinesForYear } from "@/lib/tax-engine";
+import {
+  DeadlineCountdownCard,
+  type DeadlineEntry,
+} from "@/components/case/deadline-countdown-card";
 import { formatDate } from "@/lib/format";
 import { ClientCasesFilter, type ClientCaseCounts } from "./client-cases-filter";
 import { ClientSuspensionBanner } from "./suspension-banner";
@@ -93,6 +102,47 @@ export default async function ClientDashboard({
   ]);
 
   const all = cases ?? [];
+
+  // PCH head rows: fetched once for both the Validated badge check and
+  // the dashboard-level deadline countdown. Only cases whose client-
+  // facing work is still live (not already filed/complete) contribute
+  // to the countdown; a filed case has its HMRC obligation met.
+  const pchCases = all.filter((c) => c.tier === "uber_phv_automated");
+  const pchCaseIds = pchCases.map((c) => c.id);
+  const validatedCaseIds = new Set<string>();
+  const deadlineEntries: DeadlineEntry[] = [];
+  if (pchCaseIds.length > 0) {
+    const { data: pchHeads } = await supabase
+      .from("pch_cases")
+      .select("case_id, tax_year, engine_snapshot, sa302_comparison")
+      .in("case_id", pchCaseIds);
+    const headByCase = new Map((pchHeads ?? []).map((h) => [h.case_id, h]));
+    for (const row of pchHeads ?? []) {
+      const state = computeSa302ValidationState(
+        (row.engine_snapshot ?? null) as TaxEngineOutput | null,
+        (row.sa302_comparison ?? null) as Sa302Comparison | null,
+      );
+      if (state.allGreen) validatedCaseIds.add(row.case_id);
+    }
+    for (const c of pchCases) {
+      // Skip cases that are already filed or complete; HMRC obligation met.
+      if (c.status === "filed" || c.status === "complete") continue;
+      const head = headByCase.get(c.id);
+      const taxYear = head?.tax_year ?? "2025/26";
+      try {
+        const d = deadlinesForYear(taxYear);
+        deadlineEntries.push({
+          caseId: c.id,
+          caseLabel: `${taxYear} Uber / PHV automated`,
+          deadlineIso: d.filingDeadline.toISOString(),
+          taxYearLabel: taxYear,
+        });
+      } catch {
+        // Unparseable tax year label; skip rather than crash the dashboard.
+      }
+    }
+  }
+
   const filtered = all.filter((c) => {
     if (view === "completed") return c.status === "complete";
     if (view === "pending") return c.status === "draft";
@@ -181,6 +231,8 @@ export default async function ClientDashboard({
 
       <UpcomingCalls bookings={upcomingBookings} />
 
+      <DeadlineCountdownCard entries={deadlineEntries} />
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <ClientCasesFilter active={view} counts={counts} />
         {me.status !== "suspended" ? (
@@ -219,55 +271,65 @@ export default async function ClientDashboard({
               <li key={c.id}>
                 <Link
                   href={`/client/cases/${c.id}`}
-                  className="card-sl group flex items-center gap-4 p-5 transition hover:border-sky/40 hover:-translate-y-0.5"
+                  className="card-sl group block p-5 transition hover:border-sky/40 hover:-translate-y-0.5"
                 >
-                  <div
-                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, var(--navy), var(--sky))",
-                    }}
-                    aria-hidden="true"
-                  >
-                    {seg?.numeral ?? "•"}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    {companyName ? (
-                      <div className="truncate text-sm font-semibold text-ink">
-                        {companyName}
-                      </div>
-                    ) : null}
+                  <div className="flex items-center gap-4">
                     <div
-                      className={
-                        "flex flex-wrap items-center gap-2 " +
-                        (companyName ? "mt-0.5" : "")
-                      }
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, var(--navy), var(--sky))",
+                      }}
+                      aria-hidden="true"
                     >
-                      <span
+                      {seg?.numeral ?? "•"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {companyName ? (
+                        <div className="truncate text-sm font-semibold text-ink">
+                          {companyName}
+                        </div>
+                      ) : null}
+                      <div
                         className={
-                          companyName
-                            ? "text-xs text-slate"
-                            : "text-sm font-semibold text-ink"
+                          "flex flex-wrap items-center gap-2 " +
+                          (companyName ? "mt-0.5" : "")
                         }
                       >
-                        {seg?.title ?? c.segment}
-                      </span>
-                      <span className="text-xs text-slate">·</span>
-                      <span className="text-xs text-slate">
-                        {tier?.title ?? c.tier} · {formatFeeGbp(effectiveFeePence(c, tier))}
-                      </span>
+                        <span
+                          className={
+                            companyName
+                              ? "text-xs text-slate"
+                              : "text-sm font-semibold text-ink"
+                          }
+                        >
+                          {seg?.title ?? c.segment}
+                        </span>
+                        <span className="text-xs text-slate">·</span>
+                        <span className="text-xs text-slate">
+                          {tier?.title ?? c.tier} · {formatFeeGbp(effectiveFeePence(c, tier))}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-slate">
+                        Started {formatDate(c.created_at)}
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs text-slate">
-                      Started {formatDate(c.created_at)}
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {c.tier !== "uber_phv_automated" ? (
+                        <StatusPill status={c.status} />
+                      ) : null}
+                      {validatedCaseIds.has(c.id) ? <ValidatedBadge size="sm" /> : null}
+                      {c.is_urgent ? <UrgentPill size="sm" /> : null}
+                      {c.deadline ? (
+                        <DeadlinePill deadline={c.deadline} size="sm" />
+                      ) : null}
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <StatusPill status={c.status} />
-                    {c.is_urgent ? <UrgentPill size="sm" /> : null}
-                    {c.deadline ? (
-                      <DeadlinePill deadline={c.deadline} size="sm" />
-                    ) : null}
-                  </div>
+                  {c.tier === "uber_phv_automated" && c.status !== "draft" ? (
+                    <div className="mt-4 border-t border-slate-100 pt-4">
+                      <PchProgressTracker status={c.status} compact />
+                    </div>
+                  ) : null}
                 </Link>
               </li>
             );

@@ -23,6 +23,8 @@ import {
   type Sa302Comparison,
   type Sa302Group,
 } from "@/lib/pch/sa302";
+import type { Anomaly } from "@/lib/pch/prior-year-anomalies";
+import { PriorYearAnomalyPanel } from "./prior-year-anomaly-panel";
 
 type CheckItem = { item_number: number; area: string; description: string };
 type CheckStatus = {
@@ -42,6 +44,9 @@ export function PchAccountantView(props: {
   overrideHistory: OverrideRow[];
   userDisplayNames: Record<string, string | null>;
   sa302Comparison: Sa302Comparison | null;
+  priorYearAnomalies: Anomaly[];
+  priorYearLabel: string;
+  messagesPanel: React.ReactNode;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -62,16 +67,48 @@ export function PchAccountantView(props: {
 
   return (
     <main className="mx-auto max-w-4xl p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">PCH automated — accountant review</h1>
-        <p className="text-sm text-slate-600 mt-1">
-          Case {props.caseId.slice(0, 8)} — status <strong>{props.caseStatus}</strong>
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">PCH automated, accountant review</h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Case {props.caseId.slice(0, 8)}. Status <strong>{props.caseStatus}</strong>.
+          </p>
+        </div>
+        {props.snapshot ? (
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/accountant/cases/${props.caseId}/pch/export/pdf`}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            >
+              Download PDF
+            </a>
+            <a
+              href={`/accountant/cases/${props.caseId}/pch/export/xlsx`}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            >
+              Download Excel
+            </a>
+            {props.caseStatus === "filed" || props.caseStatus === "complete" ? (
+              <a
+                href={`/accountant/cases/${props.caseId}/pch/export/capium`}
+                className="rounded border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
+                title="Signed-off figures formatted for Capium Self Assessment import"
+              >
+                Capium CSV
+              </a>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {/* Dual sign-off status band */}
+      <PriorYearAnomalyPanel
+        anomalies={props.priorYearAnomalies}
+        priorYearLabel={props.priorYearLabel}
+      />
+
+      {/* Pre-filing readiness band */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 mb-6">
-        <h2 className="text-sm font-bold mb-3">Dual sign-off status</h2>
+        <h2 className="text-sm font-bold mb-3">Ready to hand back to client?</h2>
         <ul className="text-sm space-y-1">
           <li>
             <span className={allResolved ? "text-emerald-700" : "text-amber-700"}>
@@ -79,15 +116,13 @@ export function PchAccountantView(props: {
             </span>{" "}
             Accountant checks: <strong>{resolvedCount} of {total}</strong> resolved
           </li>
-          <li>
-            <span className={props.approvalAt ? "text-emerald-700" : "text-amber-700"}>
-              {props.approvalAt ? "✓" : "•"}
-            </span>{" "}
-            Client approval:{" "}
-            {props.approvalAt
-              ? <>Approved by {props.approvalName} on {new Date(props.approvalAt).toLocaleString()}</>
-              : <>Not yet approved by client</>}
-          </li>
+          {props.approvalAt ? (
+            <li>
+              <span className="text-emerald-700">✓</span>{" "}
+              Client approval signed: {props.approvalName} on{" "}
+              {new Date(props.approvalAt).toLocaleString()}
+            </li>
+          ) : null}
         </ul>
         <div className="mt-4 flex items-center gap-3">
           <button type="button"
@@ -99,8 +134,9 @@ export function PchAccountantView(props: {
           {err && <span className="text-red-600 text-xs">{err}</span>}
         </div>
         <p className="text-xs text-slate-500 mt-2">
-          Status will move to <code>client_approval</code>. The client then clicks their own
-          &quot;Approve and file&quot; button, which flips the case to <code>filed</code>.
+          Status will move to <code>client_approval</code>. The client sees the
+          figures for the first time and clicks their own &quot;Approve and
+          file&quot; button, which flips the case to <code>filed</code>.
         </p>
       </div>
 
@@ -152,6 +188,8 @@ export function PchAccountantView(props: {
           />
         ))}
       </div>
+
+      <div className="mt-10">{props.messagesPanel}</div>
     </main>
   );
 }
@@ -188,7 +226,7 @@ function OverridableSnapshot({
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <p className="text-xs text-slate-500 mb-3">
-        Snapshot last run: {snapshotAt ? new Date(snapshotAt).toLocaleString() : "—"}
+        Snapshot last run: {snapshotAt ? new Date(snapshotAt).toLocaleString() : ", "}
         {" · "}
         <span className="text-slate-400">Click any value to override.</span>
       </p>
@@ -342,7 +380,7 @@ function OverridesPanel({
   const fieldLabel = (path: string) =>
     PCH_OVERRIDE_FIELDS.find((f) => f.path === path)?.label ?? path;
   const fmt = (v: string | null) =>
-    v === null ? "—"
+    v === null ? ", "
     : Number.isFinite(Number(v)) ? money(Number(v))
     : v;
   const author = (uid: string | null) =>
@@ -373,7 +411,7 @@ function OverridesPanel({
                   ? <span className="text-slate-500 italic">reverted</span>
                   : fmt(h.new_value)}
               </td>
-              <td className="py-2 px-3 text-xs text-slate-600">{h.reason || "—"}</td>
+              <td className="py-2 px-3 text-xs text-slate-600">{h.reason || ", "}</td>
               <td className="py-2 px-3 text-xs text-slate-600">{author(h.overridden_by)}</td>
             </tr>
           ))}
@@ -457,12 +495,12 @@ function Sa302Reconciliation({
       ? "border-emerald-300 bg-emerald-50 text-emerald-800"
       : "border-slate-200 bg-slate-50 text-slate-600";
   const bannerText = mismatches.length > 0
-    ? `${mismatches.length} ${mismatches.length === 1 ? "box" : "boxes"} differ — resolve before filing`
+    ? `${mismatches.length} ${mismatches.length === 1 ? "box" : "boxes"} differ, resolve before filing`
     : allFilled && allPopulatedMatch
-      ? "SA302 matches tab 8 — safe to file"
+      ? "Entered figures match the engine, safe to file"
       : populated.length === 0
-        ? "No software figures pasted yet"
-        : `${populated.length} of ${SA302_COMPARE_FIELDS.length} pasted, all matching so far`;
+        ? "No figures entered yet"
+        : `${populated.length} of ${SA302_COMPARE_FIELDS.length} entered, all matching so far`;
 
   const save = () => start(async () => {
     const values: Record<string, number | null> = {};
@@ -496,7 +534,7 @@ function Sa302Reconciliation({
             <tr>
               <th className="text-left py-2 px-3">Field</th>
               <th className="text-right py-2 px-3 w-32">Engine £</th>
-              <th className="text-right py-2 px-3 w-36">Software SA302 £</th>
+              <th className="text-right py-2 px-3 w-36">Accountant input £</th>
               <th className="text-right py-2 px-3 w-24">Diff</th>
               <th className="text-center py-2 px-3 w-12"></th>
             </tr>
@@ -571,7 +609,7 @@ function GroupRows({
               (r.match === true ? "text-emerald-700"
                 : r.match === false ? "text-red-700 font-semibold"
                 : "text-slate-400")}>
-              {r.diff === null ? "—" : (r.diff > 0 ? "+" : "") + fmt(r.diff, decimals)}
+              {r.diff === null ? ", " : (r.diff > 0 ? "+" : "") + fmt(r.diff, decimals)}
             </td>
             <td className="py-2 px-3 text-center">
               {r.match === true ? <span className="text-emerald-700">✓</span>

@@ -45,12 +45,12 @@ export function taxYearBounds(ty: UkTaxYear): { yearStart: Date; yearEnd: Date }
 
 // Deadlines are keyed off the tax-year end:
 //   registration: 5 October of the calendar year the tax year ended in
-//                 (first year of trading only — subsequent years do not
+//                 (first year of trading only, subsequent years do not
 //                 have a separate registration deadline, so we still
 //                 emit it per-year but only flag "missed" for the first)
 //   filing:       31 January of the calendar year AFTER the tax year end
 //   payment:      31 January of the same date
-function deadlinesForYear(ty: UkTaxYear): {
+export function deadlinesForYear(ty: UkTaxYear): {
   registrationDeadline: Date;
   filingDeadline: Date;
   paymentDeadline: Date;
@@ -77,7 +77,7 @@ export function computeReturnsOwed(input: ReturnsOwedInput): ReturnsOwed {
 
   const firstYear = dateToTaxYear(input.tradingStartDate);
   // Last year the client has traded in. If they stopped, use that year.
-  // Otherwise use the tax year of today — but ONLY once that year has
+  // Otherwise use the tax year of today, but ONLY once that year has
   // ended, because you cannot owe a return for a year that is still in
   // progress. For a year still in progress we include it only when the
   // trading has stopped before 5 April (i.e. end of year), i.e. the

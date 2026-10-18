@@ -10,27 +10,37 @@ import {
   savePchVehicleAction,
   setPchDocStatusAction,
   uploadPchDocumentAction,
-  runEngineAndSnapshotAction,
+  submitForReviewAction,
   recordClientApprovalAction,
 } from "@/app/client/pch/actions";
+import {
+  ExtractionReview,
+  type ExtractionReviewPayload,
+} from "./extraction-review";
+import {
+  PriorYearPrompt,
+  type PriorYearOption,
+} from "./prior-year-prompt";
+import { ExtractionSummaryPanel } from "./extraction-summary";
 import {
   validateClientTab,
   canRunDraft,
   warnBoxMismatch,
 } from "@/lib/pch/validation";
 
-// Compact one-page workspace for the automated PCH flow. Sections:
-//   1. Documents (24 slots)
-//   2. Tab 1 Client details
-//   3. Tab 2 Income lines
-//   4. Tab 3 Expense lines
-//   5. Tab 4 Vehicle
-//   6. Draft output (engine)
-//   7. Approval (typed name + timestamp)
+// Status-aware workspace for the automated PCH flow.
 //
-// Phase 2a: functional-first. Styling is minimal Tailwind. Dynamic rows
-// managed as local state; bulk-replace on save so there is no row-level
-// CRUD complexity.
+//   submitted     -> editable intake (sections 1-5) + "Submit for
+//                    accountant review" button at the bottom.
+//   in_review /   -> intake visible read-only, with a "Your accountant
+//     prepared       is reviewing" panel. No figures.
+//   client_approval -> figures + Approve button. First time the client
+//                    sees any number.
+//   filed /       -> final figures + confirmation banner.
+//     complete
+//
+// All mutating actions re-check status server-side; the UI changes
+// here are UX-first, not the security boundary.
 
 type Slot = {
   code: string; section: string; display_name: string;
@@ -62,6 +72,9 @@ export function PchClientWorkspace(props: {
   docSlots: Slot[];
   docStatus: DocStatus[];
   uploadedDocs: UploadedDoc[];
+  extractions: ExtractionReviewPayload[];
+  priorYearOptions: PriorYearOption[];
+  messagesPanel: React.ReactNode;
   engineSnapshot: TaxEngineOutput | null;
   engineSnapshotAt: string | null;
   approvalAt: string | null;
@@ -69,9 +82,16 @@ export function PchClientWorkspace(props: {
 }) {
   const h2 = "text-lg font-bold mt-10 mb-3 border-b border-slate-200 pb-2";
   const card = "rounded-lg border border-slate-200 bg-white p-4";
+  const status = props.caseStatus;
+  const editable = status === "submitted";
+  const withAccountant = status === "in_review" || status === "prepared";
+  const awaitingApproval = status === "client_approval";
+  const filed = status === "filed" || status === "complete";
+
   // Readiness check uses the last-saved income + vehicle state (what
-  // the engine would read on Run draft). Live edits in the forms do not
-  // flip the readiness state until the user hits Save in each tab.
+  // the engine would read on Submit for review). Live edits in the
+  // forms do not flip the readiness state until the user hits Save in
+  // each tab.
   const readiness = useMemo(() => canRunDraft(
     props.incomeLines.map((l) => ({
       grossTakings: (l.gross_takings_pence ?? 0) / 100,
@@ -84,68 +104,223 @@ export function PchClientWorkspace(props: {
       business_pct_override: Number(props.vehicle.business_pct_override ?? 0) || null,
     } : null,
   ), [props.incomeLines, props.vehicle]);
+
   return (
     <main className="mx-auto max-w-4xl p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Uber / PHV automated return</h1>
         <p className="text-sm text-slate-600 mt-1">
-          Case {props.caseId.slice(0, 8)} — status <strong>{props.caseStatus}</strong>
+          Case {props.caseId.slice(0, 8)}. Status <strong>{status}</strong>.
         </p>
       </div>
 
-      <h2 className={h2}>1. Documents</h2>
-      <DocSection
-        caseId={props.caseId}
-        slots={props.docSlots}
-        status={props.docStatus}
-        uploaded={props.uploadedDocs}
-      />
+      {awaitingApproval && props.engineSnapshot ? (
+        <ApprovalView
+          caseId={props.caseId}
+          snapshot={props.engineSnapshot}
+          snapshotAt={props.engineSnapshotAt}
+          approvalAt={props.approvalAt}
+          approvalName={props.approvalName}
+        />
+      ) : filed && props.engineSnapshot ? (
+        <FiledView
+          snapshot={props.engineSnapshot}
+          approvalAt={props.approvalAt}
+          approvalName={props.approvalName}
+        />
+      ) : (
+        <>
+          {withAccountant ? (
+            <WithAccountantBanner />
+          ) : null}
 
-      <h2 className={h2}>2. Your details and other income</h2>
-      <div className={card}>
-        <ClientTabForm caseId={props.caseId} initial={props.head ?? {}} />
+          {props.priorYearOptions.length > 0 ? (
+            <PriorYearPrompt
+              parentCaseId={props.caseId}
+              years={props.priorYearOptions}
+              editable={editable}
+            />
+          ) : null}
+
+          <ExtractionSummaryPanel extractions={props.extractions} />
+
+          <fieldset disabled={!editable} className={editable ? "" : "opacity-80"}>
+            <h2 className={h2}>1. Documents</h2>
+            <DocSection
+              caseId={props.caseId}
+              slots={props.docSlots}
+              status={props.docStatus}
+              uploaded={props.uploadedDocs}
+              extractions={props.extractions}
+              editable={editable}
+            />
+
+            <h2 className={h2}>2. Your details and other income</h2>
+            <div className={card}>
+              <ClientTabForm caseId={props.caseId} initial={props.head ?? {}} editable={editable} />
+            </div>
+
+            <h2 className={h2}>3. Income from driving</h2>
+            <div className={card}>
+              <IncomeSection caseId={props.caseId} initial={props.incomeLines} editable={editable} />
+            </div>
+
+            <h2 className={h2}>4. Business expenses</h2>
+            <div className={card}>
+              <ExpenseSection caseId={props.caseId} initial={props.expenseLines} editable={editable} />
+            </div>
+
+            <h2 className={h2}>5. Your car, mileage and phone use</h2>
+            <div className={card}>
+              <VehicleForm caseId={props.caseId} initial={props.vehicle ?? {}} editable={editable} />
+            </div>
+          </fieldset>
+
+          {editable ? (
+            <SubmitForReviewSection caseId={props.caseId} readiness={readiness} />
+          ) : null}
+        </>
+      )}
+
+      <div className="mt-10">{props.messagesPanel}</div>
+    </main>
+  );
+}
+
+// Banner shown while the accountant is working. Replaces the figures
+// view the client used to see so there's no risk of them acting on
+// a draft number before the accountant has validated it.
+function WithAccountantBanner() {
+  return (
+    <div className="mb-6 rounded-lg border border-sky-200 bg-sky-50 p-4">
+      <p className="text-sm font-semibold text-sky-900">
+        Your return is with your accountant.
+      </p>
+      <p className="mt-1 text-xs text-sky-800">
+        They are reviewing what you sent and preparing your figures. You will
+        get a notification when they are ready for your approval. Your intake
+        below is read-only while they work.
+      </p>
+    </div>
+  );
+}
+
+// First time the client sees any number: the accountant has advanced
+// the case to client_approval. One click signs off and files.
+function ApprovalView(props: {
+  caseId: string;
+  snapshot: TaxEngineOutput;
+  snapshotAt: string | null;
+  approvalAt: string | null;
+  approvalName: string | null;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+        <p className="text-sm font-semibold text-emerald-900">
+          Your figures are ready for your approval.
+        </p>
+        <p className="mt-1 text-xs text-emerald-800">
+          Your accountant has prepared the Self Assessment numbers below.
+          Review them, then approve to file. Message your accountant first if
+          anything looks wrong.
+        </p>
       </div>
-
-      <h2 className={h2}>3. Income from driving</h2>
-      <div className={card}>
-        <IncomeSection caseId={props.caseId} initial={props.incomeLines} />
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <SnapshotTable s={props.snapshot} />
       </div>
-
-      <h2 className={h2}>4. Business expenses</h2>
-      <div className={card}>
-        <ExpenseSection caseId={props.caseId} initial={props.expenseLines} />
-      </div>
-
-      <h2 className={h2}>5. Your car, mileage and phone use</h2>
-      <div className={card}>
-        <VehicleForm caseId={props.caseId} initial={props.vehicle ?? {}} />
-      </div>
-
-      <h2 className={h2}>6. Draft figures</h2>
-      <DraftSection
-        caseId={props.caseId}
-        snapshot={props.engineSnapshot}
-        snapshotAt={props.engineSnapshotAt}
-        readiness={readiness}
-      />
-
-      <h2 className={h2}>7. Approval</h2>
       <ApprovalSection
         caseId={props.caseId}
-        snapshotAt={props.engineSnapshotAt}
+        snapshotAt={props.snapshotAt}
         approvalAt={props.approvalAt}
         approvalName={props.approvalName}
       />
-    </main>
+    </div>
+  );
+}
+
+// Terminal view once the client has signed off.
+function FiledView(props: {
+  snapshot: TaxEngineOutput;
+  approvalAt: string | null;
+  approvalName: string | null;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4">
+        <p className="text-sm font-semibold text-emerald-900">
+          Approved and filed.
+        </p>
+        {props.approvalAt && props.approvalName ? (
+          <p className="mt-1 text-xs text-emerald-800">
+            Approved by {props.approvalName} on{" "}
+            {new Date(props.approvalAt).toLocaleString()}.
+          </p>
+        ) : null}
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <SnapshotTable s={props.snapshot} />
+      </div>
+    </div>
+  );
+}
+
+// Replaces the old "Run draft" button. One click runs the engine
+// server-side, auto-assigns an accountant, and advances the case.
+function SubmitForReviewSection({
+  caseId, readiness,
+}: {
+  caseId: string;
+  readiness: { ok: boolean; blockers: string[] };
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const submit = () => start(async () => {
+    const r = await submitForReviewAction(caseId);
+    if (!r.ok) setErr(r.error);
+    else { setErr(null); router.refresh(); }
+  });
+  return (
+    <div className="mt-10 rounded-lg border border-slate-200 bg-white p-5">
+      <h2 className="text-lg font-bold mb-1">Ready to send to your accountant?</h2>
+      <p className="text-sm text-slate-600 mb-3">
+        Once you submit, your accountant takes over and prepares your figures.
+        You will get a notification when they are ready for your approval. You
+        will not be able to edit the intake while they work, so make sure
+        everything above is complete and correct.
+      </p>
+      {!readiness.ok ? (
+        <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold mb-1">A few things first:</p>
+          <ul className="list-disc list-inside space-y-0.5 text-xs">
+            {readiness.blockers.map((b) => <li key={b}>{b}</li>)}
+          </ul>
+        </div>
+      ) : null}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={pending || !readiness.ok}
+          className="rounded bg-slate-900 px-4 py-2 text-white text-sm font-medium disabled:opacity-50"
+        >
+          {pending ? "Submitting..." : "Submit for accountant review"}
+        </button>
+        {err ? <span className="text-xs text-red-600">{err}</span> : null}
+      </div>
+    </div>
   );
 }
 
 // -------------------- Documents --------------------
 
 function DocSection({
-  caseId, slots, status, uploaded,
+  caseId, slots, status, uploaded, extractions, editable = true,
 }: {
   caseId: string; slots: Slot[]; status: DocStatus[]; uploaded: UploadedDoc[];
+  extractions: ExtractionReviewPayload[];
+  editable?: boolean;
 }) {
   const router = useRouter();
   const statusByCode = new Map(status.map((s) => [s.slot_code, s]));
@@ -154,6 +329,12 @@ function DocSection({
     const key = d.requirement_key ?? "";
     if (!uploadedByKey.has(key)) uploadedByKey.set(key, []);
     uploadedByKey.get(key)!.push(d);
+  }
+  const extractionsBySlot = new Map<string, ExtractionReviewPayload[]>();
+  for (const e of extractions) {
+    const list = extractionsBySlot.get(e.slotCode) ?? [];
+    list.push(e);
+    extractionsBySlot.set(e.slotCode, list);
   }
   const sections = Array.from(new Set(slots.map((s) => s.section)));
   return (
@@ -169,6 +350,8 @@ function DocSection({
                 slot={s}
                 status={statusByCode.get(s.code)}
                 uploaded={uploadedByKey.get(s.code) ?? []}
+                extractions={extractionsBySlot.get(s.code) ?? []}
+                canEdit={editable}
                 onChanged={() => router.refresh()}
               />
             ))}
@@ -180,10 +363,11 @@ function DocSection({
 }
 
 function DocRow({
-  caseId, slot, status, uploaded, onChanged,
+  caseId, slot, status, uploaded, extractions, canEdit, onChanged,
 }: {
   caseId: string; slot: Slot; status: DocStatus | undefined;
-  uploaded: UploadedDoc[]; onChanged: () => void;
+  uploaded: UploadedDoc[]; extractions: ExtractionReviewPayload[];
+  canEdit: boolean; onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -195,9 +379,21 @@ function DocRow({
     setBusy(true); setErr(null);
     const fd = new FormData();
     fd.set("file", file);
-    const r = await uploadPchDocumentAction(caseId, slot.code, fd);
-    setBusy(false);
-    if (!r.ok) setErr(r.error);
+    // Any network / body-size / server error has to clear the busy
+    // state and surface a message; otherwise the Upload label is stuck
+    // at "Uploading..." forever and the client has no idea what happened.
+    try {
+      const r = await uploadPchDocumentAction(caseId, slot.code, fd);
+      if (!r.ok) setErr(r.error);
+    } catch (e) {
+      setErr(
+        e instanceof Error
+          ? "Upload failed: " + e.message
+          : "Upload failed. Try again, and if it keeps failing, re-save the file smaller.",
+      );
+    } finally {
+      setBusy(false);
+    }
     onChanged();
   };
   const markNA = async () => {
@@ -260,13 +456,21 @@ function DocRow({
         )}
         {err && <span className="text-red-600">{err}</span>}
       </div>
+      {extractions.length > 0 ? (
+        <div className="space-y-2">
+          {extractions.map((ext) => (
+            <ExtractionReview key={ext.id} ext={ext} canEdit={canEdit} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 // -------------------- Tab 1 Client --------------------
 
-function ClientTabForm({ caseId, initial }: { caseId: string; initial: Head }) {
+function ClientTabForm({ caseId, initial, editable = true }: { caseId: string; initial: Head; editable?: boolean }) {
+  void editable;
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [state, setState] = useState<Head>(initial);
@@ -342,7 +546,7 @@ function ClientTabForm({ caseId, initial }: { caseId: string; initial: Head }) {
           <input className={inputCls("cl_utr")} value={String(field("cl_utr"))}
             onChange={(e) => set("cl_utr", e.target.value)} />
           {fieldErr("cl_utr")}</label>
-        <label className="block"><span className={label}>NI number</span>
+        <label className="block"><span className={label}>NI Number</span>
           <input className={inputCls("cl_nino")} value={String(field("cl_nino"))}
             onChange={(e) => set("cl_nino", e.target.value)} />
           {fieldErr("cl_nino")}</label>
@@ -380,7 +584,7 @@ function ClientTabForm({ caseId, initial }: { caseId: string; initial: Head }) {
           {fieldErr("cl_stop_date")}</label>
       </div>
 
-      <h3 className="text-sm font-bold mt-4">Other income (6 Apr 2025 to 5 Apr 2026)</h3>
+      <h3 className="text-sm font-bold mt-4">Other income (6 Apr 2025, 5 Apr 2026)</h3>
       <div className={grid}>
         {[
           ["Employment pay (P60/P45 gross) £", "employment_income_pence", "employment_income_pound"],
@@ -463,9 +667,10 @@ const EMPTY_INCOME: IncomeRow = {
   on_trip_miles: 0, dead_miles: 0, line_type: "Fares",
 };
 
-function IncomeSection({ caseId, initial }: { caseId: string; initial: IncomeRow[] }) {
+function IncomeSection({ caseId, initial, editable = true }: { caseId: string; initial: IncomeRow[]; editable?: boolean }) {
+  void editable;
   const [rows, setRows] = useState<IncomeRow[]>(
-    initial.length ? initial : [{ ...EMPTY_INCOME, source: "Uber — rides" }]
+    initial.length ? initial : [{ ...EMPTY_INCOME, source: "Uber, rides" }]
   );
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
@@ -557,7 +762,8 @@ const CATEGORIES = [
   "VAT paid (Flat Rate Scheme)",
 ] as const;
 
-function ExpenseSection({ caseId, initial }: { caseId: string; initial: ExpenseRow[] }) {
+function ExpenseSection({ caseId, initial, editable = true }: { caseId: string; initial: ExpenseRow[]; editable?: boolean }) {
+  void editable;
   const [rows, setRows] = useState<ExpenseRow[]>(
     initial.length ? initial : [{
       label: "Fuel", amount_paid_pence: 0, car_cost: "Yes",
@@ -639,7 +845,8 @@ function ExpenseSection({ caseId, initial }: { caseId: string; initial: ExpenseR
 
 // -------------------- Tab 4 Vehicle --------------------
 
-function VehicleForm({ caseId, initial }: { caseId: string; initial: Vehicle }) {
+function VehicleForm({ caseId, initial, editable = true }: { caseId: string; initial: Vehicle; editable?: boolean }) {
+  void editable;
   const [state, setState] = useState<Vehicle>(initial);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
@@ -754,50 +961,6 @@ function VehicleForm({ caseId, initial }: { caseId: string; initial: Vehicle }) 
   );
 }
 
-// -------------------- 6. Draft output --------------------
-
-function DraftSection({
-  caseId, snapshot, snapshotAt, readiness,
-}: {
-  caseId: string; snapshot: TaxEngineOutput | null; snapshotAt: string | null;
-  readiness: { ok: boolean; blockers: string[] };
-}) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [err, setErr] = useState<string | null>(null);
-  const run = () => start(async () => {
-    const r = await runEngineAndSnapshotAction(caseId);
-    if (!r.ok) setErr(r.error);
-    else setErr(null);
-    router.refresh();
-  });
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-      {!readiness.ok && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="font-semibold mb-1">Not ready to run the draft:</p>
-          <ul className="list-disc list-inside space-y-0.5 text-xs">
-            {readiness.blockers.map((b) => <li key={b}>{b}</li>)}
-          </ul>
-        </div>
-      )}
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={run} disabled={pending || !readiness.ok}
-          className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-          {pending ? "Running..." : snapshot ? "Re-run draft" : "Run draft"}
-        </button>
-        {snapshotAt && (
-          <span className="text-xs text-slate-500">
-            Last run: {new Date(snapshotAt).toLocaleString()}
-          </span>
-        )}
-        {err && <span className="text-red-600 text-xs">{err}</span>}
-      </div>
-      {snapshot && <SnapshotTable s={snapshot} />}
-    </div>
-  );
-}
-
 function SnapshotTable({ s }: { s: TaxEngineOutput }) {
   const money = (n: number) =>
     "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -836,8 +999,9 @@ function SnapshotTable({ s }: { s: TaxEngineOutput }) {
   );
 }
 
-// -------------------- 7. Approval --------------------
-
+// Final sign-off control. Only rendered when the parent has confirmed
+// status is client_approval and a snapshot exists; both guards also
+// enforced server-side by recordClientApprovalAction.
 function ApprovalSection({
   caseId, snapshotAt, approvalAt, approvalName,
 }: {
@@ -848,23 +1012,15 @@ function ApprovalSection({
   const [name, setName] = useState("");
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  void snapshotAt;
 
   if (approvalAt && approvalName) {
     return (
       <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4">
         <p className="text-sm">
-          <strong>Approved</strong> by {approvalName} on {new Date(approvalAt).toLocaleString()}.
+          <strong>Approved and filed</strong> by {approvalName} on{" "}
+          {new Date(approvalAt).toLocaleString()}.
         </p>
-        <p className="text-xs text-slate-600 mt-1">
-          Your accountant will now complete their 33-point review and request filing.
-        </p>
-      </div>
-    );
-  }
-  if (!snapshotAt) {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-        Run the draft first, then come back here to approve.
       </div>
     );
   }
@@ -877,7 +1033,8 @@ function ApprovalSection({
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
       <p className="text-sm text-slate-700">
         By typing your name below I approve the attached Profit and Loss Account for the year
-        ended 5 April 2026. These have been prepared from information I supplied.
+        ended 5 April 2026 and authorise my accountant to file the Self Assessment on this
+        basis.
       </p>
       <div className="flex items-center gap-3">
         <input
@@ -888,7 +1045,7 @@ function ApprovalSection({
         />
         <button type="button" onClick={submit} disabled={pending || name.trim().length < 2}
           className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-          {pending ? "Submitting..." : "Approve"}
+          {pending ? "Filing..." : "Approve and file"}
         </button>
       </div>
       {err && <p className="text-red-600 text-xs">{err}</p>}

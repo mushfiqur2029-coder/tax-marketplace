@@ -3,7 +3,24 @@ import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensurePchHeadRow } from "@/app/client/pch/actions";
 import { PchClientWorkspace } from "./pch-client-workspace";
-import type { TaxEngineOutput } from "@/lib/tax-engine";
+import type { ExtractionReviewPayload } from "./extraction-review";
+import type { PriorYearOption } from "./prior-year-prompt";
+import { SLOT_APPLY_MAPS } from "@/lib/pch/extraction-apply";
+import {
+  computeReturnsOwed,
+  hasRatePackFor,
+  type TaxEngineOutput,
+  type UkTaxYear,
+} from "@/lib/tax-engine";
+import {
+  CaseMessagesPanel,
+  type CaseMessageView,
+} from "@/components/case/case-messages-panel";
+
+// Dynamic so a brand new extraction row (populated in a Next after()
+// callback after an upload) is visible on the very next page load,
+// not stale from an earlier render.
+export const dynamic = "force-dynamic";
 
 // Entry point for the automated PCH flow (phase 2a). One page with
 // collapsible sections: Documents, Tab 1 Client, Tab 2 Income,
@@ -55,6 +72,61 @@ export default async function PchClientPage({
     .eq("case_id", id)
     .order("uploaded_at", { ascending: false });
 
+  // Compute outstanding prior-year returns. We filter the output so we
+  // only show years OLDER than this case's own tax year (the current
+  // year's deadline is tracked on the case itself, not here) and we
+  // omit any year the client has already spawned a child case for.
+  const priorYearOptions = await buildPriorYearOptions({
+    admin,
+    parentCaseId: id,
+    currentTaxYear: (head.data?.tax_year as UkTaxYear) ?? "2025/26",
+    tradingStartDate: head.data?.cl_start_date ? new Date(head.data.cl_start_date) : null,
+    tradingEndDate: head.data?.cl_stop_date ? new Date(head.data.cl_stop_date) : null,
+  });
+
+  // Build the per-document extraction review payloads. We attach the
+  // slot's apply-map labels + targetable flags here so the client UI
+  // can render friendly field names and know which fields will actually
+  // write to the intake tables.
+  const { data: extractionsRaw } = await admin
+    .from("pch_doc_extractions")
+    .select("id, slot_code, status, overall_confidence, document_type, fields, field_states, error_message")
+    .eq("case_id", id)
+    .order("created_at", { ascending: false });
+  const extractions: ExtractionReviewPayload[] = (extractionsRaw ?? []).map((e) => {
+    const applyMap = SLOT_APPLY_MAPS[e.slot_code];
+    const targetable: Record<string, boolean> = {};
+    if (applyMap) {
+      for (const [key, target] of Object.entries(applyMap.targets)) {
+        targetable[key] = target.table !== "none";
+      }
+    }
+    return {
+      id: e.id,
+      slotCode: e.slot_code,
+      status: e.status,
+      overallConfidence: e.overall_confidence,
+      documentType: e.document_type,
+      fields: (e.fields ?? {}) as ExtractionReviewPayload["fields"],
+      fieldStates: (e.field_states ?? {}) as ExtractionReviewPayload["fieldStates"],
+      errorMessage: e.error_message,
+      labels: applyMap?.label ?? {},
+      targetable,
+    };
+  });
+
+  // Hide the engine snapshot from the client until the accountant has
+  // explicitly moved the case to client_approval. Up to that point the
+  // client sees intake only (editable while status is submitted,
+  // read-only once in_review/prepared); the figures are first shown on
+  // the approval screen.
+  const showFigures =
+    caseRow.status === "client_approval" ||
+    caseRow.status === "filed" ||
+    caseRow.status === "complete";
+
+  const messages = await loadCaseMessages(admin, id);
+
   return (
     <PchClientWorkspace
       caseId={id}
@@ -66,10 +138,84 @@ export default async function PchClientPage({
       docSlots={slots.data ?? []}
       docStatus={docStatus.data ?? []}
       uploadedDocs={uploadedDocs ?? []}
-      engineSnapshot={(snapshot.data?.engine_snapshot ?? null) as TaxEngineOutput | null}
-      engineSnapshotAt={snapshot.data?.engine_snapshot_at ?? null}
+      extractions={extractions}
+      priorYearOptions={priorYearOptions}
+      engineSnapshot={
+        showFigures
+          ? ((snapshot.data?.engine_snapshot ?? null) as TaxEngineOutput | null)
+          : null
+      }
+      engineSnapshotAt={showFigures ? (snapshot.data?.engine_snapshot_at ?? null) : null}
       approvalAt={snapshot.data?.client_approval_at ?? null}
       approvalName={snapshot.data?.client_approval_name ?? null}
+      messagesPanel={<CaseMessagesPanel caseId={id} messages={messages} viewerRole="client" viewerUserId={me.id} />}
     />
   );
+}
+
+async function loadCaseMessages(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+): Promise<CaseMessageView[]> {
+  const { data: rows } = await admin
+    .from("case_messages")
+    .select("id, author_id, author_role, body, created_at")
+    .eq("case_id", caseId)
+    .order("created_at", { ascending: true });
+  const list = (rows ?? []) as { id: string; author_id: string; author_role: "client" | "accountant" | "admin"; body: string; created_at: string }[];
+  if (list.length === 0) return [];
+  const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
+  const { data: users } = await admin
+    .from("users")
+    .select("id, email")
+    .in("id", authorIds);
+  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
+  return list.map((m) => ({
+    id: m.id,
+    authorRole: m.author_role,
+    authorLabel: emailById.get(m.author_id) ?? m.author_id.slice(0, 8),
+    body: m.body,
+    createdAt: m.created_at,
+  }));
+}
+
+// Build the per-year list of prior-year options for the prompt panel.
+// Scope: years strictly OLDER than the current case's own tax year
+// (the current year is tracked by the case itself). Marks each year as
+// supported (we have a rate pack) and alreadySpawned (a child case
+// already exists for it).
+async function buildPriorYearOptions({ admin, parentCaseId, currentTaxYear, tradingStartDate, tradingEndDate }: {
+  admin: ReturnType<typeof createAdminClient>;
+  parentCaseId: string;
+  currentTaxYear: UkTaxYear;
+  tradingStartDate: Date | null;
+  tradingEndDate: Date | null;
+}): Promise<PriorYearOption[]> {
+  if (!tradingStartDate) return [];
+  const asOf = new Date();
+  const owed = computeReturnsOwed({
+    tradingStartDate,
+    tradingEndDate: tradingEndDate ?? undefined,
+    alreadyFiledYears: [currentTaxYear],
+    asOf,
+  });
+  if (owed.years.length === 0) return [];
+
+  const { data: existingChildren } = await admin
+    .from("cases")
+    .select("tax_year_label")
+    .eq("parent_case_id", parentCaseId);
+  const alreadySpawnedSet = new Set(
+    (existingChildren ?? []).map((c) => c.tax_year_label).filter(Boolean) as string[],
+  );
+
+  // Oldest first (same order as returns-owed), capped at 5 to keep the
+  // panel sane for very old clients.
+  return owed.years.slice(0, 5).map((y) => ({
+    taxYear: y.taxYear,
+    filingDeadline: y.filingDeadline.toISOString(),
+    overdue: y.filingOverdue,
+    supported: hasRatePackFor(y.taxYear),
+    alreadySpawned: alreadySpawnedSet.has(y.taxYear),
+  }));
 }

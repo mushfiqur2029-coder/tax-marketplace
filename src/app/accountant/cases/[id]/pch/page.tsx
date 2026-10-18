@@ -3,6 +3,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { PchAccountantView } from "./pch-accountant-view";
+import { computePriorYearAnomalies, type Anomaly } from "@/lib/pch/prior-year-anomalies";
+import {
+  CaseMessagesPanel,
+  type CaseMessageView,
+} from "@/components/case/case-messages-panel";
 
 // Phase 2a accountant surface: 33-check review + read-only engine
 // snapshot + "request client filing" button. Full override UI + SA
@@ -46,6 +51,12 @@ export default async function PchAccountantPage({
     (users.data ?? []).map((u) => [u.id, u.full_name as string | null]),
   );
 
+  const { anomalies, priorYearLabel } = await loadPriorYearAnomalies(
+    admin, caseRow.client_id, caseRow.id, head.data?.tax_year ?? null, snapshot,
+  );
+
+  const messages = await loadMessages(admin, id);
+
   return (
     <PchAccountantView
       caseId={id}
@@ -59,6 +70,81 @@ export default async function PchAccountantPage({
       overrideHistory={overrideHistory.data ?? []}
       userDisplayNames={Object.fromEntries(userById)}
       sa302Comparison={head.data?.sa302_comparison ?? null}
+      priorYearAnomalies={anomalies}
+      priorYearLabel={priorYearLabel}
+      messagesPanel={<CaseMessagesPanel caseId={id} messages={messages} viewerRole="accountant" viewerUserId={me.id} />}
     />
   );
+}
+
+async function loadMessages(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+): Promise<CaseMessageView[]> {
+  const { data: rows } = await admin
+    .from("case_messages")
+    .select("id, author_id, author_role, body, created_at")
+    .eq("case_id", caseId)
+    .order("created_at", { ascending: true });
+  const list = (rows ?? []) as { id: string; author_id: string; author_role: "client" | "accountant" | "admin"; body: string; created_at: string }[];
+  if (list.length === 0) return [];
+  const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
+  const { data: users } = await admin.from("users").select("id, email").in("id", authorIds);
+  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
+  return list.map((m) => ({
+    id: m.id,
+    authorRole: m.author_role,
+    authorLabel: emailById.get(m.author_id) ?? m.author_id.slice(0, 8),
+    body: m.body,
+    createdAt: m.created_at,
+  }));
+}
+
+// Pick the most recent prior tax-year case the same client has had,
+// filtered to the same tier so we're not comparing a PCH year against
+// something unrelated. Returns the empty case when nothing comparable
+// is on file; callers render nothing.
+async function loadPriorYearAnomalies(
+  admin: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  currentCaseId: string,
+  currentTaxYear: string | null,
+  currentSnapshot: TaxEngineOutput | null,
+): Promise<{ anomalies: Anomaly[]; priorYearLabel: string }> {
+  if (!currentSnapshot || !currentTaxYear) return { anomalies: [], priorYearLabel: "" };
+
+  // Same client, same tier, different case, with a snapshot. Order by
+  // tax_year desc so the latest prior year wins.
+  const { data: siblings } = await admin
+    .from("cases")
+    .select("id, tax_year_label")
+    .eq("client_id", clientId)
+    .eq("tier", "uber_phv_automated")
+    .neq("id", currentCaseId);
+  if (!siblings?.length) return { anomalies: [], priorYearLabel: "" };
+
+  const priorCandidates = siblings
+    .map((s) => ({ caseId: s.id, taxYear: s.tax_year_label ?? "" }))
+    .filter((s) => s.taxYear && s.taxYear < currentTaxYear);
+  if (priorCandidates.length === 0) return { anomalies: [], priorYearLabel: "" };
+  priorCandidates.sort((a, b) => b.taxYear.localeCompare(a.taxYear));
+  const prior = priorCandidates[0];
+
+  const [{ data: priorHead }, { data: currVehicle }, { data: priorVehicle }] = await Promise.all([
+    admin.from("pch_cases").select("engine_snapshot").eq("case_id", prior.caseId).maybeSingle(),
+    admin.from("pch_vehicle").select("odo_start, odo_end, other_business_miles").eq("case_id", currentCaseId).maybeSingle(),
+    admin.from("pch_vehicle").select("odo_start, odo_end, other_business_miles").eq("case_id", prior.caseId).maybeSingle(),
+  ]);
+  const priorSnapshot = (priorHead?.engine_snapshot ?? null) as TaxEngineOutput | null;
+  if (!priorSnapshot) return { anomalies: [], priorYearLabel: "" };
+
+  const miles = (v: typeof currVehicle): number =>
+    v ? Math.max(0, (v.odo_end ?? 0) - (v.odo_start ?? 0)) + (v.other_business_miles ?? 0) : 0;
+
+  const anomalies = computePriorYearAnomalies(
+    currentSnapshot,
+    priorSnapshot,
+    { current: miles(currVehicle), prior: miles(priorVehicle) },
+  );
+  return { anomalies, priorYearLabel: prior.taxYear };
 }

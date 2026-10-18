@@ -44,13 +44,16 @@ const EXCLUDE_FILENAMES = new Set([
   "sterling-marketing.zip",
 ]);
 
-const EM = ", ";
-const EN = ", ";
+// Written as code points so a self-run of this script can never mangle its
+// own constants. Prior failure mode: the script replaced its own literal
+// em/en dashes with ", ", which then matched `.slice(0, 10)` on the next run.
+const EM = String.fromCodePoint(0x2014);
+const EN = String.fromCodePoint(0x2013);
 
 function rewriteLine(line) {
   let out = line;
 
-  // 1. En-dash numeric ranges: "9 to 11" -> "9 to 11"
+  // 1. En-dash numeric ranges: "9, 11" -> "9, 11"
   out = out.replace(new RegExp("(\\d)\\s*" + EN + "\\s*(\\d)", "g"), "$1 to $2");
 
   // 2. Treat all remaining en dashes like em dashes.
@@ -103,8 +106,17 @@ await walk(ROOT, async (full) => {
   try { content = await readFile(full, "utf8"); } catch { return; }
   if (!content.includes(EM) && !content.includes(EN)) return;
 
-  const before = (content.match(new RegExp("[" + EM + EN + "]", "g")) || []).length;
-  const rewritten = content.split("\n").map(rewriteLine).join("\n");
+  // Skip the Next-generated agent-rules block (it uses em dashes and
+  // next dev re-writes them on every start; stripping them creates an
+  // endless loop).
+  const NEXT_AUTO_BLOCK = new RegExp(
+    "<!-- BEGIN:nextjs-agent-rules -->[\\s\\S]*?<!-- END:nextjs-agent-rules -->",
+    "g",
+  );
+  const before = (content.replace(NEXT_AUTO_BLOCK, "").match(new RegExp("[" + EM + EN + "]", "g")) || []).length;
+  const rewritten = content.split("\n").map((line) =>
+    NEXT_AUTO_BLOCK.test(line) ? line : rewriteLine(line),
+  ).join("\n");
   if (rewritten !== content) {
     await writeFile(full, rewritten);
     filesTouched++;

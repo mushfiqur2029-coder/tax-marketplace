@@ -39,7 +39,7 @@ const VIEWS: { key: CasesView; label: string }[] = [
 const URGENCY: { key: UrgencyFilter; label: string }[] = [
   { key: "all", label: "Any urgency" },
   { key: "safe", label: "> 14 days" },
-  { key: "soon", label: "4 to 14 days" },
+  { key: "soon", label: "4, 14 days" },
   { key: "urgent", label: "≤ 3 days / overdue" },
 ];
 

@@ -1,5 +1,5 @@
 -- Personal onboarding was blocked by RLS. The five policies written
--- during the Limited Company build (migrations 0033, 0037, 0039) were
+-- during the Limited Company build (migrations 0033 to 0037 to 0039) were
 -- scoped specifically to segment = 'limited_company_vat' instead of
 -- generically to "any paid case in its onboarding window". With
 -- segment = 'personal' live (migration 0045), those same policies

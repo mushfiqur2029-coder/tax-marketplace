@@ -38,7 +38,7 @@ Not: live browser click-through (would be ~4 to 6 hours, not in this session's b
 | M3 | No structured data (JSON-LD for Organization, Service, FAQPage). SEO rich snippets won't show. | S | Medium |
 | M4 | 3 of 16 pages are still `PlaceholderPage` content: `/about`, `/calculators`, `/guides`. Users click, see "Coming soon." | M | Medium, thin content vs real pages |
 | M5 | No cookie banner. UK GDPR allows strictly-necessary without banner; if any analytics are added later, banner required. | S | Low (not needed yet) |
-| M6 | Mobile tap targets: audited in Batch 4, 44px minimum enforced on chat/attachment removes. Marketing site itself appears OK but hasn't been live-verified at mobile widths. | S | Medium |
+| M6 | Mobile tap targets: audited in Batch 4 to 44px minimum enforced on chat/attachment removes. Marketing site itself appears OK but hasn't been live-verified at mobile widths. | S | Medium |
 | M7 | Page load: the Tailwind-compiled styles.css is 126 KB. Fine but modernization pass could tree-shake with a dedicated build. | M | Low (perf is acceptable now) |
 
 ---

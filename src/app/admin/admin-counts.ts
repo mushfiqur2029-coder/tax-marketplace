@@ -12,6 +12,7 @@ export type AdminNavCounts = {
   profileChanges: number;
   addonRequests: number;
   enquiries: number;
+  pchCases: number;
   unreadNotifications: number;
 };
 
@@ -30,6 +31,7 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
     { count: profileChanges },
     { count: addonRequests },
     { count: enquiries },
+    { count: pchCases },
     { count: unreadNotifications },
   ] = await Promise.all([
     admin
@@ -61,6 +63,10 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
       .from("service_enquiries")
       .select("id", { count: "exact", head: true })
       .eq("status", "new"),
+    admin
+      .from("cases")
+      .select("id", { count: "exact", head: true })
+      .eq("tier", "uber_phv_automated"),
     user
       ? admin
           .from("notifications")
@@ -78,6 +84,7 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
     profileChanges: profileChanges ?? 0,
     addonRequests: addonRequests ?? 0,
     enquiries: enquiries ?? 0,
+    pchCases: pchCases ?? 0,
     unreadNotifications: unreadNotifications ?? 0,
   };
 }

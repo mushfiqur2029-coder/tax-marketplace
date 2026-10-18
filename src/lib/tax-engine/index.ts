@@ -6,6 +6,11 @@ export * from "./types";
 export { UK_TAX_RATES_2025_26 } from "./rates/uk-2025-26";
 export { UK_TAX_RATES_2024_25 } from "./rates/uk-2024-25";
 export {
+  SUPPORTED_TAX_YEARS,
+  hasRatePackFor,
+  getRatePackFor,
+} from "./rates/by-year";
+export {
   computeAll,
   computeIncome,
   computeExpenses,
@@ -16,4 +21,9 @@ export {
   buildSa103sBoxes,
   computeZeroTaxCheck,
 } from "./compute";
-export { computeReturnsOwed, dateToTaxYear, taxYearBounds } from "./returns-owed";
+export {
+  computeReturnsOwed,
+  dateToTaxYear,
+  taxYearBounds,
+  deadlinesForYear,
+} from "./returns-owed";

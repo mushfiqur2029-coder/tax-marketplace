@@ -14,14 +14,13 @@ import type { PlanTier } from "@/lib/plans";
 // this is still the TOTAL (deposit + balance); use `upfrontChargePence`
 // or `balanceChargePence` to split.
 //
-// NOTE on timing: flat-fee (non-bespoke) cases do NOT snapshot the
-// price at creation; they read the tier live at each surface (letter
-// render, checkout, admin display). That means admin flipping a sale
-// on/off between engagement signing and checkout will show different
-// amounts on the letter vs the Stripe page, pre-existing behaviour
-// also true for any priceGbp edit. Bespoke cases are immune via
-// custom_fee_pence snapshotting at creation. Already-paid cases are
-// also immune since Stripe has already captured the exact amount.
+// Flat-fee (non-bespoke) cases MUST NOT snapshot the price into
+// custom_fee_pence at creation. Doing so freezes the amount at the
+// moment the client picked the tier and causes a mismatch when admin
+// toggles a sale on/off before payment, charging the stale price while
+// the UI shows the current one. Both display and checkout read this
+// function, so leaving custom_fee_pence null keeps them in lockstep.
+// Bespoke cases are the only legitimate custom_fee_pence writers.
 export function effectiveFeePence(row: {
   custom_fee_pence: number | null;
   tier?: string;

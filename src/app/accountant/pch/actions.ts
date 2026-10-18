@@ -16,8 +16,10 @@
 // enforced by the status-transition action below.
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPchReadyToApproveEmail } from "@/lib/pch/status-emails";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
   PCH_OVERRIDE_FIELD_BY_PATH,
@@ -126,7 +128,7 @@ export async function requestClientFilingAction(
   if (!evidenceCheck.ok) {
     return { ok: false, error: evidenceCheck.blockers.join(" ") };
   }
-  // Silence the lint for the unused "notDone" count — kept for future
+  // Silence the lint for the unused "notDone" count, kept for future
   // reporting on which rows the client objected to.
   void notDone;
 
@@ -146,6 +148,8 @@ export async function requestClientFilingAction(
     .eq("id", caseId)
     .eq("status", caseRow.status); // concurrency guard
   if (error) return { ok: false, error: error.message };
+
+  after(() => sendPchReadyToApproveEmail(caseId));
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   revalidatePath(`/client/cases/${caseId}/pch`);
   return { ok: true };
@@ -232,7 +236,7 @@ export async function applyPchOverrideAction(
 // SA302 reconciliation: save the values pasted from the filing
 // software so the accountant can diff them against the engine. One
 // record per case stored on pch_cases.sa302_comparison; a save replaces
-// the previous blob entirely (no history needed — the final SA302 is
+// the previous blob entirely (no history needed, the final SA302 is
 // the latest paste).
 // -------------------------------------------------------------------
 export async function savePchSa302ComparisonAction(

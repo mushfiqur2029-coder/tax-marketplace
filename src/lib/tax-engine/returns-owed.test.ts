@@ -35,11 +35,11 @@ describe("computeReturnsOwed", () => {
     // Both 2024/25 and 2025/26 have ended by Oct 2026, nothing filed
     const years = r.years.map((y) => y.taxYear);
     expect(years).toEqual(["2024/25", "2025/26"]);
-    // 2024/25 registration deadline was 5 Oct 2025 — long past
+    // 2024/25 registration deadline was 5 Oct 2025, long past
     expect(r.years[0].registrationDeadlinePassed).toBe(true);
-    // 2024/25 filing deadline was 31 Jan 2026 — overdue
+    // 2024/25 filing deadline was 31 Jan 2026, overdue
     expect(r.years[0].filingOverdue).toBe(true);
-    // 2025/26 filing deadline is 31 Jan 2027 — NOT overdue on 17 Oct 2026
+    // 2025/26 filing deadline is 31 Jan 2027. NOT overdue on 17 Oct 2026
     expect(r.years[1].filingOverdue).toBe(false);
     expect(r.anyOverdue).toBe(true);
     expect(r.anyRegistrationDeadlineMissed).toBe(true);

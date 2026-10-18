@@ -1,11 +1,11 @@
 // Catalogue of fields on the SA302 reconciliation screen (phase 2b).
 //
 // Two groups:
-//   1. SA103S boxes — what the accountant copies INTO the filing
+//   1. SA103S boxes, what the accountant copies INTO the filing
 //      software (box 9 Turnover, box 12 Car/Van/Travel, etc.). These
 //      come from the engine's sa103s output and are already rounded
 //      to whole pounds per HMRC convention.
-//   2. SA302 totals — what the filing software CALCULATES and prints
+//   2. SA302 totals, what the filing software CALCULATES and prints
 //      on the SA302 PDF (self-employment profit, income tax, Class 4,
 //      balancing payment, POA each). These let the accountant verify
 //      the software's maths matches the engine's.
@@ -95,3 +95,46 @@ export type Sa302Comparison = {
   recorded_at?: string;
   recorded_by?: string;
 };
+
+// Case-level reconciliation state. Exposed on the client dashboard
+// as a "Validated" badge when `allGreen` is true, and used by the
+// accountant readiness band to show "SA302 matches, safe to file".
+//
+// Rules:
+//   - allGreen requires every SA302 compare field to be filled AND
+//     every filled field to match within its tolerance.
+//   - A partially-filled or any-mismatched reconciliation is NOT
+//     validated; the client badge stays off.
+//   - If there's no engine snapshot or no sa302_comparison row at all,
+//     allGreen is false (not undefined), so the UI stays simple.
+export type Sa302ValidationState = {
+  allGreen: boolean;
+  filled: number;             // How many fields the accountant has entered
+  total: number;              // Number of SA302 compare fields (constant)
+  mismatchCount: number;      // Non-null fields that failed the tolerance check
+  recordedAt: string | null;  // When the accountant last saved
+};
+
+export function computeSa302ValidationState(
+  snapshot: TaxEngineOutput | null,
+  comparison: Sa302Comparison | null,
+): Sa302ValidationState {
+  const total = SA302_COMPARE_FIELDS.length;
+  if (!snapshot || !comparison) {
+    return { allGreen: false, filled: 0, total, mismatchCount: 0, recordedAt: null };
+  }
+  let filled = 0;
+  let mismatchCount = 0;
+  for (const f of SA302_COMPARE_FIELDS) {
+    const raw = comparison[f.key];
+    const software = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+    if (software === null) continue;
+    filled += 1;
+    const engine = f.read(snapshot);
+    const { match } = diffStatus(engine, software, f.scope);
+    if (match === false) mismatchCount += 1;
+  }
+  const recordedAt = typeof comparison.recorded_at === "string" ? comparison.recorded_at : null;
+  const allGreen = filled === total && mismatchCount === 0;
+  return { allGreen, filled, total, mismatchCount, recordedAt };
+}

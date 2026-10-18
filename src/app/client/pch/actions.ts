@@ -1,30 +1,50 @@
 "use server";
 
-// Server actions for the Uber/PHV automated case flow (phase 2a).
+// Server actions for the Uber/PHV automated case flow.
 //
 // All writes go through the service-role admin client, bypassing RLS;
 // each action re-validates ownership (case.client_id === me.id) before
 // touching the row. Pattern matches the existing manual flow.
 //
-// Status gating convention: these actions mutate the structured intake
-// tables and don't themselves move case status. The explicit transition
-// actions (submitClientIntakeAction, approveDraftAction) are the only
-// paths that change cases.status; both re-check the dual sign-off gate
-// at write time.
+// Flow (post-refactor, see docs on the new client workspace):
+//   submitted (paid) → client edits intake (sections 1-5)
+//     → submitForReviewAction runs the engine, auto-assigns an
+//       accountant, moves status to in_review. Client no longer sees
+//       any figures from this point on.
+//   in_review / prepared → accountant works (checklist, overrides,
+//     SA302) via accountant actions. Client intake is read-only.
+//   client_approval → accountant has advanced the case; the client
+//     sees the figures for the first time and signs off.
+//   filed / complete → done.
+//
+// Edit lock: once a case has left `submitted`, every intake-mutating
+// action in this file refuses. The accountant must bounce it back if
+// a change is needed.
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { TaxEngineOutput } from "@/lib/tax-engine";
+import { autoAssignAccountant } from "@/lib/case/auto-assign";
 import {
   computeAll,
   UK_TAX_RATES_2025_26,
+  getRatePackFor,
+  hasRatePackFor,
 } from "@/lib/tax-engine";
 import {
   validateClientTab,
   validateVehicle,
   canRunDraft,
 } from "@/lib/pch/validation";
+import {
+  schedulePchExtraction,
+  runPchExtractionJob,
+} from "@/lib/pch/extraction-trigger";
+import {
+  sendPchInReviewEmail,
+  sendPchFiledEmail,
+} from "@/lib/pch/status-emails";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -51,6 +71,19 @@ async function requirePchCase(caseId: string) {
   return { me, caseRow: data };
 }
 
+// Guard for intake-mutating actions: refuse once the case has been
+// submitted for review. The client no longer owns the data from that
+// point; the accountant does, and silent edits post-review would
+// invalidate the engine snapshot they're working against.
+function assertEditableByClient(status: string): ActionErr | null {
+  if (status === "submitted") return null;
+  return {
+    ok: false,
+    error:
+      "Your return is already with your accountant. Message them if something needs to change.",
+  };
+}
+
 // -------------------------------------------------------------------
 // Document upload: writes to the shared case-documents bucket + inserts
 // a case_documents row tagged with the PCH slot code as requirement_key.
@@ -63,7 +96,9 @@ export async function uploadPchDocumentAction(
   slotCode: string,
   formData: FormData,
 ): Promise<ActionResultWith<{ id: string; file_name: string; uploaded_at: string }>> {
-  const { me } = await requirePchCase(caseId);
+  const { me, caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
   const admin = createAdminClient();
 
   // Slot code must be one of the known PCH-01..PCH-24 codes.
@@ -124,13 +159,29 @@ export async function uploadPchDocumentAction(
     { onConflict: "case_id,slot_code" },
   );
 
+  // Fire the AI extraction. The row goes in synchronously (so the
+  // review panel can render a 'reading this document...' card at once);
+  // the actual Claude call runs in next/after so the client response
+  // isn't blocked on the 10-second model call.
+  const scheduled = await schedulePchExtraction({
+    caseId,
+    slotCode,
+    documentId: inserted.id,
+  });
+  if (!scheduled.skipped) {
+    const extractionId = scheduled.extractionId;
+    after(async () => {
+      await runPchExtractionJob(extractionId);
+    });
+  }
+
   revalidatePath(`/client/cases/${caseId}/pch`);
   return { ok: true, id: inserted.id, file_name: inserted.file_name,
     uploaded_at: inserted.uploaded_at };
 }
 
 // -------------------------------------------------------------------
-// Head row (pch_cases) upsert — called on first visit to the intake,
+// Head row (pch_cases) upsert, called on first visit to the intake,
 // so every subsequent save can assume the row exists.
 // -------------------------------------------------------------------
 export async function ensurePchHeadRow(caseId: string): Promise<ActionResult> {
@@ -186,7 +237,9 @@ export async function savePchClientTabAction(
   caseId: string,
   patch: ClientTabPatch,
 ): Promise<ActionResult> {
-  await requirePchCase(caseId);
+  const { caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
   // Server-side validation mirrors the client UI; the client could
   // POST a hand-crafted body otherwise.
   const errs = validateClientTab(patch);
@@ -203,7 +256,7 @@ export async function savePchClientTabAction(
 }
 
 // -------------------------------------------------------------------
-// Income lines (tab 2) — set-and-forget bulk replace. The client sends
+// Income lines (tab 2), set-and-forget bulk replace. The client sends
 // the full list and we atomically swap it. Simpler than per-row CRUD.
 // -------------------------------------------------------------------
 type IncomeLineInput = {
@@ -221,7 +274,9 @@ export async function savePchIncomeLinesAction(
   caseId: string,
   lines: IncomeLineInput[],
 ): Promise<ActionResult> {
-  await requirePchCase(caseId);
+  const { caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
   const admin = createAdminClient();
   const { error: delErr } = await admin
     .from("pch_income_lines").delete().eq("case_id", caseId);
@@ -246,7 +301,7 @@ export async function savePchIncomeLinesAction(
 }
 
 // -------------------------------------------------------------------
-// Expense lines (tab 3) — same bulk-replace pattern.
+// Expense lines (tab 3), same bulk-replace pattern.
 // -------------------------------------------------------------------
 type ExpenseLineInput = {
   label: string;
@@ -266,7 +321,9 @@ export async function savePchExpenseLinesAction(
   caseId: string,
   lines: ExpenseLineInput[],
 ): Promise<ActionResult> {
-  await requirePchCase(caseId);
+  const { caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
   const admin = createAdminClient();
   const { error: delErr } = await admin
     .from("pch_expense_lines").delete().eq("case_id", caseId);
@@ -289,14 +346,16 @@ export async function savePchExpenseLinesAction(
 }
 
 // -------------------------------------------------------------------
-// Vehicle (tab 4) — single row per case.
+// Vehicle (tab 4), single row per case.
 // -------------------------------------------------------------------
 type VehiclePatch = Record<string, unknown>;
 export async function savePchVehicleAction(
   caseId: string,
   patch: VehiclePatch,
 ): Promise<ActionResult> {
-  await requirePchCase(caseId);
+  const { caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
   const admin = createAdminClient();
   // Mileage consistency check needs the current income totals from
   // DB (not the patch) because the client UI doesn't send them with
@@ -333,7 +392,9 @@ export async function setPchDocStatusAction(
   status: "Uploaded" | "Not applicable" | "Awaiting",
   note?: string,
 ): Promise<ActionResult> {
-  const { me } = await requirePchCase(caseId);
+  const { me, caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
   const admin = createAdminClient();
   const { error } = await admin.from("pch_doc_status").upsert(
     { case_id: caseId, slot_code: slotCode, status, note: note ?? null,
@@ -348,8 +409,10 @@ export async function setPchDocStatusAction(
 // -------------------------------------------------------------------
 // Run the engine + snapshot. Pulls the latest intake rows, hydrates
 // TaxEngineInputs, calls computeAll, writes the output to
-// pch_cases.engine_snapshot. The draft page reads this snapshot and
-// the client approval signs off on it.
+// pch_cases.engine_snapshot. The client never calls this directly;
+// it's invoked by submitForReviewAction when the client hands the
+// case off, so the accountant inherits a pre-computed snapshot ready
+// to review.
 // -------------------------------------------------------------------
 async function hydrateInputsFromDb(caseId: string, admin: ReturnType<typeof createAdminClient>) {
   const [{ data: head }, { data: inc }, { data: exp }, { data: veh }] =
@@ -360,8 +423,15 @@ async function hydrateInputsFromDb(caseId: string, admin: ReturnType<typeof crea
       admin.from("pch_vehicle").select("*").eq("case_id", caseId).maybeSingle(),
     ]);
   if (!head) throw new Error("Head row missing");
+  // Pick the rate pack for THIS case's tax year, not the current year
+  // always. Prior-year linked cases are rendered on the exact rate
+  // schedule that applied to them. hasRatePackFor() lets the caller
+  // fail fast with a human-readable "contact support" message if the
+  // year has no pack yet.
+  const taxYear = head.tax_year ?? "2025/26";
+  const rates = hasRatePackFor(taxYear) ? getRatePackFor(taxYear) : UK_TAX_RATES_2025_26;
   return {
-    rates: UK_TAX_RATES_2025_26,
+    rates,
     client: {
       employmentIncome: (head.employment_income_pence ?? 0) / 100,
       paye: (head.paye_pence ?? 0) / 100,
@@ -425,16 +495,33 @@ async function hydrateInputsFromDb(caseId: string, admin: ReturnType<typeof crea
   };
 }
 
-export async function runEngineAndSnapshotAction(
+// -------------------------------------------------------------------
+// Submit the finished intake to the accountant. One transition that:
+//   1. Runs the engine on the current intake and stores the snapshot
+//      (the accountant inherits it; the client never sees it).
+//   2. Auto-assigns the least-loaded approved accountant when the case
+//      is still unassigned. Admin can override later.
+//   3. Moves case status: submitted -> in_review.
+//
+// All three happen in sequence inside this action so a half-done
+// handoff (snapshot without assignment, etc.) is not possible. If the
+// engine readiness check fails, nothing moves and the client is told
+// what to fix.
+// -------------------------------------------------------------------
+export async function submitForReviewAction(
   caseId: string,
-): Promise<ActionResultWith<{ snapshot: TaxEngineOutput }>> {
-  await requirePchCase(caseId);
+): Promise<ActionResult> {
+  const { caseRow } = await requirePchCase(caseId);
+  if (caseRow.status !== "submitted") {
+    return {
+      ok: false,
+      error:
+        "This return has already been submitted to your accountant.",
+    };
+  }
   const admin = createAdminClient();
   try {
     const inputs = await hydrateInputsFromDb(caseId, admin);
-    // Readiness gate: refuse to run on a half-filled case (zero income
-    // or no vehicle method/mileage). Mirrors the UI's disabled state;
-    // belt-and-braces against hand-crafted POSTs.
     const readiness = canRunDraft(
       inputs.income.map((l) => ({ grossTakings: l.grossTakings, type: l.type })),
       {
@@ -448,46 +535,73 @@ export async function runEngineAndSnapshotAction(
       return { ok: false, error: readiness.blockers.join(" ") };
     }
     const snapshot = computeAll(inputs);
-    const { error } = await admin
+    const { error: snapErr } = await admin
       .from("pch_cases")
       .update({
         engine_snapshot: snapshot,
         engine_snapshot_at: new Date().toISOString(),
       })
       .eq("case_id", caseId);
-    if (error) return { ok: false, error: error.message };
+    if (snapErr) return { ok: false, error: snapErr.message };
+
+    const assignment = await autoAssignAccountant(caseId);
+    if (!assignment.assigned && assignment.reason === "no_accountants") {
+      return {
+        ok: false,
+        error:
+          "No accountant is available right now. Try again later or contact support.",
+      };
+    }
+
+    const { error: statusErr } = await admin
+      .from("cases")
+      .update({ status: "in_review" })
+      .eq("id", caseId)
+      .eq("status", "submitted");
+    if (statusErr) return { ok: false, error: statusErr.message };
+
+    after(() => sendPchInReviewEmail(caseId));
     revalidatePath(`/client/cases/${caseId}/pch`);
-    return { ok: true, snapshot };
+    revalidatePath(`/accountant`);
+    return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Engine run failed" };
+    return { ok: false, error: e instanceof Error ? e.message : "Submit failed" };
   }
 }
 
 // -------------------------------------------------------------------
-// Client approval — captures the typed name + timestamp against the
-// current engine snapshot. Does NOT move case status; status advance
-// is a separate explicit action.
+// Final client approval. Only valid when the accountant has advanced
+// the case to client_approval; captures the typed name + timestamp
+// against the snapshot the accountant signed off on, and flips the
+// case to filed in the same action so the client's one click does the
+// full sign-and-file step.
 // -------------------------------------------------------------------
 export async function recordClientApprovalAction(
   caseId: string,
   typedName: string,
 ): Promise<ActionResult> {
-  const { me } = await requirePchCase(caseId);
+  const { caseRow } = await requirePchCase(caseId);
   const trimmed = typedName.trim();
   if (trimmed.length < 2) {
     return { ok: false, error: "Please type your full name to approve." };
   }
+  if (caseRow.status !== "client_approval") {
+    return {
+      ok: false,
+      error:
+        "This return isn't ready for your approval yet. Your accountant will let you know when it is.",
+    };
+  }
   const admin = createAdminClient();
-  // Need a snapshot to approve — refuse if there isn't one.
   const { data: head } = await admin
     .from("pch_cases")
     .select("engine_snapshot_at")
     .eq("case_id", caseId)
     .single();
   if (!head?.engine_snapshot_at) {
-    return { ok: false, error: "No draft to approve yet. Run the draft first." };
+    return { ok: false, error: "No snapshot to approve." };
   }
-  const { error } = await admin
+  const { error: approvalErr } = await admin
     .from("pch_cases")
     .update({
       client_approval_name: trimmed,
@@ -495,10 +609,17 @@ export async function recordClientApprovalAction(
       client_approval_version: 1,
     })
     .eq("case_id", caseId);
-  if (error) return { ok: false, error: error.message };
-  // Advance case status to client_approval if we're coming from prepared.
-  // The RLS gate on the cases table already permits the client to move
-  // client_approval → filed; here we only mark the approval record.
+  if (approvalErr) return { ok: false, error: approvalErr.message };
+
+  const { error: statusErr } = await admin
+    .from("cases")
+    .update({ status: "filed" })
+    .eq("id", caseId)
+    .eq("status", "client_approval");
+  if (statusErr) return { ok: false, error: statusErr.message };
+
+  after(() => sendPchFiledEmail(caseId));
   revalidatePath(`/client/cases/${caseId}/pch`);
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };
 }

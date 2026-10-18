@@ -35,7 +35,7 @@ const NINO_RE = /^[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z]\d{6}[A-D]$/i;
 export function validateNino(v: string): string | null {
   const s = v.replace(/\s+/g, "").toUpperCase();
   if (!s) return null;
-  if (!NINO_RE.test(s)) return "NI number format looks wrong.";
+  if (!NINO_RE.test(s)) return "NI Number format looks wrong.";
   return null;
 }
 
@@ -205,9 +205,11 @@ export function canRequestFiling(expenses: readonly ExpenseLineShape[]): Readine
     (e) => e.amountPaid > 0 && !(e.evidence && e.evidence.trim().length > 0),
   );
   if (missingEvidence.length > 0) {
+    const n = missingEvidence.length;
     blockers.push(
-      `${missingEvidence.length} expense line${missingEvidence.length === 1 ? "" : "s"} ` +
-      `have no evidence recorded. Enter a method code (receipts, bank statement, estimate E2, etc.) on each before filing.`,
+      `${n} expense line${n === 1 ? "" : "s"} ` +
+      `${n === 1 ? "has" : "have"} no evidence recorded. Enter a method code ` +
+      `(receipts, bank statement, estimate E2, etc.) on each before filing.`,
     );
   }
   return { ok: blockers.length === 0, blockers };

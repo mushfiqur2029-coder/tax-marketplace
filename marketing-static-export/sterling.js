@@ -70,8 +70,8 @@
 
   // --- Contact flow step transitions ------------------------------
   // 3-step flow: 1 details, 2 booking, 3 done. Form submit (handler
-  // above) advances 1 to 2 on successful POST. "I have booked" or
-  // "Skip" button advances 2 to 3. No reload between steps; animated
+  // above) advances 1, 2 on successful POST. "I have booked" or
+  // "Skip" button advances 2, 3. No reload between steps; animated
   // via the .active class.
   document.addEventListener("click", function (e) {
     var next = e.target.closest && e.target.closest("[data-step-done],[data-step-skip]");

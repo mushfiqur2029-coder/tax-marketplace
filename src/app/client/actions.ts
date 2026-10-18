@@ -142,22 +142,19 @@ export async function createCaseAction(
     }
     const urgentFee = isUrgent ? URGENT_FEE_PENCE : 0;
 
-    // Snapshot the quoted fee onto the case at creation. Future admin
-    // edits of service_catalog.price_gbp (or sale_price_gbp) must not
-    // retroactively change what this client was quoted.
-    // custom_fee_pence is read by effectiveFeePence everywhere a case
-    // price is displayed or charged.
-    //
-    // Precedence matches the live-pricing API + marketing display:
-    // sale_price_gbp wins over price_gbp when set. Without this, a
-    // client picks a sale-priced tier and sees £sale on marketing +
-    // picker but gets charged £regular at checkout, because
-    // effectiveFeePence prefers the snapshot over the live tier read.
-    const quotedPriceGbp =
-      tierDef.salePriceGbp != null && tierDef.salePriceGbp > 0
+    // Flat-fee cases do NOT snapshot the price. effectiveFeePence reads
+    // the live tier (sale_price_gbp when set, else price_gbp) at every
+    // display + checkout surface, so the amount charged is always the
+    // amount currently shown to the client. A sale toggled on by admin
+    // between case creation and payment applies immediately; a sale
+    // ending before payment reverts the client to the regular price.
+    // custom_fee_pence stays reserved for admin-created bespoke cases
+    // where the admin has quoted a specific figure that must survive
+    // catalogue edits.
+    const liveFeePence =
+      (tierDef.salePriceGbp != null && tierDef.salePriceGbp > 0
         ? tierDef.salePriceGbp
-        : tierDef.priceGbp;
-    const quotedFeePence = quotedPriceGbp * 100;
+        : tierDef.priceGbp) * 100;
 
     const supabase = await createClient();
     const { data, error } = await supabase
@@ -171,7 +168,6 @@ export async function createCaseAction(
         deadline: deadlineRaw,
         is_urgent: isUrgent,
         urgent_fee_pence: urgentFee,
-        custom_fee_pence: quotedFeePence,
       })
       .select("id")
       .single();
@@ -185,7 +181,7 @@ export async function createCaseAction(
       caseId: data.id,
       clientEmail: me.email ?? "A client",
       tierTitle: tierDef.title,
-      feeLabel: `£${(quotedFeePence / 100).toFixed(0)}`,
+      feeLabel: `£${(liveFeePence / 100).toFixed(0)}`,
       isBespoke: false,
     });
 

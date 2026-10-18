@@ -53,6 +53,10 @@ import {
   type ChatMessage,
   type ChatThread,
 } from "@/components/case/multi-thread-chat";
+import {
+  CaseMessagesPanel,
+  type CaseMessageView,
+} from "@/components/case/case-messages-panel";
 import { ReassignForm } from "./reassign-form";
 import { formatDateTime } from "@/lib/format";
 
@@ -118,6 +122,11 @@ export default async function AdminCasePage({
         .eq("case_id", id)
         .order("created_at", { ascending: false }),
     ]);
+
+  // Load PCH case_messages for the dedicated thread; empty for non-PCH
+  // tiers (nothing writes to this table outside the PCH workspaces).
+  const pchMessages: CaseMessageView[] =
+    row.tier === "uber_phv_automated" ? await loadPchCaseMessages(admin, id) : [];
 
   const all = (msgs ?? []) as ChatMessage[];
   // Admin sees three threads. Explicit sender labels so admin's own posts
@@ -969,10 +978,59 @@ export default async function AdminCasePage({
               getAttachmentUrl={getAttachmentUrl}
             />
           </div>
+          {row.tier === "uber_phv_automated" ? (
+            <div className="mt-4">
+              <span className="eyebrow">PCH workspace thread</span>
+              <p className="mt-1 text-xs text-slate">
+                Shared thread between the client and accountant on the
+                automated PCH workspace. Admin posts land here as well.
+              </p>
+              <div className="mt-3">
+                <CaseMessagesPanel
+                  caseId={id}
+                  messages={pchMessages}
+                  viewerRole="admin"
+                  viewerUserId={me.id}
+                />
+              </div>
+            </div>
+          ) : null}
         </aside>
       </div>
     </>
   );
+}
+
+async function loadPchCaseMessages(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+): Promise<CaseMessageView[]> {
+  const { data: rows } = await admin
+    .from("case_messages")
+    .select("id, author_id, author_role, body, created_at")
+    .eq("case_id", caseId)
+    .order("created_at", { ascending: true });
+  const list = (rows ?? []) as {
+    id: string;
+    author_id: string;
+    author_role: "client" | "accountant" | "admin";
+    body: string;
+    created_at: string;
+  }[];
+  if (list.length === 0) return [];
+  const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
+  const { data: users } = await admin
+    .from("users")
+    .select("id, email")
+    .in("id", authorIds);
+  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
+  return list.map((m) => ({
+    id: m.id,
+    authorRole: m.author_role,
+    authorLabel: emailById.get(m.author_id) ?? m.author_id.slice(0, 8),
+    body: m.body,
+    createdAt: m.created_at,
+  }));
 }
 
 function AddonStatusPill({ status }: { status: string }) {

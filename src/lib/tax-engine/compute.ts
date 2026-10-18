@@ -151,7 +151,7 @@ export function computeVehicle(
 }
 
 // ------------------------------------------------------------------
-// Expenses (tab 3) — allowable per-line + totals + estimate flag
+// Expenses (tab 3), allowable per-line + totals + estimate flag
 // ------------------------------------------------------------------
 function allowablePerLine(
   e: ExpenseLine,
@@ -177,8 +177,8 @@ export function computeExpenses(
   // The "Platform fees / commission (from tab 2)" row (row 34 in the
   // workbook) auto-fills from tab 2. For engines, callers may either
   // provide it as an explicit expense line OR we auto-inject it here
-  // when no line of that label exists. We prefer explicit — callers
-  // own the data — but we DO add the implicit platform-fees line when
+  // when no line of that label exists. We prefer explicit, callers
+  // own the data, but we DO add the implicit platform-fees line when
   // the caller provided income with platform fees but no corresponding
   // expense line of category Platform & card fees.
   const expensesWithPlatformFees: ExpenseLine[] = [...input.expenses];
@@ -224,11 +224,11 @@ export function computeExpenses(
   }
 
   const estimatesPct = allowableTotal === 0 ? 0 : estimatesTotal / allowableTotal;
-  // Est_Flag (G49) — compliance message
+  // Est_Flag (G49), compliance message
   const estimateFlag = estimatesPct > 0.3
-    ? "HIGH: " + Math.round(estimatesPct * 100) + "% of expenses are estimates – get bank statements / third-party records or consider simplified mileage"
+    ? "HIGH: " + Math.round(estimatesPct * 100) + "% of expenses are estimates, get bank statements / third-party records or consider simplified mileage"
     : estimatesPct > 0
-      ? Math.round(estimatesPct * 100) + "% estimated – method code and client confirmation on file?"
+      ? Math.round(estimatesPct * 100) + "% estimated, method code and client confirmation on file?"
       : "All expenses evidenced";
 
   return {
@@ -347,23 +347,23 @@ export function computeTax(
 
   const class2Suggestion = X_SE < rates.class2SmallProfitsThreshold
     ? "Profit below £" + rates.class2SmallProfitsThreshold.toLocaleString()
-      + " – consider paying £" + rates.class2VoluntaryAnnual + " voluntary Class 2 to protect State Pension"
-    : "Not payable – NI year credited automatically";
+      + " ,  consider paying £" + rates.class2VoluntaryAnnual + " voluntary Class 2 to protect State Pension"
+    : "Not payable. NI year credited automatically";
 
-  // Totals (workbook: X_IT + X_PAYE + X_C4 — PAYE already negative)
+  // Totals (workbook: X_IT + X_PAYE + X_C4. PAYE already negative)
   const totalTaxAndNic = X_IT + X_PAYE + X_C4;
 
   // POA
   const poaDueTotal = client.poa1Due + client.poa2Due;
   const poaPaidTotal = client.poa1Paid + client.poa2Paid;
   const poaCheck = poaDueTotal - poaPaidTotal > 0.5
-    ? "£" + (poaDueTotal - poaPaidTotal).toFixed(2) + " unpaid – included in balancing payment; HMRC interest from original due date"
+    ? "£" + (poaDueTotal - poaPaidTotal).toFixed(2) + " unpaid, included in balancing payment; HMRC interest from original due date"
     : "All paid";
   const X_Liab = totalTaxAndNic; // after PAYE credit
   const poaGap = poaDueTotal === 0
     ? "No payments on account were due"
     : poaDueTotal > X_Liab + 0.5
-      ? "Too high by £" + (poaDueTotal - X_Liab).toFixed(2) + " – refund or credit due"
+      ? "Too high by £" + (poaDueTotal - X_Liab).toFixed(2) + " ,  refund or credit due"
       : poaDueTotal < X_Liab - 0.5
         ? "Bill is £" + (X_Liab - poaDueTotal).toFixed(2) + " above payments on account"
         : "Matched";
@@ -438,28 +438,28 @@ export function computeMtdStatus(
       status: "IN_MTD_NOW",
       message: "IN MTD NOW: 2024/25 income over £"
         + rates.mtdThresholdFirst.toLocaleString()
-        + " – signed up from 6 Apr 2026; quarterly updates 7 Aug 2026, 7 Nov 2026, 7 Feb 2027, 7 May 2027",
+        + " ,  signed up from 6 Apr 2026; quarterly updates 7 Aug 2026, 7 Nov 2026, 7 Feb 2027, 7 May 2027",
     };
   }
   if (qi > rates.mtdThresholdFirst) {
     return {
       qualifyingIncome: qi,
       status: "MANDATORY_APR_2027",
-      message: "OVER £" + rates.mtdThresholdFirst.toLocaleString() + ": MTD from 6 Apr 2027 – set up software and digital records now",
+      message: "OVER £" + rates.mtdThresholdFirst.toLocaleString() + ": MTD from 6 Apr 2027, set up software and digital records now",
     };
   }
   if (qi > rates.mtdThresholdSecond) {
     return {
       qualifyingIncome: qi,
       status: "MANDATORY_APR_2027",
-      message: "OVER £" + rates.mtdThresholdSecond.toLocaleString() + ": MTD from 6 Apr 2027 – set up software before April",
+      message: "OVER £" + rates.mtdThresholdSecond.toLocaleString() + ": MTD from 6 Apr 2027, set up software before April",
     };
   }
   if (qi > rates.mtdThresholdThird) {
     return {
       qualifyingIncome: qi,
       status: "LIKELY_MANDATORY_APR_2028",
-      message: "£" + rates.mtdThresholdThird.toLocaleString() + "–£" + rates.mtdThresholdSecond.toLocaleString() + ": likely MTD from 6 Apr 2028 (decided by 2026/27 income)",
+      message: "£" + rates.mtdThresholdThird.toLocaleString() + ", £" + rates.mtdThresholdSecond.toLocaleString() + ": likely MTD from 6 Apr 2028 (decided by 2026/27 income)",
     };
   }
   return {
@@ -513,7 +513,7 @@ export function buildSa103sBoxes(
     box26_balancingCharges: box26,
     box31_totalTaxableProfits: box31,
     box36_voluntaryClass2: tax.selfEmploymentProfit < rates.class2SmallProfitsThreshold
-      ? "Ask client – tick to pay £" + rates.class2VoluntaryAnnual
+      ? "Ask client, tick to pay £" + rates.class2VoluntaryAnnual
       : "Leave blank",
   };
 }
@@ -550,14 +550,14 @@ export function computeZeroTaxCheck(
       : 0.5;
   const gap = profitReductionNeeded;
   const verdict = gap === 0
-    ? "Already nil – nothing to do"
+    ? "Already nil, nothing to do"
     : expensesPctNeeded <= expensesPctNow + 0.05
-      ? "Within reach – check every head on tab 3 is claimed in full"
+      ? "Within reach, check every head on tab 3 is claimed in full"
       : expensesPctNeeded <= ceilingForClient
-        ? "Possible only if genuine costs are missing – needs evidence for each extra £"
+        ? "Possible only if genuine costs are missing, needs evidence for each extra £"
         : expensesPctNeeded <= ceilingForClient + 0.1
-          ? "Unlikely – would sit above normal driver costs and attract HMRC questions"
-          : "Not realistic – tax is genuinely due; do not force it";
+          ? "Unlikely, would sit above normal driver costs and attract HMRC questions"
+          : "Not realistic, tax is genuinely due; do not force it";
   // Turnover at which tax is naturally nil at the current expense %
   const turnoverAtWhichTaxIsNaturallyNil = expensesPctNow >= 1
     ? 0

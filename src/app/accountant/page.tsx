@@ -22,6 +22,7 @@ import {
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { AccountantSuspensionBanner } from "./suspension-banner";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { deadlinesForYear } from "@/lib/tax-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -133,6 +134,56 @@ export default async function AccountantDashboard({
   const assigned = mine.filter(
     (c) => c.status === "draft" || c.status === "submitted",
   );
+
+  // Effective-deadline map used for the urgency sort below. For PCH
+  // automated cases the HMRC filing deadline comes from the engine's
+  // deadlinesForYear() (31 January after the tax year end); other
+  // tiers fall back to cases.deadline (the client-chosen filing-by
+  // date). Cases with no deadline at all are pushed to the back.
+  const pchIds = [...queue, ...mine]
+    .filter((c) => c.tier === "uber_phv_automated")
+    .map((c) => c.id);
+  const pchTaxYearById = new Map<string, string>();
+  if (pchIds.length > 0) {
+    const { data: pchHeads } = await supabase
+      .from("pch_cases")
+      .select("case_id, tax_year")
+      .in("case_id", pchIds);
+    for (const h of pchHeads ?? []) {
+      if (h.tax_year) pchTaxYearById.set(h.case_id, h.tax_year);
+    }
+  }
+  const FAR_FUTURE = Number.MAX_SAFE_INTEGER;
+  const effectiveDeadline = (c: Row): number => {
+    if (c.tier === "uber_phv_automated") {
+      const ty = pchTaxYearById.get(c.id);
+      if (ty) {
+        try {
+          return deadlinesForYear(ty).filingDeadline.getTime();
+        } catch { /* fall through */ }
+      }
+    }
+    return c.deadline ? new Date(c.deadline).getTime() : FAR_FUTURE;
+  };
+  // Sort each pool: nearest deadline first (overdue cases bubble to
+  // the top because their timestamp is in the past). Tiebreaker:
+  // oldest submitted_at first so a case stuck in the queue longer
+  // doesn't get buried behind a same-deadline sibling.
+  const byDeadline = (a: Row, b: Row): number => {
+    const da = effectiveDeadline(a);
+    const db = effectiveDeadline(b);
+    if (da !== db) return da - db;
+    const sa = a.submitted_at ? new Date(a.submitted_at).getTime() : new Date(a.created_at).getTime();
+    const sb = b.submitted_at ? new Date(b.submitted_at).getTime() : new Date(b.created_at).getTime();
+    return sa - sb;
+  };
+  queue.sort(byDeadline);
+  live.sort(byDeadline);
+  pendingCases.sort(byDeadline);
+  assigned.sort(byDeadline);
+  // Completed cases keep newest-first so recently-closed work is
+  // easy to find without scrolling; sorting by deadline on a closed
+  // list doesn't carry the same "work this next" signal.
 
   const viewCounts: ViewCounts = {
     live: live.length,

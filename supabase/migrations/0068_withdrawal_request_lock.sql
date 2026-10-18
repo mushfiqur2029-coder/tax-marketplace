@@ -76,7 +76,7 @@ begin
   if v_actual_count <> v_expected_count then
     raise exception
       'withdrawal row count mismatch: locked % rows but updated % - rolling back'
-      , v_expected_count, v_actual_count;
+v_expected_count, v_actual_count;
   end if;
 
   return v_req_id;

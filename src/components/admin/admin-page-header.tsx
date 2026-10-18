@@ -8,25 +8,30 @@ export function AdminPageHeader({
   eyebrow,
   title,
   description,
+  rightSlot,
 }: {
   eyebrow: string;
   title: string;
   description?: string;
+  rightSlot?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 sm:mb-10">
-      <span className="eyebrow">{eyebrow}</span>
-      <h1
-        className="mt-2 text-2xl sm:mt-3 sm:text-4xl"
-        style={{ fontFamily: "var(--font-heading)" }}
-      >
-        {title}
-      </h1>
-      {description ? (
-        <p className="mt-2 max-w-xl text-sm text-slate sm:text-base">
-          {description}
-        </p>
-      ) : null}
+    <div className="mb-6 flex items-start justify-between gap-4 sm:mb-10">
+      <div>
+        <span className="eyebrow">{eyebrow}</span>
+        <h1
+          className="mt-2 text-2xl sm:mt-3 sm:text-4xl"
+          style={{ fontFamily: "var(--font-heading)" }}
+        >
+          {title}
+        </h1>
+        {description ? (
+          <p className="mt-2 max-w-xl text-sm text-slate sm:text-base">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
     </div>
   );
 }
