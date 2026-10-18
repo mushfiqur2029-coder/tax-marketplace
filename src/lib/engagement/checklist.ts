@@ -50,7 +50,10 @@ const LC_TIER_IDS: TierId[] = ["dormant", "non_vat_reg", "vat_reg"];
 // with per-field requirements driven by these groups via `requiredFor`
 // + `hiddenForTiers`.
 const PERSONAL_GROUP_A_TIER_IDS: TierId[] = [
-  "uber_driver",
+  // uber_driver removed in migration 0091. uber_phv_automated has its
+  // own PCH-specific document checklist (pch_doc_slots) and does not
+  // use the generic engagement checklist, so it is intentionally absent
+  // from both Group A and Group B.
   "cis_subcontractor",
   "sole_trader",
   "landlord_small",

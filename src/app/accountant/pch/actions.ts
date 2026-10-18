@@ -266,6 +266,59 @@ export async function savePchSa302ComparisonAction(
   return { ok: true };
 }
 
+// -------------------------------------------------------------------
+// Slice 5: resolve a slot the client flagged as 'Awaiting accountant'.
+// The accountant has either gathered the info another way (DVLA / HMRC
+// agent lookup / case message) and already filled the figure via the
+// override UI, or they decided the slot genuinely doesn't apply. Either
+// way the slot comes out of the "Questions from the client" queue.
+//
+// Status transitions to 'Not applicable' with an audit note. We don't
+// use 'Uploaded' because no file actually landed; the override audit
+// log (pch_overrides) records whatever change the accountant made.
+// -------------------------------------------------------------------
+export async function resolvePchBlockedSlotAction(
+  caseId: string,
+  slotCode: string,
+  note?: string,
+): Promise<ActionResult> {
+  const { me } = await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const { data: current } = await admin
+    .from("pch_doc_status")
+    .select("status, note")
+    .eq("case_id", caseId)
+    .eq("slot_code", slotCode)
+    .maybeSingle();
+  if (!current || current.status !== "Awaiting accountant") {
+    return {
+      ok: false,
+      error: "That slot is not in the awaiting-accountant state.",
+    };
+  }
+  const trimmed = typeof note === "string" ? note.trim() : "";
+  const marker = "[Resolved by accountant on " + new Date().toISOString().slice(0, 10) + "]";
+  // Preserve the client's original note so the audit history reads
+  // top-to-bottom: client ask + accountant resolution.
+  const combined = [current.note ?? "", `${marker} ${trimmed || "No further detail."}`]
+    .filter((s) => s.length > 0)
+    .join(" ");
+  const { error } = await admin.from("pch_doc_status").upsert(
+    {
+      case_id: caseId,
+      slot_code: slotCode,
+      status: "Not applicable",
+      note: combined,
+      updated_at: new Date().toISOString(),
+      updated_by: me.id,
+    },
+    { onConflict: "case_id,slot_code" },
+  );
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
 export async function revertPchOverrideAction(
   caseId: string,
   fieldPath: string,

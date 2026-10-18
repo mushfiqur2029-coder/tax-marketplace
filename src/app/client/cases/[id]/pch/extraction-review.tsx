@@ -26,6 +26,8 @@ export type ExtractionFieldState = {
   overrideValue?: string | number | null;
   actedAt?: string;
 };
+export type ExtractionSource = "document" | "ai_interview";
+
 export type ExtractionReviewPayload = {
   id: string;
   slotCode: string;
@@ -35,6 +37,12 @@ export type ExtractionReviewPayload = {
   fields: Record<string, ExtractionFieldPayload>;
   fieldStates: Record<string, ExtractionFieldState>;
   errorMessage: string | null;
+  // Provenance of this extraction. `document` means the fields came
+  // from AI reading an uploaded file; `ai_interview` means the client
+  // walked through a guided conversation when they didn't have the
+  // document. The confirm/edit/skip UI is identical either way; only
+  // the banner at the top of the panel changes.
+  source: ExtractionSource;
   labels: Partial<Record<string, string>>;
   targetable: Record<string, boolean>;
 };
@@ -72,15 +80,25 @@ export function ExtractionReview({ ext, canEdit }: {
     return (s?.status === "accepted" || s?.status === "edited") && ext.targetable[k];
   }).length;
 
+  const fromInterview = ext.source === "ai_interview";
+  const headline = fromInterview
+    ? "Confirmed through AI conversation"
+    : low
+      ? "We had trouble reading this"
+      : "Extracted from your document";
   return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="font-semibold text-slate-800">
-            {low ? "We had trouble reading this" : "We read this document for you"}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-slate-800">{headline}</span>
+            <SourceBadge source={ext.source} />
           </div>
           {ext.documentType ? (
-            <div className="mt-0.5 text-slate-500">Looks like: {ext.documentType}</div>
+            <div className="mt-0.5 text-slate-500">
+              {fromInterview ? "Captured: " : "Looks like: "}
+              {ext.documentType}
+            </div>
           ) : null}
         </div>
         <ConfidenceBadge value={ext.overallConfidence ?? "missing"} />
@@ -127,6 +145,25 @@ export function ExtractionReview({ ext, canEdit }: {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function SourceBadge({ source }: { source: ExtractionSource }) {
+  const map: Record<ExtractionSource, { label: string; className: string }> = {
+    document: {
+      label: "From your document",
+      className: "bg-slate-100 text-slate-700 border-slate-300",
+    },
+    ai_interview: {
+      label: "From AI conversation",
+      className: "bg-indigo-100 text-indigo-800 border-indigo-300",
+    },
+  };
+  const chip = map[source];
+  return (
+    <span className={"inline-block rounded border px-2 py-0.5 text-[11px] font-medium " + chip.className}>
+      {chip.label}
+    </span>
   );
 }
 

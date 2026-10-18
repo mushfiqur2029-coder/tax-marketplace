@@ -13,9 +13,14 @@
 // so the type system still enforces the known tier set.
 
 export type TierId =
-  // Personal, new 9-up flat-fee catalogue (migration 0045). Each tier
+  // Personal, 9-up flat-fee catalogue (migration 0045). Each tier
   // targets a specific client situation; picking the tier IS the
   // service choice, there is no additional segment step.
+  //
+  // `uber_driver` is retired as of migration 0091 (consolidated into
+  // `uber_phv_automated`). The Postgres enum value is retained because
+  // dropping it is destructive; the tier is absent from PLAN_TIERS and
+  // service_catalog so the wizard and marketing site never show it.
   | "uber_driver"
   | "cis_subcontractor"
   | "sole_trader"
@@ -25,10 +30,8 @@ export type TierId =
   | "freelancer_consultant"
   | "landlord_multi"
   | "complex_international"
-  // Phase 2 of the automated service rollout. "uber_phv_automated" is a
-  // structured intake flow backed by src/lib/tax-engine. Separate from
-  // the existing "uber_driver" manual tier, which keeps the current
-  // document-upload-only flow unchanged.
+  // Automated PCH flow backed by src/lib/tax-engine. Takes the spot
+  // vacated by `uber_driver` (migration 0091).
   | "uber_phv_automated"
   // Personal, retired tiers. Enum values stay in Postgres; the wizard
   // filters them out and the server guard in createCaseAction rejects
@@ -116,11 +119,14 @@ export const PLAN_TIERS: PlanTier[] = [
   // service_catalog.display_order (migration 0078) so the fallback
   // path renders the same sequence the live DB would.
   {
-    id: "uber_driver",
+    // Automated PCH tier (migration 0091 consolidation): one Uber tile
+    // powered by the tax-engine intake, carrying the manual tier's
+    // original title + bullet copy at the new £89 flat fee.
+    id: "uber_phv_automated",
     group: "personal",
     title: "Uber / private-hire drivers",
     tagline: "For Uber, Bolt, Addison Lee, and other private-hire drivers.",
-    priceGbp: 199,
+    priceGbp: 89,
     priceGbpSubtitle: "one-off",
     features: [
       PERSONAL_BASE_FEATURE,

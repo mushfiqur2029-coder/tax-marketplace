@@ -28,6 +28,12 @@ export function stripeWebhookSecret(): string {
 // Base URL used in every outbound email + any Stripe redirect that
 // needs an absolute host. Resolution order:
 //
+//   0. Local dev (next dev on your machine, not Vercel): the dev
+//      server's own host. We skip NEXT_PUBLIC_SITE_URL here even if
+//      it is set, because .env.local commonly points at the prod URL
+//      for other reasons. Honoring it in dev strands Stripe
+//      redirects on prod after a test payment (the symptom that
+//      drove this branch).
 //   1. NEXT_PUBLIC_SITE_URL, the explicit production/preview value
 //      an operator set on Vercel. Preferred when non-empty.
 //   2. VERCEL_URL. Vercel-auto-injected per deployment. Doesn't
@@ -35,15 +41,22 @@ export function stripeWebhookSecret(): string {
 //      a stable alias), so links in long-lived emails could end up
 //      pointing at an old deployment URL, but still better than
 //      "localhost" or a hostless path when (1) was misconfigured.
-//   3. http://localhost:3000, local dev fallback. Loudly logged
-//      when we fall here while running on Vercel so the misconfig
-//      shows up in logs instead of silently emailing broken links.
+//   3. http://localhost:3000, final fallback. Loudly logged when
+//      we fall here while running on Vercel so the misconfig shows
+//      up in logs instead of silently emailing broken links.
 //
 // Using || instead of ?? so an empty string (as currently stored
 // on Vercel prod for NEXT_PUBLIC_SITE_URL) is treated the same as
 // unset. Trailing slash stripped so callers can safely append
 // paths with their own leading slash.
 export function siteUrl(): string {
+  const onVercel =
+    process.env.VERCEL === "1" || process.env.VERCEL === "true";
+  if (!onVercel && process.env.NODE_ENV !== "production") {
+    const port = (process.env.PORT ?? "3000").trim() || "3000";
+    return `http://localhost:${port}`;
+  }
+
   const explicit = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim();
   if (explicit) return explicit.replace(/\/+$/, "");
 
@@ -58,7 +71,7 @@ export function siteUrl(): string {
   // Falling here on Vercel means someone deployed without setting
   // NEXT_PUBLIC_SITE_URL. Log loudly rather than silently shipping
   // localhost links to real inboxes.
-  if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
+  if (onVercel) {
     console.error(
       "[siteUrl] NEXT_PUBLIC_SITE_URL unset in a Vercel deployment and VERCEL_URL also missing. Falling back to localhost. Fix the env var before more emails go out.",
     );

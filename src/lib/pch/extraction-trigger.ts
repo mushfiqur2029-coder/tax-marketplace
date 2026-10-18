@@ -62,6 +62,7 @@ export async function schedulePchExtraction(opts: {
       slot_code: opts.slotCode,
       document_id: opts.documentId,
       status: "pending",
+      source: "document",
     })
     .select("id")
     .single();

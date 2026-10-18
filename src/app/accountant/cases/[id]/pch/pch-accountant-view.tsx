@@ -25,6 +25,10 @@ import {
 } from "@/lib/pch/sa302";
 import type { Anomaly } from "@/lib/pch/prior-year-anomalies";
 import { PriorYearAnomalyPanel } from "./prior-year-anomaly-panel";
+import {
+  AwaitingAccountantPanel,
+  type BlockedSlot,
+} from "./awaiting-accountant-panel";
 
 type CheckItem = { item_number: number; area: string; description: string };
 type CheckStatus = {
@@ -46,6 +50,7 @@ export function PchAccountantView(props: {
   sa302Comparison: Sa302Comparison | null;
   priorYearAnomalies: Anomaly[];
   priorYearLabel: string;
+  awaitingAccountantSlots: BlockedSlot[];
   messagesPanel: React.ReactNode;
 }) {
   const router = useRouter();
@@ -100,6 +105,11 @@ export function PchAccountantView(props: {
           </div>
         ) : null}
       </div>
+
+      <AwaitingAccountantPanel
+        caseId={props.caseId}
+        blocked={props.awaitingAccountantSlots}
+      />
 
       <PriorYearAnomalyPanel
         anomalies={props.priorYearAnomalies}

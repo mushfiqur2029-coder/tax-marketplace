@@ -21,10 +21,11 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "marketing-static-export");
 
-// Desired display order after migration 0078. Mirrors
-// src/lib/plans.ts PLAN_TIERS personal section.
+// Desired display order after migration 0091. Mirrors
+// src/lib/plans.ts PLAN_TIERS personal section. The old uber_driver
+// slot is now held by uber_phv_automated (same display_order=10).
 const NEW_ORDER = [
-  "uber_driver",
+  "uber_phv_automated",
   "gig_worker",
   "landlord_small",
   "sole_trader",

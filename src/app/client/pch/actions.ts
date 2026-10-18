@@ -33,7 +33,6 @@ import {
   hasRatePackFor,
 } from "@/lib/tax-engine";
 import {
-  validateClientTab,
   validateVehicle,
   canRunDraft,
 } from "@/lib/pch/validation";
@@ -45,6 +44,7 @@ import {
   sendPchInReviewEmail,
   sendPchFiledEmail,
 } from "@/lib/pch/status-emails";
+import { syncPchProfileFromUserAction } from "@/app/client/pch/profile-actions";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -183,6 +183,13 @@ export async function uploadPchDocumentAction(
 // -------------------------------------------------------------------
 // Head row (pch_cases) upsert, called on first visit to the intake,
 // so every subsequent save can assume the row exists.
+//
+// Slice 6: also prefills Tab 1 PII columns (name / phone / address /
+// postcode) from client_profiles if they're currently empty. The copy
+// is idempotent and non-destructive, delegated to
+// syncPchProfileFromUserAction. Downstream profile interview reads a
+// pre-populated head row and skips those fields in its "what's still
+// needed" opener.
 // -------------------------------------------------------------------
 export async function ensurePchHeadRow(caseId: string): Promise<ActionResult> {
   const { me } = await requirePchCase(caseId);
@@ -191,69 +198,24 @@ export async function ensurePchHeadRow(caseId: string): Promise<ActionResult> {
     .from("pch_cases")
     .upsert({ case_id: caseId, cl_email: me.email }, { onConflict: "case_id" });
   if (error) return { ok: false, error: error.message };
+  // Best-effort; a sync failure is logged but does not block the
+  // workspace opening. The profile panel will show "Not captured" for
+  // the missing columns and the client can run the interview.
+  const sync = await syncPchProfileFromUserAction(caseId);
+  if (!sync.ok) {
+    console.warn("[ensurePchHeadRow] profile sync failed:", sync.error);
+  }
   return { ok: true };
 }
 
-// -------------------------------------------------------------------
-// Save tab 1 (client details + other income + reliefs + POA + MTD + VAT)
-// -------------------------------------------------------------------
-type ClientTabPatch = {
-  cl_name?: string;
-  cl_utr?: string;
-  cl_nino?: string;
-  cl_dob?: string | null;
-  cl_address?: string;
-  cl_postcode?: string;
-  cl_phone?: string;
-  cl_email?: string;
-  cl_address_changed?: boolean;
-  cl_licensing_authority?: string;
-  cl_platforms?: string;
-  cl_start_date?: string | null;
-  cl_stop_date?: string | null;
-  employment_income_pence?: number;
-  paye_pence?: number;
-  rental_profit_pence?: number;
-  bank_interest_pence?: number;
-  benefits_note?: string;
-  marriage_allowance_status?: "None" | "Transferring" | "Receiving";
-  spouse_details?: string;
-  personal_pension_net_pence?: number;
-  gift_aid_net_pence?: number;
-  student_loan_plan?: string;
-  poa1_due_pence?: number;
-  poa2_due_pence?: number;
-  poa_reduced?: boolean;
-  poa1_paid_pence?: number;
-  poa2_paid_pence?: number;
-  gross_rent_received_pence?: number;
-  last_year_qi_pence?: number;
-  vat_registered?: boolean;
-  vat_registration_date?: string | null;
-  vat_scheme?: string;
-};
-
-export async function savePchClientTabAction(
-  caseId: string,
-  patch: ClientTabPatch,
-): Promise<ActionResult> {
-  const { caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
-  if (lock) return lock;
-  // Server-side validation mirrors the client UI; the client could
-  // POST a hand-crafted body otherwise.
-  const errs = validateClientTab(patch);
-  const first = Object.values(errs)[0];
-  if (first) return { ok: false, error: first };
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from("pch_cases")
-    .update(patch)
-    .eq("case_id", caseId);
-  if (error) return { ok: false, error: error.message };
-  revalidatePath(`/client/cases/${caseId}/pch`);
-  return { ok: true };
-}
+// Tab 1 "save client tab" action removed in Slice 6. The ~30-field
+// raw form is gone; head columns are now populated by:
+//   - syncPchProfileFromUserAction (registration PII, auto)
+//   - commitPchProfileInterviewAction (AI interview)
+//   - applyPchExtractionAction (document extractions for PCH-16..21)
+//   - accountant overrides (pch_overrides, for anything the client
+//     can't provide and no extraction exists)
+// Nothing else writes to pch_cases head columns from the client surface.
 
 // -------------------------------------------------------------------
 // Income lines (tab 2), set-and-forget bulk replace. The client sends
@@ -399,6 +361,48 @@ export async function setPchDocStatusAction(
   const { error } = await admin.from("pch_doc_status").upsert(
     { case_id: caseId, slot_code: slotCode, status, note: note ?? null,
       updated_at: new Date().toISOString(), updated_by: me.id },
+    { onConflict: "case_id,slot_code" },
+  );
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
+// -------------------------------------------------------------------
+// Slice 5: client asks the accountant to help with a slot they can't
+// resolve themselves (no document, no AI interview path, or the AI
+// interview wasn't available on this slot). Flips the slot into the
+// 'Awaiting accountant' state introduced in migration 0092; the
+// accountant workspace surfaces every blocked slot proactively.
+//
+// Separate from setPchDocStatusAction so the intent is explicit and
+// so the client-side status API doesn't quietly widen to accept any
+// state.
+// -------------------------------------------------------------------
+export async function requestPchAccountantHelpAction(
+  caseId: string,
+  slotCode: string,
+  note?: string,
+): Promise<ActionResult> {
+  const { me, caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
+  const admin = createAdminClient();
+  const trimmed = typeof note === "string" ? note.trim() : "";
+  // Prefix every stored note with a stable marker so the accountant
+  // panel can tell "client asked for help" from "accountant resolved it"
+  // without a second column.
+  const marker = "[Client asked for help on " + new Date().toISOString().slice(0, 10) + "]";
+  const stored = trimmed.length > 0 ? `${marker} ${trimmed}` : marker;
+  const { error } = await admin.from("pch_doc_status").upsert(
+    {
+      case_id: caseId,
+      slot_code: slotCode,
+      status: "Awaiting accountant",
+      note: stored,
+      updated_at: new Date().toISOString(),
+      updated_by: me.id,
+    },
     { onConflict: "case_id,slot_code" },
   );
   if (error) return { ok: false, error: error.message };

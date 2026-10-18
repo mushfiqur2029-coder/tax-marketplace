@@ -35,7 +35,7 @@ export default async function PchAccountantPage({
     redirect(`/accountant/cases/${id}`);
   }
 
-  const [checksMeta, checkStatus, head, overrideHistory, users] = await Promise.all([
+  const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta] = await Promise.all([
     admin.from("pch_check_items").select("*").order("sort_order"),
     admin.from("pch_check_status").select("*").eq("case_id", id),
     admin.from("pch_cases").select("*").eq("case_id", id).single(),
@@ -44,6 +44,13 @@ export default async function PchAccountantPage({
     // Resolve the display names for the audit trail author column.
     // Keep this query cheap; we only need id + full_name.
     admin.from("users").select("id, full_name"),
+    // Slice 5: slots the client flagged "I don't have this document".
+    admin.from("pch_doc_status")
+      .select("slot_code, status, note, updated_at")
+      .eq("case_id", id)
+      .eq("status", "Awaiting accountant")
+      .order("updated_at", { ascending: true }),
+    admin.from("pch_doc_slots").select("code, section, display_name"),
   ]);
 
   const snapshot = (head.data?.engine_snapshot ?? null) as TaxEngineOutput | null;
@@ -56,6 +63,21 @@ export default async function PchAccountantPage({
   );
 
   const messages = await loadMessages(admin, id);
+
+  // Decorate blocked slots with display name + section from pch_doc_slots.
+  const slotMetaByCode = new Map(
+    (slotMeta.data ?? []).map((s) => [
+      s.code as string,
+      { displayName: s.display_name as string, section: s.section as string },
+    ]),
+  );
+  const blocked = (blockedRows.data ?? []).map((r) => ({
+    slotCode: r.slot_code as string,
+    displayName: slotMetaByCode.get(r.slot_code as string)?.displayName ?? (r.slot_code as string),
+    section: slotMetaByCode.get(r.slot_code as string)?.section ?? "",
+    note: (r.note as string | null) ?? null,
+    updatedAt: (r.updated_at as string | null) ?? null,
+  }));
 
   return (
     <PchAccountantView
@@ -72,6 +94,7 @@ export default async function PchAccountantPage({
       sa302Comparison={head.data?.sa302_comparison ?? null}
       priorYearAnomalies={anomalies}
       priorYearLabel={priorYearLabel}
+      awaitingAccountantSlots={blocked}
       messagesPanel={<CaseMessagesPanel caseId={id} messages={messages} viewerRole="accountant" viewerUserId={me.id} />}
     />
   );

@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
-  savePchClientTabAction,
   savePchIncomeLinesAction,
   savePchExpenseLinesAction,
   savePchVehicleAction,
@@ -13,17 +12,23 @@ import {
   submitForReviewAction,
   recordClientApprovalAction,
 } from "@/app/client/pch/actions";
+import { ProfilePanel, type ProfileHead } from "./profile-panel";
 import {
   ExtractionReview,
   type ExtractionReviewPayload,
 } from "./extraction-review";
+import { InterviewPanel } from "./interview-panel";
+import { AccountantHelpPrompt } from "./accountant-help-prompt";
+import {
+  canRequestAlternative,
+  hasInterviewFor,
+} from "@/lib/pch/ai-interview-slots";
 import {
   PriorYearPrompt,
   type PriorYearOption,
 } from "./prior-year-prompt";
 import { ExtractionSummaryPanel } from "./extraction-summary";
 import {
-  validateClientTab,
   canRunDraft,
   warnBoxMismatch,
 } from "@/lib/pch/validation";
@@ -155,9 +160,13 @@ export function PchClientWorkspace(props: {
               editable={editable}
             />
 
-            <h2 className={h2}>2. Your details and other income</h2>
+            <h2 className={h2}>2. Your profile and other income</h2>
             <div className={card}>
-              <ClientTabForm caseId={props.caseId} initial={props.head ?? {}} editable={editable} />
+              <ProfilePanel
+                caseId={props.caseId}
+                head={headToProfile(props.head ?? {})}
+                editable={editable}
+              />
             </div>
 
             <h2 className={h2}>3. Income from driving</h2>
@@ -371,10 +380,25 @@ function DocRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [interviewOpen, setInterviewOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const inputId = `up-${slot.code}`;
   const isRequired = /^Required/i.test(slot.required_rule);
   const effectiveStatus =
     status?.status ?? (uploaded.length ? "Uploaded" : "Awaiting");
+  const interviewAvailable = canEdit && hasInterviewFor(slot.code);
+  const hasInterviewExtraction = extractions.some(
+    (e) => e.source === "ai_interview",
+  );
+  // Non-interview fallback: show "I don't have this document" that
+  // opens the lightweight accountant-help request. Hidden on the
+  // mandatory-upload slots (PCH-14 bank statements, PCH-23 sign-off)
+  // and once help has already been requested.
+  const helpAvailable =
+    canEdit
+    && canRequestAlternative(slot.code)
+    && !hasInterviewFor(slot.code)
+    && effectiveStatus !== "Awaiting accountant";
   const onPick = async (file: File) => {
     setBusy(true); setErr(null);
     const fd = new FormData();
@@ -422,9 +446,10 @@ function DocRow({
           <span className={
             effectiveStatus === "Uploaded" ? "font-semibold text-emerald-700"
             : effectiveStatus === "Not applicable" ? "text-slate-500"
+            : effectiveStatus === "Awaiting accountant" ? "font-semibold text-indigo-700"
             : "text-amber-700"
           }>
-            {effectiveStatus}
+            {effectiveStatus === "Awaiting accountant" ? "Awaiting your accountant" : effectiveStatus}
           </span>
         </div>
       </div>
@@ -448,6 +473,26 @@ function DocRow({
           className={"inline-block cursor-pointer rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 " + (busy ? "opacity-50" : "")}>
           {busy ? "Uploading..." : "Upload"}
         </label>
+        {interviewAvailable && !hasInterviewExtraction && !interviewOpen && (
+          <button
+            type="button"
+            onClick={() => setInterviewOpen(true)}
+            disabled={busy}
+            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1 text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            I don&apos;t have this document
+          </button>
+        )}
+        {helpAvailable && !helpOpen && (
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            disabled={busy}
+            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1 text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            I don&apos;t have this document
+          </button>
+        )}
         {!isRequired && effectiveStatus !== "Not applicable" && (
           <button type="button" onClick={markNA} disabled={busy}
             className="rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 disabled:opacity-50">
@@ -456,6 +501,28 @@ function DocRow({
         )}
         {err && <span className="text-red-600">{err}</span>}
       </div>
+      {interviewAvailable && interviewOpen ? (
+        <InterviewPanel
+          caseId={caseId}
+          slotCode={slot.code}
+          slotLabel={slot.display_name}
+          onClose={() => {
+            setInterviewOpen(false);
+            onChanged();
+          }}
+        />
+      ) : null}
+      {helpAvailable && helpOpen ? (
+        <AccountantHelpPrompt
+          caseId={caseId}
+          slotCode={slot.code}
+          slotLabel={slot.display_name}
+          onClose={() => {
+            setHelpOpen(false);
+            onChanged();
+          }}
+        />
+      ) : null}
       {extractions.length > 0 ? (
         <div className="space-y-2">
           {extractions.map((ext) => (
@@ -467,198 +534,64 @@ function DocRow({
   );
 }
 
-// -------------------- Tab 1 Client --------------------
+// -------------------- Tab 1 Client (replaced by ProfilePanel) --------
+//
+// Slice 6 removed the long raw form. The two things that remain are
+// (1) `headToProfile`, which narrows the loose head bag into the typed
+// shape ProfilePanel expects, and (2) the shelved legacy form, kept
+// below in a comment block so the git history still shows the fields
+// in one place if we need to audit what moved to the interview flow.
 
-function ClientTabForm({ caseId, initial, editable = true }: { caseId: string; initial: Head; editable?: boolean }) {
-  void editable;
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
-  const [state, setState] = useState<Head>(initial);
-  const field = (k: string) => (state[k] ?? "") as string | number;
-  // Per-field validation errors, recomputed on every state change.
-  // Keys match the validator (cl_utr, cl_nino, cl_postcode, cl_dob,
-  // cl_start_date, cl_stop_date). Non-validated fields are absent.
-  const errors = useMemo(() => validateClientTab({
-    cl_utr: (state.cl_utr ?? "") as string,
-    cl_nino: (state.cl_nino ?? "") as string,
-    cl_postcode: (state.cl_postcode ?? "") as string,
-    cl_dob: (state.cl_dob ?? null) as string | null,
-    cl_start_date: (state.cl_start_date ?? null) as string | null,
-    cl_stop_date: (state.cl_stop_date ?? null) as string | null,
-  }), [state]);
-  const inputCls = (k: string) =>
-    "mt-1 w-full rounded border px-2 py-1 text-sm " +
-    (errors[k] ? "border-red-400" : "border-slate-300");
-  const fieldErr = (k: string) => errors[k]
-    ? <span className="mt-1 block text-xs text-red-600">{errors[k]}</span>
-    : null;
-  const num = (k: string) => Number(state[k] ?? 0);
-  const set = (k: string, v: string | number | boolean | null) =>
-    setState((s) => ({ ...s, [k]: v }));
-  const save = () => start(async () => {
-    const r = await savePchClientTabAction(caseId, {
-      cl_name: String(state.cl_name ?? ""),
-      cl_utr: String(state.cl_utr ?? ""),
-      cl_nino: String(state.cl_nino ?? ""),
-      cl_dob: state.cl_dob ? String(state.cl_dob) : null,
-      cl_address: String(state.cl_address ?? ""),
-      cl_postcode: String(state.cl_postcode ?? ""),
-      cl_phone: String(state.cl_phone ?? ""),
-      cl_email: String(state.cl_email ?? ""),
-      cl_licensing_authority: String(state.cl_licensing_authority ?? ""),
-      cl_platforms: String(state.cl_platforms ?? ""),
-      cl_start_date: state.cl_start_date ? String(state.cl_start_date) : null,
-      cl_stop_date: state.cl_stop_date ? String(state.cl_stop_date) : null,
-      employment_income_pence: Math.round(Number(state.employment_income_pound ?? 0) * 100),
-      paye_pence: Math.round(Number(state.paye_pound ?? 0) * 100),
-      rental_profit_pence: Math.round(Number(state.rental_profit_pound ?? 0) * 100),
-      bank_interest_pence: Math.round(Number(state.bank_interest_pound ?? 0) * 100),
-      marriage_allowance_status: (state.marriage_allowance_status ?? "None") as "None" | "Transferring" | "Receiving",
-      personal_pension_net_pence: Math.round(Number(state.personal_pension_net_pound ?? 0) * 100),
-      gift_aid_net_pence: Math.round(Number(state.gift_aid_net_pound ?? 0) * 100),
-      student_loan_plan: String(state.student_loan_plan ?? ""),
-      poa1_due_pence: Math.round(Number(state.poa1_due_pound ?? 0) * 100),
-      poa2_due_pence: Math.round(Number(state.poa2_due_pound ?? 0) * 100),
-      poa1_paid_pence: Math.round(Number(state.poa1_paid_pound ?? 0) * 100),
-      poa2_paid_pence: Math.round(Number(state.poa2_paid_pound ?? 0) * 100),
-      gross_rent_received_pence: Math.round(Number(state.gross_rent_received_pound ?? 0) * 100),
-      last_year_qi_pence: Math.round(Number(state.last_year_qi_pound ?? 0) * 100),
-      vat_registered: Boolean(state.vat_registered),
-    });
-    setMsg(r.ok ? "Saved" : r.error);
-  });
-  // Prime "pound" display fields from pence columns if present.
-  const px = (penceKey: string, poundKey: string) =>
-    state[poundKey] !== undefined ? Number(state[poundKey])
-      : state[penceKey] !== undefined ? Number(state[penceKey]) / 100
-      : 0;
-  const input = "mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm";
-  const label = "text-xs font-semibold text-slate-600";
-  const grid = "grid grid-cols-1 sm:grid-cols-2 gap-3";
-  return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-bold">About you</h3>
-      <div className={grid}>
-        <label className="block"><span className={label}>Full name</span>
-          <input className={input} value={String(field("cl_name"))}
-            onChange={(e) => set("cl_name", e.target.value)} /></label>
-        <label className="block"><span className={label}>UTR</span>
-          <input className={inputCls("cl_utr")} value={String(field("cl_utr"))}
-            onChange={(e) => set("cl_utr", e.target.value)} />
-          {fieldErr("cl_utr")}</label>
-        <label className="block"><span className={label}>NI Number</span>
-          <input className={inputCls("cl_nino")} value={String(field("cl_nino"))}
-            onChange={(e) => set("cl_nino", e.target.value)} />
-          {fieldErr("cl_nino")}</label>
-        <label className="block"><span className={label}>Date of birth</span>
-          <input type="date" className={inputCls("cl_dob")} value={String(field("cl_dob"))}
-            onChange={(e) => set("cl_dob", e.target.value)} />
-          {fieldErr("cl_dob")}</label>
-        <label className="block sm:col-span-2"><span className={label}>Address</span>
-          <input className={input} value={String(field("cl_address"))}
-            onChange={(e) => set("cl_address", e.target.value)} /></label>
-        <label className="block"><span className={label}>Postcode</span>
-          <input className={inputCls("cl_postcode")} value={String(field("cl_postcode"))}
-            onChange={(e) => set("cl_postcode", e.target.value)} />
-          {fieldErr("cl_postcode")}</label>
-        <label className="block"><span className={label}>Mobile</span>
-          <input className={input} value={String(field("cl_phone"))}
-            onChange={(e) => set("cl_phone", e.target.value)} /></label>
-      </div>
-
-      <h3 className="text-sm font-bold mt-4">Your driving work</h3>
-      <div className={grid}>
-        <label className="block"><span className={label}>Licensing authority (TfL / council)</span>
-          <input className={input} value={String(field("cl_licensing_authority"))}
-            onChange={(e) => set("cl_licensing_authority", e.target.value)} /></label>
-        <label className="block"><span className={label}>Platforms you drove for</span>
-          <input className={input} value={String(field("cl_platforms"))}
-            onChange={(e) => set("cl_platforms", e.target.value)} /></label>
-        <label className="block"><span className={label}>Started driving (if after 6 Apr 2025)</span>
-          <input type="date" className={inputCls("cl_start_date")} value={String(field("cl_start_date"))}
-            onChange={(e) => set("cl_start_date", e.target.value)} />
-          {fieldErr("cl_start_date")}</label>
-        <label className="block"><span className={label}>Stopped (if before 5 Apr 2026)</span>
-          <input type="date" className={inputCls("cl_stop_date")} value={String(field("cl_stop_date"))}
-            onChange={(e) => set("cl_stop_date", e.target.value)} />
-          {fieldErr("cl_stop_date")}</label>
-      </div>
-
-      <h3 className="text-sm font-bold mt-4">Other income (6 Apr 2025, 5 Apr 2026)</h3>
-      <div className={grid}>
-        {[
-          ["Employment pay (P60/P45 gross) £", "employment_income_pence", "employment_income_pound"],
-          ["Tax taken off that pay £", "paye_pence", "paye_pound"],
-          ["Rental profit (after expenses) £", "rental_profit_pence", "rental_profit_pound"],
-          ["Bank/savings interest £", "bank_interest_pence", "bank_interest_pound"],
-        ].map(([label_, pence, pound]) => (
-          <label key={pound} className="block"><span className={label}>{label_}</span>
-            <input type="number" step="0.01" className={input} value={String(px(pence, pound))}
-              onChange={(e) => set(pound, e.target.value)} /></label>
-        ))}
-      </div>
-
-      <h3 className="text-sm font-bold mt-4">Allowances and reliefs</h3>
-      <div className={grid}>
-        <label className="block"><span className={label}>Marriage Allowance</span>
-          <select className={input} value={String(field("marriage_allowance_status") || "None")}
-            onChange={(e) => set("marriage_allowance_status", e.target.value)}>
-            <option>None</option><option>Transferring</option><option>Receiving</option>
-          </select></label>
-        <label className="block"><span className={label}>Personal pension paid (net) £</span>
-          <input type="number" step="0.01" className={input} value={String(px("personal_pension_net_pence", "personal_pension_net_pound"))}
-            onChange={(e) => set("personal_pension_net_pound", e.target.value)} /></label>
-        <label className="block"><span className={label}>Gift Aid paid £</span>
-          <input type="number" step="0.01" className={input} value={String(px("gift_aid_net_pence", "gift_aid_net_pound"))}
-            onChange={(e) => set("gift_aid_net_pound", e.target.value)} /></label>
-        <label className="block"><span className={label}>Student loan plan</span>
-          <input className={input} value={String(field("student_loan_plan"))}
-            onChange={(e) => set("student_loan_plan", e.target.value)} /></label>
-      </div>
-
-      <h3 className="text-sm font-bold mt-4">Payments on account for 2025/26</h3>
-      <div className={grid}>
-        {[
-          ["1st POA due 31 Jan 2026 £", "poa1_due_pence", "poa1_due_pound"],
-          ["2nd POA due 31 Jul 2026 £", "poa2_due_pence", "poa2_due_pound"],
-          ["1st POA actually paid £", "poa1_paid_pence", "poa1_paid_pound"],
-          ["2nd POA actually paid £", "poa2_paid_pence", "poa2_paid_pound"],
-        ].map(([label_, pence, pound]) => (
-          <label key={pound} className="block"><span className={label}>{label_}</span>
-            <input type="number" step="0.01" className={input} value={String(px(pence, pound))}
-              onChange={(e) => set(pound, e.target.value)} /></label>
-        ))}
-      </div>
-
-      <h3 className="text-sm font-bold mt-4">MTD and VAT</h3>
-      <div className={grid}>
-        <label className="block"><span className={label}>Gross rent received £</span>
-          <input type="number" step="0.01" className={input} value={String(px("gross_rent_received_pence", "gross_rent_received_pound"))}
-            onChange={(e) => set("gross_rent_received_pound", e.target.value)} /></label>
-        <label className="block"><span className={label}>Last year qualifying income £</span>
-          <input type="number" step="0.01" className={input} value={String(px("last_year_qi_pence", "last_year_qi_pound"))}
-            onChange={(e) => set("last_year_qi_pound", e.target.value)} /></label>
-        <label className="block"><span className={label}>VAT registered?</span>
-          <select className={input} value={state.vat_registered ? "Yes" : "No"}
-            onChange={(e) => set("vat_registered", e.target.value === "Yes")}>
-            <option>No</option><option>Yes</option>
-          </select></label>
-      </div>
-
-      <div className="flex items-center gap-3 pt-2">
-        <button type="button" onClick={save}
-          disabled={pending || Object.keys(errors).length > 0}
-          className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-          {pending ? "Saving..." : "Save details"}
-        </button>
-        {msg && <span className={msg === "Saved" ? "text-emerald-700 text-xs" : "text-red-600 text-xs"}>{msg}</span>}
-        {Object.keys(errors).length > 0 && !msg && (
-          <span className="text-xs text-red-600">Fix the errors above before saving.</span>
-        )}
-      </div>
-    </div>
-  );
+function headToProfile(h: Head): ProfileHead {
+  const str = (k: string): string | null => {
+    const v = h[k];
+    return typeof v === "string" ? v : v == null ? null : String(v);
+  };
+  const num = (k: string): number | null => {
+    const v = h[k];
+    if (v == null) return null;
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const bool = (k: string): boolean | null => {
+    const v = h[k];
+    if (v == null) return null;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") {
+      if (v.toLowerCase() === "true" || v === "Yes") return true;
+      if (v.toLowerCase() === "false" || v === "No") return false;
+    }
+    return null;
+  };
+  return {
+    cl_name: str("cl_name"),
+    cl_email: str("cl_email"),
+    cl_phone: str("cl_phone"),
+    cl_address: str("cl_address"),
+    cl_postcode: str("cl_postcode"),
+    cl_dob: str("cl_dob"),
+    cl_utr: str("cl_utr"),
+    cl_nino: str("cl_nino"),
+    cl_licensing_authority: str("cl_licensing_authority"),
+    cl_platforms: str("cl_platforms"),
+    cl_start_date: str("cl_start_date"),
+    cl_stop_date: str("cl_stop_date"),
+    employment_income_pence: num("employment_income_pence"),
+    paye_pence: num("paye_pence"),
+    rental_profit_pence: num("rental_profit_pence"),
+    bank_interest_pence: num("bank_interest_pence"),
+    marriage_allowance_status: str("marriage_allowance_status"),
+    personal_pension_net_pence: num("personal_pension_net_pence"),
+    gift_aid_net_pence: num("gift_aid_net_pence"),
+    student_loan_plan: str("student_loan_plan"),
+    poa1_due_pence: num("poa1_due_pence"),
+    poa2_due_pence: num("poa2_due_pence"),
+    poa1_paid_pence: num("poa1_paid_pence"),
+    poa2_paid_pence: num("poa2_paid_pence"),
+    vat_registered: bool("vat_registered"),
+  };
 }
+
 
 // -------------------- Tab 2 Income --------------------
 

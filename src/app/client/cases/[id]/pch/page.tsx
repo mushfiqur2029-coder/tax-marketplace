@@ -90,7 +90,7 @@ export default async function PchClientPage({
   // write to the intake tables.
   const { data: extractionsRaw } = await admin
     .from("pch_doc_extractions")
-    .select("id, slot_code, status, overall_confidence, document_type, fields, field_states, error_message")
+    .select("id, slot_code, status, overall_confidence, document_type, fields, field_states, error_message, source")
     .eq("case_id", id)
     .order("created_at", { ascending: false });
   const extractions: ExtractionReviewPayload[] = (extractionsRaw ?? []).map((e) => {
@@ -110,6 +110,7 @@ export default async function PchClientPage({
       fields: (e.fields ?? {}) as ExtractionReviewPayload["fields"],
       fieldStates: (e.field_states ?? {}) as ExtractionReviewPayload["fieldStates"],
       errorMessage: e.error_message,
+      source: (e.source ?? "document") as ExtractionReviewPayload["source"],
       labels: applyMap?.label ?? {},
       targetable,
     };
