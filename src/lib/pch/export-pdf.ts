@@ -1,6 +1,7 @@
 import "server-only";
 import { renderPdfFromHtml } from "@/lib/engagement/pdf";
 import type { PchExportPayload } from "./export-data";
+import { SA103S_UI } from "./sa103s-labels";
 
 // 3-page client-facing accounts pack followed by accountant working
 // papers, matching the Taj Accountants reference pack layout
@@ -167,14 +168,23 @@ function buildHtml(p: PchExportPayload): string {
   // internal audit trail of the SA103S boxes, tax computation and any
   // overrides applied on top of the engine.
   const wp = p.workingPapers;
+  // Phase 7: human-readable label as the primary string, muted HMRC box
+  // number as a secondary tag. Mirrors the accountant workspace
+  // OverridableSnapshot via the shared SA103S_UI map; falls back to
+  // the raw b.label if a path is missing from the map (defensive, keeps
+  // the table rendering if a new box ships without a label update).
   const sa103sRows = wp.sa103sBoxes.map((b) => {
+    const ui = SA103S_UI[b.path];
     const delta = b.effective - b.engine;
     const deltaCell = Math.abs(delta) < 0.5
       ? "<td></td>"
       : `<td class="num" style="color:${delta > 0 ? "#047857" : "#be123c"}">${delta > 0 ? "+" : ""}${fmtMoneyWhole(delta)}</td>`;
+    const labelCell = ui
+      ? `<span>${esc(ui.friendly)}</span><span style="margin-left:8px;color:#64748b;font-size:10px;letter-spacing:0.03em;text-transform:uppercase">${esc(ui.box)}</span>`
+      : esc(b.label);
     return `
       <tr>
-        <td>${esc(b.label)}</td>
+        <td>${labelCell}</td>
         <td class="num" style="color:#64748b">${fmtMoneyWhole(b.engine)}</td>
         <td class="num"><strong>${fmtMoneyWhole(b.effective)}</strong></td>
         ${deltaCell}

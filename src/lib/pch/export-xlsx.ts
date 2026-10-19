@@ -1,6 +1,7 @@
 import "server-only";
 import * as XLSX from "xlsx";
 import type { PchExportPayload } from "./export-data";
+import { SA103S_UI } from "./sa103s-labels";
 
 // Workbook structure mirrors the Taj Accountants reference pack
 // (reference/pch-uber/1. PCH/SA 2084/2024-25 docs/PCH Accounts
@@ -145,20 +146,28 @@ export function renderPchExportXlsx(p: PchExportPayload): Uint8Array {
   taxCalcSheet["!cols"] = [{ wch: 32 }, { wch: 20 }];
   XLSX.utils.book_append_sheet(wb, taxCalcSheet, "WP - Tax calc");
 
+  // Phase 7: drop the raw-path column, use the shared SA103S_UI's
+  // human-readable label as the primary field text, keep the HMRC box
+  // number as a narrow secondary column (sortable + filterable rather
+  // than embedded in the label string). Falls back to the raw b.label
+  // if a path isn't in the map (defensive).
   const sa103Rows: (string | number)[][] = [
     ["Working papers, SA103S filing boxes"],
     [],
-    ["Box", "Field", "Engine £", "Effective £", "Delta £"],
-    ...wp.sa103sBoxes.map((b) => [
-      b.path.replace(/^sa103s\./, ""),
-      b.label,
-      b.engine,
-      b.effective,
-      b.effective - b.engine,
-    ]),
+    ["Field", "Box", "Engine £", "Effective £", "Delta £"],
+    ...wp.sa103sBoxes.map((b) => {
+      const ui = SA103S_UI[b.path];
+      return [
+        ui?.friendly ?? b.label,
+        ui?.box ?? "",
+        b.engine,
+        b.effective,
+        b.effective - b.engine,
+      ];
+    }),
   ];
   const sa103Sheet = newSheet(sa103Rows);
-  sa103Sheet["!cols"] = [{ wch: 28 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+  sa103Sheet["!cols"] = [{ wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, sa103Sheet, "WP - SA103S");
 
   const overrideRows: (string | number | null)[][] = [
