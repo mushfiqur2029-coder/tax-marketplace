@@ -133,6 +133,10 @@ export function validateClientTab(h: ClientTabShape): Record<string, string> {
 }
 
 export type VehicleShape = {
+  // Phase 6 Slice 4 writes this via the VEHICLE_CA interview; one of
+  // "Owned outright" | "Hire purchase" | "PCP" | "Loan" | "Leased" |
+  // "Rented" | "No vehicle" or null if the chat hasn't been run yet.
+  status?: string | null;
   odo_start?: number | null;
   odo_end?: number | null;
   co2_gpkm?: number | null;
@@ -172,24 +176,42 @@ export type ExpenseLineShape = { amountPaid: number; evidence: string | null };
 
 export type Readiness = { ok: boolean; blockers: string[] };
 
-// Can the engine be run? Needs at least one income line with a
-// positive gross figure, and either a method choice OR enough mileage
-// data to compute one. The engine itself tolerates zero inputs but
-// a zero P&L is never useful; this check catches an "I forgot to
-// save" slip before the client stares at £0s.
+// Vehicle statuses where no mileage / method / business-% is needed
+// because there is no owned vehicle for capital-allowance or actual-
+// cost accounting (any related rent / insurance / fuel already lands
+// via the bank statement into pch_expense_lines).
+const VEHICLE_NO_CA_STATUSES = new Set(["Leased", "Rented", "No vehicle"]);
+
+// Can the engine be run? Needs at least one income line with a positive
+// gross figure, and (if the client has a vehicle to depreciate) a
+// business-use % or mileage figure the engine can apply.
+//
+// Phase 6: income comes from the bank-statement ingest, not a manual
+// income grid; vehicle details come from the VEHICLE_CA conversation,
+// not a form. Error copy therefore points the client at the right
+// section instead of the deleted tab names.
 export function canRunDraft(
   income: readonly IncomeLineShape[],
   vehicle: VehicleShape | null,
 ): Readiness {
   const blockers: string[] = [];
   const positiveIncome = income.some((l) => l.grossTakings > 0);
-  if (!positiveIncome) blockers.push("Add at least one income line with a gross amount above zero.");
+  if (!positiveIncome) {
+    blockers.push(
+      "No income yet. Upload a bank statement in the Documents section above; we'll categorise your fares and other income automatically.",
+    );
+  }
   if (vehicle) {
-    const hasMileage = (vehicle.odo_start ?? 0) > 0 && (vehicle.odo_end ?? 0) > (vehicle.odo_start ?? 0);
-    const hasMethod = (vehicle.method_choice ?? "").length > 0;
-    const hasPctOverride = (vehicle.business_pct_override ?? 0) > 0;
-    if (!hasMileage && !hasMethod && !hasPctOverride) {
-      blockers.push("Enter odometer start/end on tab 4, OR pick a method, OR set a business-use % override.");
+    const statusSkipsCa = VEHICLE_NO_CA_STATUSES.has((vehicle.status ?? "").trim());
+    if (!statusSkipsCa) {
+      const hasMileage = (vehicle.odo_start ?? 0) > 0 && (vehicle.odo_end ?? 0) > (vehicle.odo_start ?? 0);
+      const hasMethod = (vehicle.method_choice ?? "").length > 0;
+      const hasPctOverride = (vehicle.business_pct_override ?? 0) > 0;
+      if (!hasMileage && !hasMethod && !hasPctOverride) {
+        blockers.push(
+          "Open the Vehicle and capital allowances section above and finish the short chat. If you own or finance the car, we need a business-use percentage (or odometer readings) to work out your deduction.",
+        );
+      }
     }
   }
   return { ok: blockers.length === 0, blockers };

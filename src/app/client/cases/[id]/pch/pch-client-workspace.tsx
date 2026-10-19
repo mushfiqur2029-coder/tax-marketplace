@@ -104,6 +104,7 @@ export function PchClientWorkspace(props: {
       type: l.line_type,
     })),
     props.vehicle ? {
+      status: (props.vehicle.status ?? null) as string | null,
       odo_start: Number(props.vehicle.odo_start ?? 0) || null,
       odo_end: Number(props.vehicle.odo_end ?? 0) || null,
       method_choice: (props.vehicle.method_choice ?? null) as string | null,

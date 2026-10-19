@@ -52,7 +52,7 @@ export function computeIncome(lines: TaxEngineInputs["income"]): IncomeTotals {
 }
 
 // ------------------------------------------------------------------
-// Vehicle (tab 4) + capital allowances + mileage vs actual decision
+// Vehicle + capital allowances + mileage vs actual decision
 // ------------------------------------------------------------------
 export function computeVehicle(
   v: TaxEngineInputs["vehicle"],

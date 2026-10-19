@@ -42,10 +42,7 @@ import {
   schedulePchExtraction,
   runPchExtractionJob,
 } from "@/lib/pch/extraction-trigger";
-import {
-  sendPchInReviewEmail,
-  sendPchFiledEmail,
-} from "@/lib/pch/status-emails";
+import { sendPchInReviewEmail } from "@/lib/pch/status-emails";
 import { syncPchProfileFromUserAction } from "@/app/client/pch/profile-actions";
 
 type ActionOk = { ok: true };
@@ -378,7 +375,7 @@ export async function savePchExpenseLinesAction(
 }
 
 // -------------------------------------------------------------------
-// Vehicle (tab 4), single row per case.
+// Vehicle, single row per case (patched by the VEHICLE_CA interview).
 // -------------------------------------------------------------------
 type VehiclePatch = Record<string, unknown>;
 export async function savePchVehicleAction(
@@ -644,11 +641,16 @@ export async function submitForReviewAction(
 }
 
 // -------------------------------------------------------------------
-// Final client approval. Only valid when the accountant has advanced
-// the case to client_approval; captures the typed name + timestamp
-// against the snapshot the accountant signed off on, and flips the
-// case to filed in the same action so the client's one click does the
-// full sign-and-file step.
+// Figures approval. Only valid when the accountant has advanced the
+// case to client_approval; captures the typed name + timestamp against
+// the snapshot the accountant signed off on.
+//
+// This is the FIRST of two sign-off gates in Phase 6. It records that
+// the client is happy with the numbers; the case status stays at
+// client_approval so the accountant can then generate and send the
+// final pack (Slice 7 flow via sendFinalPackAction / confirmFinalPackAction
+// / markFiledWithHmrcAction). The case only flips to 'filed' when the
+// accountant marks it filed with HMRC after the second sign-off gate.
 // -------------------------------------------------------------------
 export async function recordClientApprovalAction(
   caseId: string,
@@ -685,14 +687,6 @@ export async function recordClientApprovalAction(
     .eq("case_id", caseId);
   if (approvalErr) return { ok: false, error: approvalErr.message };
 
-  const { error: statusErr } = await admin
-    .from("cases")
-    .update({ status: "filed" })
-    .eq("id", caseId)
-    .eq("status", "client_approval");
-  if (statusErr) return { ok: false, error: statusErr.message };
-
-  after(() => sendPchFiledEmail(caseId));
   revalidatePath(`/client/cases/${caseId}/pch`);
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };

@@ -97,7 +97,7 @@ export type ExpenseLine = {
   sa103sBox: 12 | 14 | 16 | 17 | 18 | 19;
 };
 
-// Vehicle + mileage inputs (tab 4).
+// Vehicle + mileage inputs (populated by the VEHICLE_CA interview).
 export type VehicleInputs = {
   status: "Owned outright" | "Bought on HP / loan" | "Rented weekly (PCO hire)" | "Leased";
   fuel: "Petrol" | "Diesel" | "Hybrid" | "Electric";
@@ -118,7 +118,7 @@ export type VehicleInputs = {
   capitalAllowanceRateOverride?: number;
   methodChoice?: "Simplified mileage" | "Actual costs"; // Blank = recommended
   realMpg?: number;              // For E2 fuel-estimate reasonableness check
-  fuelPricePerLitre?: number;    // Defaults handled per rate pack / tab 4
+  fuelPricePerLitre?: number;    // Defaults handled per rate pack
 };
 
 // The full computation input bundle.

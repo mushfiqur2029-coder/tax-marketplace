@@ -19,7 +19,10 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendPchReadyToApproveEmail } from "@/lib/pch/status-emails";
+import {
+  sendPchReadyToApproveEmail,
+  sendPchFiledEmail,
+} from "@/lib/pch/status-emails";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
   PCH_OVERRIDE_FIELD_BY_PATH,
@@ -575,6 +578,7 @@ export async function markFiledWithHmrcAction(
     .update({ status: "filed" })
     .eq("id", caseId);
   if (error) return { ok: false, error: error.message };
+  after(() => sendPchFiledEmail(caseId));
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   revalidatePath(`/client/cases/${caseId}/pch`);
   return { ok: true };
