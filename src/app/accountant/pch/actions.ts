@@ -354,3 +354,132 @@ export async function revertPchOverrideAction(
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };
 }
+
+// -------------------------------------------------------------------
+// Phase 6 Slice 6: bookkeeping confirm + line-item P&L edits.
+//
+// confirmBookkeepingAction / revertBookkeepingAction flip a timestamp
+// on pch_cases that gates the client-view P&L edit grid. Before
+// confirmation the accountant sees the AI-built ledger as review-only;
+// after confirmation each line in pch_income_lines + pch_expense_lines
+// becomes editable, with the AI's original value preserved in
+// ai_proposed_json for the diff view.
+//
+// editIncomeLineAction / editExpenseLineAction do the per-line write.
+// Each sets edited_by + edited_at so the UI can show "last changed by
+// <you> on <date>". The AI baseline in ai_proposed_json is never
+// overwritten so an accidental edit can be visually caught via the
+// diff pill.
+// -------------------------------------------------------------------
+
+export async function confirmBookkeepingAction(
+  caseId: string,
+): Promise<ActionResult> {
+  const { me } = await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("pch_cases")
+    .update({
+      bookkeeping_confirmed_at: new Date().toISOString(),
+      bookkeeping_confirmed_by: me.id,
+    })
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
+export async function revertBookkeepingAction(
+  caseId: string,
+): Promise<ActionResult> {
+  await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("pch_cases")
+    .update({
+      bookkeeping_confirmed_at: null,
+      bookkeeping_confirmed_by: null,
+    })
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
+type IncomeLinePatch = {
+  source?: string;
+  gross_takings_pence?: number;
+  platform_fee_pence?: number;
+};
+
+export async function editIncomeLineAction(
+  caseId: string,
+  lineId: string,
+  patch: IncomeLinePatch,
+): Promise<ActionResult> {
+  const { me } = await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const normalised: Record<string, string | number> = {};
+  if (typeof patch.source === "string" && patch.source.trim().length > 0) {
+    normalised.source = patch.source.trim();
+  }
+  if (typeof patch.gross_takings_pence === "number" && patch.gross_takings_pence >= 0) {
+    normalised.gross_takings_pence = Math.round(patch.gross_takings_pence);
+  }
+  if (typeof patch.platform_fee_pence === "number" && patch.platform_fee_pence >= 0) {
+    normalised.platform_fee_pence = Math.round(patch.platform_fee_pence);
+  }
+  if (Object.keys(normalised).length === 0) {
+    return { ok: false, error: "Nothing to update." };
+  }
+  const { error } = await admin
+    .from("pch_income_lines")
+    .update({
+      ...normalised,
+      edited_by: me.id,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", lineId)
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
+type ExpenseLinePatch = {
+  label?: string;
+  amount_paid_pence?: number;
+};
+
+export async function editExpenseLineAction(
+  caseId: string,
+  lineId: string,
+  patch: ExpenseLinePatch,
+): Promise<ActionResult> {
+  const { me } = await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const normalised: Record<string, string | number> = {};
+  if (typeof patch.label === "string" && patch.label.trim().length > 0) {
+    normalised.label = patch.label.trim();
+  }
+  if (typeof patch.amount_paid_pence === "number" && patch.amount_paid_pence >= 0) {
+    normalised.amount_paid_pence = Math.round(patch.amount_paid_pence);
+  }
+  if (Object.keys(normalised).length === 0) {
+    return { ok: false, error: "Nothing to update." };
+  }
+  const { error } = await admin
+    .from("pch_expense_lines")
+    .update({
+      ...normalised,
+      edited_by: me.id,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", lineId)
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  return { ok: true };
+}

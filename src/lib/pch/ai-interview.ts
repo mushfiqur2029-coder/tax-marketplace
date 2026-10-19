@@ -211,66 +211,90 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
     ],
   },
 
-  // -----------------------------------------------------------------
-  // Slice 6: the "PROFILE" flow replaces the raw Tab 1 form.
+  // Phase 6 Slice 1 removed the PROFILE flow (DOB/UTR/NI/licensing/
+  // MA/pension/Gift Aid). DOB + address now come from the Photo ID
+  // vision pass (PCH-24); UTR + NI are collected on a compact manual
+  // card next to the ID upload; the other reliefs are deferred to the
+  // bank-statement AI pass + accountant confirmation.
+
+  // ------------------------------------------------------------------
+  // Phase 6 Slice 4: VEHICLE_CA flow.
   //
-  // Collects the handful of fields that cannot come from a document
-  // extraction and are not already captured during registration:
-  //   DOB, UTR, NI number, licensing authority, marriage allowance,
-  //   personal pension (net), Gift Aid (net).
+  // Replaces the long Tab 4 vehicle form with a conversational walk
+  // through only the fields that apply, after the AI explains capital
+  // allowances in plain English. Returns "Not applicable" for every
+  // detail field when the client leases / rents / has no vehicle to
+  // depreciate, rather than leaving a dead-end form.
   //
-  // The opener in this entry is a boilerplate fallback. The profile
-  // start action overrides it with a context-aware opener that lists
-  // the fields already captured and the fields still missing.
-  // -----------------------------------------------------------------
-  PROFILE: {
-    slotCode: "PROFILE",
-    title: "Personal profile completion",
-    resultLabel: "AI interview: personal profile",
+  // Fields match pch_vehicle columns so the finalize payload maps
+  // cleanly in the commit action (vehicle-interview-actions.ts).
+  // ------------------------------------------------------------------
+  VEHICLE_CA: {
+    slotCode: "VEHICLE_CA",
+    title: "Vehicle and capital allowances",
+    resultLabel: "AI interview: vehicle and capital allowances",
     opener:
-      "Let's walk through the handful of personal details we still need. I'll ask one or two at a time.",
+      "Last stretch: your vehicle. HMRC lets you claim a chunk of what the vehicle cost you back against your profit over time, called capital allowances. If you own or finance the car, that's usually worth claiming. If you lease or rent it (like a PCO hire), the rent itself is already in your bank statement, so there's nothing extra to work out here. First: how is your vehicle set up this tax year? Owned outright, financed (HP or PCP), leased, PCO/weekly rental, or no vehicle this year?",
     fields: [
       {
-        key: "cl_dob",
-        label: "Date of birth",
+        key: "status",
+        label: "Vehicle status",
         description:
-          "Client's date of birth, yyyy-mm-dd. Required for HMRC Self Assessment. Confirm the exact date the client states; do not assume.",
+          "Exactly one of: 'Owned outright', 'Hire purchase', 'PCP', 'Loan', 'Leased', 'Rented', 'No vehicle'. Drives every other field below. If the client says 'rented' or 'PCO rental', use 'Rented'. If 'Lease' use 'Leased'.",
       },
       {
-        key: "cl_utr",
-        label: "UTR",
+        key: "fuel",
+        label: "Fuel type",
         description:
-          "10-digit HMRC Unique Taxpayer Reference. If the client doesn't have one, mark missing and the accountant will chase it; do not fabricate.",
+          "'Petrol' | 'Diesel' | 'Hybrid' | 'Electric' | 'PHEV'. Only ask if status is Owned/HP/PCP/Loan. Otherwise mark missing.",
       },
       {
-        key: "cl_nino",
-        label: "National Insurance number",
+        key: "make_model",
+        label: "Make and model",
         description:
-          "Format: 2 letters, 6 digits, 1 letter (e.g. AB123456C). If the client doesn't remember, mark missing.",
+          "Short free text, e.g. 'Toyota Prius' or 'Tesla Model 3'. Only ask if status is not 'No vehicle'.",
       },
       {
-        key: "cl_licensing_authority",
-        label: "Licensing authority",
+        key: "registration",
+        label: "Registration",
         description:
-          "Who issued the client's private-hire licence (TfL, Birmingham City Council, Manchester City Council, etc.).",
+          "UK number plate as printed, uppercase, no space. Only ask if status is not 'No vehicle'. Mark missing if the client doesn't remember exactly.",
       },
       {
-        key: "marriage_allowance_status",
-        label: "Marriage Allowance",
+        key: "co2_gpkm",
+        label: "CO2 emissions (g/km)",
         description:
-          "Exactly one of 'None', 'Transferring' (giving part of their allowance to a spouse), or 'Receiving' (getting part from a spouse). Default to 'None' if the client doesn't know.",
+          "Integer, from the V5C or the DVLA website. Only matters for owned / HP / PCP / Loan vehicles (sets the capital allowance rate). Mark missing if the client doesn't know; the accountant will look it up on DVLA.",
       },
       {
-        key: "personal_pension_net_pound",
-        label: "Personal pension (net)",
+        key: "purchase_date",
+        label: "Purchase date",
         description:
-          "Amount paid into a personal (private) pension in the tax year, NET of basic-rate relief at source. GBP numeric. Zero if none.",
+          "yyyy-mm-dd. Only ask if status is Owned/HP/PCP/Loan AND the purchase was in this tax year or still being paid off. Mark missing for cars bought in a prior year with no remaining balance.",
       },
       {
-        key: "gift_aid_net_pound",
-        label: "Gift Aid (net)",
+        key: "purchase_price",
+        label: "Purchase price (GBP, total)",
         description:
-          "Amount given to charity under Gift Aid in the tax year. GBP numeric. Zero if none.",
+          "Total price paid including VAT. Numeric GBP. Only ask for Owned/HP/PCP/Loan. For HP/PCP ask for the total price including the finance balance. Mark missing if the client genuinely does not know; the accountant will chase the invoice.",
+      },
+      {
+        key: "new_or_used",
+        label: "New or used",
+        description:
+          "'New' | 'Used'. Only ask for Owned/HP/PCP/Loan.",
+      },
+      {
+        key: "business_pct_override",
+        label: "Business use percentage",
+        description:
+          "Integer 0-100. If the client uses the car for both private trips and PHV work, what percentage of total mileage is PHV? Only ask if status is not 'No vehicle'. Default to 100 if the client confirms the car is only used for driving work.",
+      },
+      {
+        key: "prior_year_wdv_pound",
+        label: "Prior-year written-down value (GBP)",
+        description:
+          "The written-down value brought forward from last year's capital allowances pool. GBP. Only ask if the client has been self-employed as a driver for more than one tax year AND status is Owned/HP/PCP/Loan. Mark missing if they don't know; the accountant will pull it from last year's SA302.",
       },
     ],
   },
@@ -284,20 +308,6 @@ export function hasInterviewFor(slotCode: string): boolean {
   return slotCode in INTERVIEW_FLOWS;
 }
 
-// Keys the PROFILE flow collects. Exposed as a const so server actions
-// and the profile panel share one source of truth for "which pch_cases
-// columns are AI-interview candidates".
-export const PROFILE_INTERVIEW_FIELD_KEYS = [
-  "cl_dob",
-  "cl_utr",
-  "cl_nino",
-  "cl_licensing_authority",
-  "marriage_allowance_status",
-  "personal_pension_net_pound",
-  "gift_aid_net_pound",
-] as const;
-
-export type ProfileInterviewFieldKey = (typeof PROFILE_INTERVIEW_FIELD_KEYS)[number];
 
 // Opening message. For the PCH-01..03 slot flows this is the flow's
 // static `opener` string. For PROFILE (and future slots that need a

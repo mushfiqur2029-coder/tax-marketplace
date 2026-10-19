@@ -592,9 +592,50 @@ export const SLOT_DEFINITIONS: Record<string, SlotDefinition> = {
     ),
   },
 
-  // --- Workflow docs (no AI pass) ---------------------------------
+  // --- Workflow docs ------------------------------------------------
   "PCH-23": { mode: "skip", title: "Signed approval of draft accounts", prompt: "" },
-  "PCH-24": { mode: "skip", title: "Photo ID and proof of address", prompt: "" },
+
+  // Phase 6 Slice 1: PCH-24 moves from skip to a full vision pass.
+  // We read the printed name, DOB, and address off the ID and write
+  // them straight into pch_cases head columns via SLOT_APPLY_MAPS. The
+  // client confirms or edits each extracted value in the review UI;
+  // UTR and NI are collected separately on the identity card (they are
+  // not on either document).
+  "PCH-24": {
+    mode: "extract",
+    title: "Photo ID (passport or driving licence)",
+    prompt:
+      "This is a UK Photo ID uploaded for anti-money-laundering + personal-data capture. Extract the holder's printed name, date of birth, residential address, and postcode. For a UK driving licence the address is on the front; for a passport there is no address, mark it missing. Return the document type exactly as 'UK passport' or 'UK driving licence'; anything else sets overallConfidence='low' so the client is prompted to re-upload.",
+    toolName: "extract_photo_id",
+    toolDescription: "Extract name, DOB, address, postcode from a UK Photo ID.",
+    model: MODEL_SONNET,
+    schema: schemaWith(
+      {
+        documentNumber: fieldSchema(
+          "Passport number or driving-licence number as printed. Keep spaces and punctuation as shown.",
+        ),
+        fullName: fieldSchema(
+          "Holder's full name as printed. Preserve middle names and any suffix.",
+        ),
+        dateOfBirth: fieldSchema(
+          "Date of birth, yyyy-mm-dd. UK driving licences print it as DD-MM-YYYY on the front; convert.",
+        ),
+        address: fieldSchema(
+          "Residential address lines joined by commas, excluding the postcode (which goes in its own field). UK driving licence shows this on the front. Passports do not carry an address; mark missing.",
+        ),
+        postcode: fieldSchema(
+          "UK postcode as printed, uppercase, one space between the outward and inward parts (e.g. 'SW1A 2AA'). Missing on passports.",
+        ),
+      },
+      [
+        "documentNumber",
+        "fullName",
+        "dateOfBirth",
+        "address",
+        "postcode",
+      ],
+    ),
+  },
 };
 
 // -------------------------------------------------------------------

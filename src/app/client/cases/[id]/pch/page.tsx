@@ -54,16 +54,29 @@ export default async function PchClientPage({
   // Make sure the head row exists so every subsequent save finds a row.
   await ensurePchHeadRow(id);
 
-  const [head, income, expenses, vehicle, slots, docStatus, snapshot] =
+  const [head, income, expenses, vehicle, slots, docStatus, snapshot, bankTxns, pendingAddons] =
     await Promise.all([
       admin.from("pch_cases").select("*").eq("case_id", id).single(),
       admin.from("pch_income_lines").select("*").eq("case_id", id).order("sort_order"),
       admin.from("pch_expense_lines").select("*").eq("case_id", id).order("sort_order"),
       admin.from("pch_vehicle").select("*").eq("case_id", id).maybeSingle(),
-      admin.from("pch_doc_slots").select("*").order("sort_order"),
+      admin.from("pch_doc_slots").select("*").eq("active", true).order("sort_order"),
       admin.from("pch_doc_status").select("*").eq("case_id", id),
       admin.from("pch_cases").select("engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name")
         .eq("case_id", id).single(),
+      // Slice 3: live ledger feed. Ordered newest-first so the ledger
+      // view's grouped render shows the most recent transaction at the
+      // top of each category when expanded.
+      admin.from("pch_bank_transactions")
+        .select("id, txn_date, description, amount_pence, category, category_confidence")
+        .eq("case_id", id)
+        .order("txn_date", { ascending: false, nullsFirst: false }),
+      // Phase 6 Slice 5: add-ons the client still owes payment on.
+      admin.from("case_addons")
+        .select("id, description, amount_pence, status")
+        .eq("case_id", id)
+        .eq("status", "pending_payment")
+        .order("created_at", { ascending: true }),
     ]);
 
   const { data: uploadedDocs } = await admin
@@ -128,6 +141,17 @@ export default async function PchClientPage({
 
   const messages = await loadCaseMessages(admin, id);
 
+  // Slice 3: shape pch_bank_transactions rows for the ledger view.
+  const bankTransactions = (bankTxns.data ?? []).map((r) => ({
+    id: r.id as string,
+    txnDate: (r.txn_date as string | null) ?? null,
+    description: r.description as string,
+    amountPence: Number(r.amount_pence),
+    category: (r.category as string | null) ?? null,
+    categoryConfidence: ((r.category_confidence as string | null) ?? null) as
+      | "high" | "medium" | "low" | "missing" | null,
+  }));
+
   return (
     <PchClientWorkspace
       caseId={id}
@@ -141,6 +165,12 @@ export default async function PchClientPage({
       uploadedDocs={uploadedDocs ?? []}
       extractions={extractions}
       priorYearOptions={priorYearOptions}
+      bankTransactions={bankTransactions}
+      pendingAddons={(pendingAddons.data ?? []).map((a) => ({
+        id: a.id as string,
+        description: a.description as string,
+        amount_pence: Number(a.amount_pence),
+      }))}
       engineSnapshot={
         showFigures
           ? ((snapshot.data?.engine_snapshot ?? null) as TaxEngineOutput | null)

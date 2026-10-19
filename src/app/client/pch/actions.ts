@@ -35,6 +35,8 @@ import {
 import {
   validateVehicle,
   canRunDraft,
+  validateUtr,
+  validateNino,
 } from "@/lib/pch/validation";
 import {
   schedulePchExtraction,
@@ -116,15 +118,30 @@ export async function uploadPchDocumentAction(
   const MAX = 50 * 1024 * 1024;
   if (file.size > MAX) return { ok: false, error: "File is over 50 MB." };
 
-  // PDF / JPG / PNG only (spec from Client Documents xlsx column E).
+  // Allowed file types per slot:
+  //   PCH-14 (bank statements): PDF, CSV, XLSX
+  //   PCH-24 (Photo ID): PDF, JPG, PNG, HEIC
+  //   Everything else: PDF, JPG, PNG (original Phase 3 spec)
   const nameLower = file.name.toLowerCase();
   const typeLower = (file.type || "").toLowerCase();
+  const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+  const isImage = typeLower.startsWith("image/") || /\.(jpe?g|png|heic|webp)$/.test(nameLower);
+  const isCsv = typeLower === "text/csv" || nameLower.endsWith(".csv");
+  const isXlsx =
+    typeLower.includes("spreadsheet")
+    || typeLower === "application/vnd.ms-excel"
+    || nameLower.endsWith(".xlsx")
+    || nameLower.endsWith(".xls");
   const looksRight =
-    /\.(pdf|jpe?g|png)$/.test(nameLower)
-    || typeLower === "application/pdf"
-    || typeLower.startsWith("image/");
+    slotCode === "PCH-14"
+      ? (isPdf || isCsv || isXlsx)
+      : (isPdf || isImage);
   if (!looksRight) {
-    return { ok: false, error: "This slot accepts PDF, JPG or PNG only." };
+    const expected =
+      slotCode === "PCH-14"
+        ? "PDF, CSV or Excel"
+        : "PDF, JPG or PNG";
+    return { ok: false, error: "This slot accepts " + expected + " only." };
   }
 
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");
@@ -159,20 +176,30 @@ export async function uploadPchDocumentAction(
     { onConflict: "case_id,slot_code" },
   );
 
-  // Fire the AI extraction. The row goes in synchronously (so the
-  // review panel can render a 'reading this document...' card at once);
-  // the actual Claude call runs in next/after so the client response
-  // isn't blocked on the 10-second model call.
-  const scheduled = await schedulePchExtraction({
-    caseId,
-    slotCode,
-    documentId: inserted.id,
-  });
-  if (!scheduled.skipped) {
-    const extractionId = scheduled.extractionId;
+  // Branch on slot: PCH-14 (bank statement) goes through the Phase 6
+  // Slice 2 ingest pipeline (parse -> store transactions -> AI
+  // categorise -> aggregate to pch_income_lines/pch_expense_lines);
+  // every other slot goes through the per-slot extraction pattern from
+  // Phase 3. Both run in next/after so the upload response isn't
+  // blocked on the 10 to 60 second model work.
+  if (slotCode === "PCH-14") {
+    const { ingestBankStatement } = await import("@/lib/pch/bank-trigger");
+    const documentId = inserted.id;
     after(async () => {
-      await runPchExtractionJob(extractionId);
+      await ingestBankStatement({ caseId, documentId });
     });
+  } else {
+    const scheduled = await schedulePchExtraction({
+      caseId,
+      slotCode,
+      documentId: inserted.id,
+    });
+    if (!scheduled.skipped) {
+      const extractionId = scheduled.extractionId;
+      after(async () => {
+        await runPchExtractionJob(extractionId);
+      });
+    }
   }
 
   revalidatePath(`/client/cases/${caseId}/pch`);
@@ -211,11 +238,54 @@ export async function ensurePchHeadRow(caseId: string): Promise<ActionResult> {
 // Tab 1 "save client tab" action removed in Slice 6. The ~30-field
 // raw form is gone; head columns are now populated by:
 //   - syncPchProfileFromUserAction (registration PII, auto)
-//   - commitPchProfileInterviewAction (AI interview)
-//   - applyPchExtractionAction (document extractions for PCH-16..21)
-//   - accountant overrides (pch_overrides, for anything the client
-//     can't provide and no extraction exists)
-// Nothing else writes to pch_cases head columns from the client surface.
+//   - applyPchExtractionAction (Photo ID vision → cl_name / cl_dob /
+//     cl_address / cl_postcode via SLOT_APPLY_MAPS["PCH-24"])
+//   - savePchIdentityFieldsAction below (just UTR + NI, the two
+//     fields that cannot come off an ID and the one surface that
+//     still accepts manual client typing)
+//   - accountant overrides (pch_overrides, for anything else)
+
+// -------------------------------------------------------------------
+// Phase 6 Slice 1: compact UTR + NI save. UTR is 10 digits, NI is
+// 2 letters + 6 digits + 1 letter. Server-side validation mirrors the
+// client card so a hand-crafted POST can't bypass format checks. Both
+// fields are OPTIONAL in isolation (client may fill one, save, then
+// come back for the other) but each one, when present, must validate.
+// -------------------------------------------------------------------
+export async function savePchIdentityFieldsAction(
+  caseId: string,
+  patch: { cl_utr?: string | null; cl_nino?: string | null },
+): Promise<ActionResult> {
+  const { caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
+  const toWrite: Record<string, string | null> = {};
+  if (patch.cl_utr !== undefined) {
+    const utr = (patch.cl_utr ?? "").trim();
+    if (utr.length > 0) {
+      const utrErr = validateUtr(utr);
+      if (utrErr) return { ok: false, error: utrErr };
+    }
+    toWrite.cl_utr = utr.length > 0 ? utr : null;
+  }
+  if (patch.cl_nino !== undefined) {
+    const nino = (patch.cl_nino ?? "").trim();
+    if (nino.length > 0) {
+      const ninoErr = validateNino(nino);
+      if (ninoErr) return { ok: false, error: ninoErr };
+    }
+    toWrite.cl_nino = nino.length > 0 ? nino.toUpperCase() : null;
+  }
+  if (Object.keys(toWrite).length === 0) return { ok: true };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("pch_cases")
+    .update(toWrite)
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  return { ok: true };
+}
 
 // -------------------------------------------------------------------
 // Income lines (tab 2), set-and-forget bulk replace. The client sends

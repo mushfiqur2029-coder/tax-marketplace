@@ -1,22 +1,21 @@
 "use client";
 
-// Slice 6: profile-interview UI, structurally mirrors InterviewPanel
-// (Slice 3) but drives three profile-specific server actions:
-//   start → opener is contextual (lists what we have, what we need)
-//   advance → scoped to the fields currently missing
-//   commit → writes to pch_cases head columns (not pch_doc_extractions)
+// Phase 6 Slice 4: vehicle / capital allowances chat UI. Structural
+// twin of Slice 3's bank-clarify-chat and the Slice-1-removed profile
+// interview panel; drives three VEHICLE_CA-specific server actions.
 //
-// Kept as its own component rather than generalising InterviewPanel so
-// the two intents (slot-interview vs profile-interview) stay distinct
-// in the code. Shared visual language, divergent server contract.
+// Conversation state lives in the browser so an abandoned chat costs
+// nothing. On commit, the server re-runs the finalising turn so the
+// values written to pch_vehicle are the AI's output, never something
+// the browser could have hand-crafted.
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  startPchProfileInterviewAction,
-  advancePchProfileInterviewAction,
-  commitPchProfileInterviewAction,
-} from "@/app/client/pch/profile-actions";
+  startPchVehicleInterviewAction,
+  advancePchVehicleInterviewAction,
+  commitPchVehicleInterviewAction,
+} from "@/app/client/pch/vehicle-interview-actions";
 import type { InterviewMessage } from "@/lib/pch/ai-interview";
 
 type Props = {
@@ -24,10 +23,9 @@ type Props = {
   onClose: () => void;
 };
 
-export function ProfileInterviewPanel({ caseId, onClose }: Props) {
+export function VehicleInterviewPanel({ caseId, onClose }: Props) {
   const router = useRouter();
   const [transcript, setTranscript] = useState<InterviewMessage[]>([]);
-  const [focusKeys, setFocusKeys] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -39,18 +37,18 @@ export function ProfileInterviewPanel({ caseId, onClose }: Props) {
     let cancelled = false;
     start(async () => {
       setErr(null);
-      const r = await startPchProfileInterviewAction(caseId);
+      const r = await startPchVehicleInterviewAction(caseId);
       if (cancelled) return;
       if (!r.ok) {
         setErr(r.error);
         return;
       }
       setTranscript([r.opener]);
-      setFocusKeys(r.focusFieldKeys);
     });
     return () => {
       cancelled = true;
     };
+    // Intentionally mount-only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -70,12 +68,7 @@ export function ProfileInterviewPanel({ caseId, onClose }: Props) {
       ];
       setTranscript(next);
       setDraft("");
-
-      const r = await advancePchProfileInterviewAction(
-        caseId,
-        next,
-        focusKeys.length > 0 ? focusKeys : undefined,
-      );
+      const r = await advancePchVehicleInterviewAction(caseId, next);
       if (!r.ok) {
         setErr(r.error);
         return;
@@ -89,8 +82,7 @@ export function ProfileInterviewPanel({ caseId, onClose }: Props) {
         ...next,
         {
           role: "assistant",
-          content:
-            "Thanks, that's everything. Saving your profile answers now.",
+          content: "Thanks, that's everything on the vehicle. Saving your answers now.",
         },
       ]);
       setFinished(true);
@@ -100,11 +92,7 @@ export function ProfileInterviewPanel({ caseId, onClose }: Props) {
   const commit = () => {
     start(async () => {
       setErr(null);
-      const r = await commitPchProfileInterviewAction(
-        caseId,
-        transcript,
-        focusKeys.length > 0 ? focusKeys : undefined,
-      );
+      const r = await commitPchVehicleInterviewAction(caseId, transcript);
       if (!r.ok) {
         setErr(r.error);
         return;
@@ -118,13 +106,9 @@ export function ProfileInterviewPanel({ caseId, onClose }: Props) {
     <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 text-xs">
       <header className="mb-2 flex items-baseline justify-between gap-2">
         <div>
-          <span className="font-semibold text-slate-900">
-            Profile conversation
-          </span>
+          <span className="font-semibold text-slate-900">Vehicle conversation</span>
           <span className="ml-2 text-slate-600">
-            {focusKeys.length > 0
-              ? `${focusKeys.length} field${focusKeys.length === 1 ? "" : "s"} to cover`
-              : "Correct anything that's wrong"}
+            Capital allowances explained in plain English
           </span>
         </div>
         <button
@@ -179,14 +163,12 @@ export function ProfileInterviewPanel({ caseId, onClose }: Props) {
             onKeyDown={(e) => {
               if ((e.ctrlKey || e.metaKey) && e.key === "Enter") send();
             }}
-            placeholder={'Your answer. Write "I don\'t know" and we will flag it for your accountant, we will not guess.'}
+            placeholder={'Your answer. Write "I don\'t know" if you genuinely don\'t have the figure, we will not guess.'}
             className="w-full resize-y rounded border border-slate-300 bg-white px-2 py-1 text-sm"
             disabled={pending}
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-slate-500">
-              Ctrl/Cmd+Enter to send
-            </span>
+            <span className="text-[11px] text-slate-500">Ctrl/Cmd+Enter to send</span>
             <div className="flex items-center gap-2">
               {err ? <span className="text-rose-700">{err}</span> : null}
               <button
@@ -209,7 +191,7 @@ export function ProfileInterviewPanel({ caseId, onClose }: Props) {
             disabled={pending}
             className="w-full rounded bg-emerald-600 px-3 py-1.5 font-medium text-white disabled:opacity-50"
           >
-            {pending ? "Saving your profile..." : "Save profile answers"}
+            {pending ? "Saving your vehicle details..." : "Save vehicle details"}
           </button>
         </div>
       )}

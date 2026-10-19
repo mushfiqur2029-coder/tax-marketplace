@@ -29,6 +29,15 @@ import {
   AwaitingAccountantPanel,
   type BlockedSlot,
 } from "./awaiting-accountant-panel";
+import {
+  AddonRequestWidget,
+  type AddonRow,
+} from "./addon-request-widget";
+import {
+  PlEditGrid,
+  type IncomeLineRow,
+  type ExpenseLineRow,
+} from "./pl-edit-grid";
 
 type CheckItem = { item_number: number; area: string; description: string };
 type CheckStatus = {
@@ -51,6 +60,11 @@ export function PchAccountantView(props: {
   priorYearAnomalies: Anomaly[];
   priorYearLabel: string;
   awaitingAccountantSlots: BlockedSlot[];
+  addons: AddonRow[];
+  incomeLines: IncomeLineRow[];
+  expenseLines: ExpenseLineRow[];
+  bookkeepingConfirmedAt: string | null;
+  bookkeepingConfirmedByLabel: string | null;
   messagesPanel: React.ReactNode;
 }) {
   const router = useRouter();
@@ -115,6 +129,17 @@ export function PchAccountantView(props: {
         anomalies={props.priorYearAnomalies}
         priorYearLabel={props.priorYearLabel}
       />
+
+      {/* Phase 6 Slice 6: bookkeeping confirm gate + P&L edit grid */}
+      <div className="mb-6">
+        <PlEditGrid
+          caseId={props.caseId}
+          incomeLines={props.incomeLines}
+          expenseLines={props.expenseLines}
+          confirmedAt={props.bookkeepingConfirmedAt}
+          confirmedByLabel={props.bookkeepingConfirmedByLabel}
+        />
+      </div>
 
       {/* Pre-filing readiness band */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 mb-6">
@@ -197,6 +222,10 @@ export function PchAccountantView(props: {
             status={statusByItem.get(item.item_number)}
           />
         ))}
+      </div>
+
+      <div className="mt-10">
+        <AddonRequestWidget caseId={props.caseId} addons={props.addons} />
       </div>
 
       <div className="mt-10">{props.messagesPanel}</div>

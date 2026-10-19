@@ -4,15 +4,17 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
-  savePchIncomeLinesAction,
-  savePchExpenseLinesAction,
-  savePchVehicleAction,
   setPchDocStatusAction,
   uploadPchDocumentAction,
   submitForReviewAction,
   recordClientApprovalAction,
 } from "@/app/client/pch/actions";
-import { ProfilePanel, type ProfileHead } from "./profile-panel";
+import { startAddonCheckoutAction } from "@/app/client/actions";
+import { AddonPayBanner } from "../addon-pay-banner";
+import { IdentitySection, type IdentityHead } from "./identity-section";
+import { LedgerSection } from "./ledger-section";
+import type { BankTransactionView } from "./bank-ledger-table";
+import { VehicleSection, type VehicleSummary } from "./vehicle-section";
 import {
   ExtractionReview,
   type ExtractionReviewPayload,
@@ -28,10 +30,7 @@ import {
   type PriorYearOption,
 } from "./prior-year-prompt";
 import { ExtractionSummaryPanel } from "./extraction-summary";
-import {
-  canRunDraft,
-  warnBoxMismatch,
-} from "@/lib/pch/validation";
+import { canRunDraft } from "@/lib/pch/validation";
 
 // Status-aware workspace for the automated PCH flow.
 //
@@ -79,6 +78,8 @@ export function PchClientWorkspace(props: {
   uploadedDocs: UploadedDoc[];
   extractions: ExtractionReviewPayload[];
   priorYearOptions: PriorYearOption[];
+  bankTransactions: BankTransactionView[];
+  pendingAddons: Array<{ id: string; description: string; amount_pence: number }>;
   messagesPanel: React.ReactNode;
   engineSnapshot: TaxEngineOutput | null;
   engineSnapshotAt: string | null;
@@ -113,7 +114,7 @@ export function PchClientWorkspace(props: {
   return (
     <main className="mx-auto max-w-4xl p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Uber / PHV automated return</h1>
+        <h1 className="text-2xl font-bold">Uber / private-hire drivers return</h1>
         <p className="text-sm text-slate-600 mt-1">
           Case {props.caseId.slice(0, 8)}. Status <strong>{status}</strong>.
         </p>
@@ -139,6 +140,18 @@ export function PchClientWorkspace(props: {
             <WithAccountantBanner />
           ) : null}
 
+          {props.pendingAddons.length > 0
+            ? props.pendingAddons.map((a) => (
+                <AddonPayBanner
+                  key={a.id}
+                  addonId={a.id}
+                  amountPence={a.amount_pence}
+                  description={a.description}
+                  startCheckout={startAddonCheckoutAction}
+                />
+              ))
+            : null}
+
           {props.priorYearOptions.length > 0 ? (
             <PriorYearPrompt
               parentCaseId={props.caseId}
@@ -160,28 +173,35 @@ export function PchClientWorkspace(props: {
               editable={editable}
             />
 
-            <h2 className={h2}>2. Your profile and other income</h2>
+            <h2 className={h2}>2. Your identity</h2>
             <div className={card}>
-              <ProfilePanel
+              <IdentitySection
                 caseId={props.caseId}
-                head={headToProfile(props.head ?? {})}
+                head={headToIdentity(props.head ?? {})}
                 editable={editable}
               />
             </div>
 
-            <h2 className={h2}>3. Income from driving</h2>
-            <div className={card}>
-              <IncomeSection caseId={props.caseId} initial={props.incomeLines} editable={editable} />
-            </div>
+            {props.bankTransactions.length > 0 ? (
+              <>
+                <h2 className={h2}>3. Your bookkeeping (from your bank)</h2>
+                <div className={card}>
+                  <LedgerSection
+                    caseId={props.caseId}
+                    transactions={props.bankTransactions}
+                    editable={editable}
+                  />
+                </div>
+              </>
+            ) : null}
 
-            <h2 className={h2}>4. Business expenses</h2>
+            <h2 className={h2}>4. Vehicle and capital allowances</h2>
             <div className={card}>
-              <ExpenseSection caseId={props.caseId} initial={props.expenseLines} editable={editable} />
-            </div>
-
-            <h2 className={h2}>5. Your car, mileage and phone use</h2>
-            <div className={card}>
-              <VehicleForm caseId={props.caseId} initial={props.vehicle ?? {}} editable={editable} />
+              <VehicleSection
+                caseId={props.caseId}
+                vehicle={vehicleToSummary(props.vehicle)}
+                editable={editable}
+              />
             </div>
           </fieldset>
 
@@ -464,7 +484,11 @@ function DocRow({
         <input
           id={inputId}
           type="file"
-          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"
+          accept={
+            slot.code === "PCH-14"
+              ? ".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              : ".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*"
+          }
           className="hidden"
           disabled={busy}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }}
@@ -534,365 +558,50 @@ function DocRow({
   );
 }
 
-// -------------------- Tab 1 Client (replaced by ProfilePanel) --------
-//
-// Slice 6 removed the long raw form. The two things that remain are
-// (1) `headToProfile`, which narrows the loose head bag into the typed
-// shape ProfilePanel expects, and (2) the shelved legacy form, kept
-// below in a comment block so the git history still shows the fields
-// in one place if we need to audit what moved to the interview flow.
+// -------------------- Tab 1 Identity (Phase 6 Slice 1) ---------------
+// Narrows the loose head bag into the typed shape IdentitySection
+// consumes. Only the six fields the section actually renders.
 
-function headToProfile(h: Head): ProfileHead {
+function headToIdentity(h: Head): IdentityHead {
   const str = (k: string): string | null => {
     const v = h[k];
     return typeof v === "string" ? v : v == null ? null : String(v);
   };
-  const num = (k: string): number | null => {
-    const v = h[k];
-    if (v == null) return null;
-    const n = typeof v === "number" ? v : Number(v);
-    return Number.isFinite(n) ? n : null;
-  };
-  const bool = (k: string): boolean | null => {
-    const v = h[k];
-    if (v == null) return null;
-    if (typeof v === "boolean") return v;
-    if (typeof v === "string") {
-      if (v.toLowerCase() === "true" || v === "Yes") return true;
-      if (v.toLowerCase() === "false" || v === "No") return false;
-    }
-    return null;
-  };
   return {
     cl_name: str("cl_name"),
-    cl_email: str("cl_email"),
-    cl_phone: str("cl_phone"),
+    cl_dob: str("cl_dob"),
     cl_address: str("cl_address"),
     cl_postcode: str("cl_postcode"),
-    cl_dob: str("cl_dob"),
     cl_utr: str("cl_utr"),
     cl_nino: str("cl_nino"),
-    cl_licensing_authority: str("cl_licensing_authority"),
-    cl_platforms: str("cl_platforms"),
-    cl_start_date: str("cl_start_date"),
-    cl_stop_date: str("cl_stop_date"),
-    employment_income_pence: num("employment_income_pence"),
-    paye_pence: num("paye_pence"),
-    rental_profit_pence: num("rental_profit_pence"),
-    bank_interest_pence: num("bank_interest_pence"),
-    marriage_allowance_status: str("marriage_allowance_status"),
-    personal_pension_net_pence: num("personal_pension_net_pence"),
-    gift_aid_net_pence: num("gift_aid_net_pence"),
-    student_loan_plan: str("student_loan_plan"),
-    poa1_due_pence: num("poa1_due_pence"),
-    poa2_due_pence: num("poa2_due_pence"),
-    poa1_paid_pence: num("poa1_paid_pence"),
-    poa2_paid_pence: num("poa2_paid_pence"),
-    vat_registered: bool("vat_registered"),
   };
 }
 
-
-// -------------------- Tab 2 Income --------------------
-
-const EMPTY_INCOME: IncomeRow = {
-  source: "", gross_takings_pence: 0, platform_fee_pence: 0,
-  on_trip_miles: 0, dead_miles: 0, line_type: "Fares",
-};
-
-function IncomeSection({ caseId, initial, editable = true }: { caseId: string; initial: IncomeRow[]; editable?: boolean }) {
-  void editable;
-  const [rows, setRows] = useState<IncomeRow[]>(
-    initial.length ? initial : [{ ...EMPTY_INCOME, source: "Uber, rides" }]
-  );
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
-  const upd = (i: number, patch: Partial<IncomeRow>) =>
-    setRows((rs) => rs.map((r, j) => j === i ? { ...r, ...patch } : r));
-  const add = () => setRows((rs) => [...rs, { ...EMPTY_INCOME }]);
-  const del = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
-  const save = () => start(async () => {
-    const payload = rows.map((r) => ({
-      ...r,
-      gross_takings_pence: Math.round(Number(r.gross_takings_pence) * (r.gross_takings_pence > 1000 ? 1 : 100)) || 0,
-      // User enters pounds in the field; multiply by 100.
-    }));
-    // Simpler: enforce the editing contract explicitly as pounds in UI,
-    // convert here. Redo payload from scratch using separate pound view.
-    const final = rows.map((r) => ({
-      source: r.source,
-      gross_takings_pence: Math.round(Number(r.gross_takings_pence) * 100),
-      platform_fee_pence: Math.round(Number(r.platform_fee_pence) * 100),
-      on_trip_miles: Number(r.on_trip_miles) | 0,
-      dead_miles: Number(r.dead_miles) | 0,
-      evidence: r.evidence ?? undefined,
-      notes: r.notes ?? undefined,
-      line_type: r.line_type,
-    }));
-    void payload;
-    const r = await savePchIncomeLinesAction(caseId, final);
-    setMsg(r.ok ? "Saved" : r.error);
-  });
-  const inp = "w-full rounded border border-slate-300 px-2 py-1 text-sm";
-  return (
-    <div className="space-y-3">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-slate-600">
-            <th className="pb-1">Source</th>
-            <th className="pb-1 w-24">Gross £</th>
-            <th className="pb-1 w-24">Fee £</th>
-            <th className="pb-1 w-20">On-trip mi</th>
-            <th className="pb-1 w-20">Dead mi</th>
-            <th className="pb-1 w-24">Type</th>
-            <th className="pb-1 w-8"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td className="py-1 pr-2"><input className={inp} value={r.source} onChange={(e) => upd(i, { source: e.target.value })} /></td>
-              <td className="py-1 pr-2"><input type="number" step="0.01" className={inp} value={r.gross_takings_pence}
-                onChange={(e) => upd(i, { gross_takings_pence: Number(e.target.value) })} /></td>
-              <td className="py-1 pr-2"><input type="number" step="0.01" className={inp} value={r.platform_fee_pence}
-                onChange={(e) => upd(i, { platform_fee_pence: Number(e.target.value) })} /></td>
-              <td className="py-1 pr-2"><input type="number" className={inp} value={r.on_trip_miles}
-                onChange={(e) => upd(i, { on_trip_miles: Number(e.target.value) })} /></td>
-              <td className="py-1 pr-2"><input type="number" className={inp} value={r.dead_miles}
-                onChange={(e) => upd(i, { dead_miles: Number(e.target.value) })} /></td>
-              <td className="py-1 pr-2"><select className={inp} value={r.line_type} onChange={(e) => upd(i, { line_type: e.target.value as "Fares" | "Other" | "VAT" })}>
-                <option>Fares</option><option>Other</option><option>VAT</option></select></td>
-              <td className="py-1"><button type="button" onClick={() => del(i)} className="text-slate-500 hover:text-red-600">×</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={add} className="text-sm text-slate-700 underline">+ Add row</button>
-        <button type="button" onClick={save} disabled={pending}
-          className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-          {pending ? "Saving..." : "Save income"}
-        </button>
-        {msg && <span className={msg === "Saved" ? "text-emerald-700 text-xs" : "text-red-600 text-xs"}>{msg}</span>}
-      </div>
-      <p className="text-xs text-slate-500">Enter amounts in pounds. Gross = before platform commission.</p>
-    </div>
-  );
+function vehicleToSummary(v: Vehicle | null): VehicleSummary | null {
+  if (!v) return null;
+  const str = (k: string): string | null => {
+    const x = v[k];
+    return typeof x === "string" ? x : x == null ? null : String(x);
+  };
+  const num = (k: string): number | null => {
+    const x = v[k];
+    if (x == null) return null;
+    const n = typeof x === "number" ? x : Number(x);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    status: str("status"),
+    fuel: str("fuel"),
+    make_model: str("make_model"),
+    registration: str("registration"),
+    co2_gpkm: num("co2_gpkm"),
+    purchase_date: str("purchase_date"),
+    purchase_price_pence: num("purchase_price_pence"),
+    new_or_used: str("new_or_used"),
+    business_pct_override: num("business_pct_override"),
+  };
 }
 
-// -------------------- Tab 3 Expenses --------------------
-
-const CATEGORIES = [
-  "Vehicle running costs",
-  "Vehicle hire, lease & finance",
-  "Congestion, ULEZ, tolls & parking",
-  "Licences & compliance",
-  "Phone & technology",
-  "Platform & card fees",
-  "Finance & bank charges",
-  "Accountancy & insurance",
-  "Other expenses",
-  "VAT paid (Flat Rate Scheme)",
-] as const;
-
-function ExpenseSection({ caseId, initial, editable = true }: { caseId: string; initial: ExpenseRow[]; editable?: boolean }) {
-  void editable;
-  const [rows, setRows] = useState<ExpenseRow[]>(
-    initial.length ? initial : [{
-      label: "Fuel", amount_paid_pence: 0, car_cost: "Yes",
-      category: "Vehicle running costs", sa103s_box: 12,
-    }]
-  );
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
-  const upd = (i: number, patch: Partial<ExpenseRow>) =>
-    setRows((rs) => rs.map((r, j) => j === i ? { ...r, ...patch } : r));
-  const add = () => setRows((rs) => [...rs, {
-    label: "", amount_paid_pence: 0, car_cost: "No",
-    category: "Other expenses", sa103s_box: 19,
-  }]);
-  const del = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
-  const save = () => start(async () => {
-    const final = rows.map((r) => ({
-      label: r.label,
-      amount_paid_pence: Math.round(Number(r.amount_paid_pence) * 100),
-      evidence: r.evidence ?? undefined,
-      car_cost: r.car_cost,
-      category: r.category as (typeof CATEGORIES)[number],
-      sa103s_box: Number(r.sa103s_box) as 12 | 14 | 16 | 17 | 18 | 19,
-    }));
-    const r = await savePchExpenseLinesAction(caseId, final);
-    setMsg(r.ok ? "Saved" : r.error);
-  });
-  const inp = "w-full rounded border border-slate-300 px-2 py-1 text-sm";
-  return (
-    <div className="space-y-3">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-slate-600">
-            <th className="pb-1">Expense</th>
-            <th className="pb-1 w-24">Paid £</th>
-            <th className="pb-1 w-28">Car cost?</th>
-            <th className="pb-1">Category</th>
-            <th className="pb-1 w-20">Box</th>
-            <th className="pb-1 w-8"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => {
-            const boxWarn = warnBoxMismatch(r.category, Number(r.sa103s_box));
-            return (
-            <tr key={i}>
-              <td className="py-1 pr-2"><input className={inp} value={r.label} onChange={(e) => upd(i, { label: e.target.value })} /></td>
-              <td className="py-1 pr-2"><input type="number" step="0.01" className={inp} value={r.amount_paid_pence}
-                onChange={(e) => upd(i, { amount_paid_pence: Number(e.target.value) })} /></td>
-              <td className="py-1 pr-2"><select className={inp} value={r.car_cost} onChange={(e) => upd(i, { car_cost: e.target.value as "Yes" | "No" | "Phone" })}>
-                <option>Yes</option><option>No</option><option>Phone</option></select></td>
-              <td className="py-1 pr-2"><select className={inp} value={r.category} onChange={(e) => upd(i, { category: e.target.value })}>
-                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></td>
-              <td className="py-1 pr-2">
-                <select
-                  className={inp + (boxWarn ? " border-amber-400 bg-amber-50" : "")}
-                  value={r.sa103s_box}
-                  onChange={(e) => upd(i, { sa103s_box: Number(e.target.value) as 12 | 14 | 16 | 17 | 18 | 19 })}
-                  title={boxWarn ?? ""}>
-                  {[12, 14, 16, 17, 18, 19].map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </td>
-              <td className="py-1"><button type="button" onClick={() => del(i)} className="text-slate-500 hover:text-red-600">×</button></td>
-            </tr>
-          );})}
-        </tbody>
-      </table>
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={add} className="text-sm text-slate-700 underline">+ Add row</button>
-        <button type="button" onClick={save} disabled={pending}
-          className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-          {pending ? "Saving..." : "Save expenses"}
-        </button>
-        {msg && <span className={msg === "Saved" ? "text-emerald-700 text-xs" : "text-red-600 text-xs"}>{msg}</span>}
-      </div>
-    </div>
-  );
-}
-
-// -------------------- Tab 4 Vehicle --------------------
-
-function VehicleForm({ caseId, initial, editable = true }: { caseId: string; initial: Vehicle; editable?: boolean }) {
-  void editable;
-  const [state, setState] = useState<Vehicle>(initial);
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
-  const set = (k: string, v: string | number | boolean | null) =>
-    setState((s) => ({ ...s, [k]: v }));
-  const val = (k: string) => (state[k] ?? "") as string | number;
-  const save = () => start(async () => {
-    const r = await savePchVehicleAction(caseId, {
-      status: state.status ?? "Owned outright",
-      fuel: state.fuel ?? "Petrol",
-      make_model: state.make_model ?? null,
-      registration: state.registration ?? null,
-      co2_gpkm: state.co2_gpkm ? Number(state.co2_gpkm) : null,
-      bought_this_year: Boolean(state.bought_this_year),
-      purchase_date: state.purchase_date ?? null,
-      purchase_price_pence: state.purchase_price_pound
-        ? Math.round(Number(state.purchase_price_pound) * 100) : null,
-      new_or_used: state.new_or_used ?? null,
-      disposed: Boolean(state.disposed),
-      disposal_proceeds_pence: state.disposal_proceeds_pound
-        ? Math.round(Number(state.disposal_proceeds_pound) * 100) : null,
-      odo_start: state.odo_start ? Number(state.odo_start) : null,
-      odo_end: state.odo_end ? Number(state.odo_end) : null,
-      other_business_miles: Number(state.other_business_miles ?? 0),
-      phone_business_pct: state.phone_business_pct_pct
-        ? Number(state.phone_business_pct_pct) / 100 : 0.8,
-      wdv_brought_forward_pence: state.wdv_brought_forward_pound
-        ? Math.round(Number(state.wdv_brought_forward_pound) * 100) : 0,
-      previous_method: state.previous_method ?? "First year",
-      business_pct_override: state.business_pct_override_pct
-        ? Number(state.business_pct_override_pct) / 100 : null,
-      method_choice: state.method_choice ?? null,
-    });
-    setMsg(r.ok ? "Saved" : r.error);
-  });
-  const inp = "mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm";
-  const lb = "text-xs font-semibold text-slate-600";
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label><span className={lb}>How do you have the car?</span>
-          <select className={inp} value={String(val("status") || "Owned outright")}
-            onChange={(e) => set("status", e.target.value)}>
-            <option>Owned outright</option>
-            <option>Bought on HP / loan</option>
-            <option>Rented weekly (PCO hire)</option>
-            <option>Leased</option>
-          </select></label>
-        <label><span className={lb}>Fuel type</span>
-          <select className={inp} value={String(val("fuel") || "Petrol")}
-            onChange={(e) => set("fuel", e.target.value)}>
-            <option>Petrol</option><option>Diesel</option>
-            <option>Hybrid</option><option>Electric</option>
-          </select></label>
-        <label><span className={lb}>Make and model</span>
-          <input className={inp} value={String(val("make_model"))} onChange={(e) => set("make_model", e.target.value)} /></label>
-        <label><span className={lb}>Registration</span>
-          <input className={inp} value={String(val("registration"))} onChange={(e) => set("registration", e.target.value)} /></label>
-        <label><span className={lb}>CO2 (g/km, from V5C)</span>
-          <input type="number" className={inp} value={String(val("co2_gpkm"))} onChange={(e) => set("co2_gpkm", e.target.value)} /></label>
-        <label><span className={lb}>Odometer 6 Apr</span>
-          <input type="number" className={inp} value={String(val("odo_start"))} onChange={(e) => set("odo_start", e.target.value)} /></label>
-        <label><span className={lb}>Odometer 5 Apr next</span>
-          <input type="number" className={inp} value={String(val("odo_end"))} onChange={(e) => set("odo_end", e.target.value)} /></label>
-        <label><span className={lb}>Other business miles</span>
-          <input type="number" className={inp} value={String(val("other_business_miles"))} onChange={(e) => set("other_business_miles", e.target.value)} /></label>
-        <label><span className={lb}>Phone business use %</span>
-          <input type="number" min="0" max="100" className={inp}
-            value={String(state.phone_business_pct_pct ?? Math.round(Number(state.phone_business_pct ?? 0.8) * 100))}
-            onChange={(e) => set("phone_business_pct_pct", Number(e.target.value))} /></label>
-        <label><span className={lb}>Bought in this tax year?</span>
-          <select className={inp} value={state.bought_this_year ? "Yes" : "No"}
-            onChange={(e) => set("bought_this_year", e.target.value === "Yes")}>
-            <option>No</option><option>Yes</option>
-          </select></label>
-        <label><span className={lb}>Purchase price £</span>
-          <input type="number" step="0.01" className={inp}
-            value={String(state.purchase_price_pound ?? (state.purchase_price_pence ? Number(state.purchase_price_pence) / 100 : 0))}
-            onChange={(e) => set("purchase_price_pound", Number(e.target.value))} /></label>
-        <label><span className={lb}>New or used when bought?</span>
-          <select className={inp} value={String(val("new_or_used") || "Used")}
-            onChange={(e) => set("new_or_used", e.target.value)}>
-            <option>New</option><option>Used</option>
-          </select></label>
-        <label><span className={lb}>Method for 2025/26 (blank = recommended)</span>
-          <select className={inp} value={String(val("method_choice") || "")}
-            onChange={(e) => set("method_choice", e.target.value || null)}>
-            <option value="">(recommended)</option>
-            <option>Simplified mileage</option>
-            <option>Actual costs</option>
-          </select></label>
-        <label><span className={lb}>WDV brought forward £ (accountant)</span>
-          <input type="number" step="0.01" className={inp}
-            value={String(state.wdv_brought_forward_pound ?? (state.wdv_brought_forward_pence ? Number(state.wdv_brought_forward_pence) / 100 : 0))}
-            onChange={(e) => set("wdv_brought_forward_pound", Number(e.target.value))} /></label>
-        <label><span className={lb}>Previous method</span>
-          <select className={inp} value={String(val("previous_method") || "First year")}
-            onChange={(e) => set("previous_method", e.target.value)}>
-            <option>First year</option>
-            <option>Simplified mileage</option>
-            <option>Actual costs (capital allowances claimed)</option>
-          </select></label>
-      </div>
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={save} disabled={pending}
-          className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-          {pending ? "Saving..." : "Save vehicle"}
-        </button>
-        {msg && <span className={msg === "Saved" ? "text-emerald-700 text-xs" : "text-red-600 text-xs"}>{msg}</span>}
-      </div>
-    </div>
-  );
-}
 
 function SnapshotTable({ s }: { s: TaxEngineOutput }) {
   const money = (n: number) =>

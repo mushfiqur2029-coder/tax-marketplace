@@ -1,0 +1,62 @@
+"use client";
+
+// Phase 6 Slice 3: workspace section between the Documents section and
+// Tab 1 Identity. Shows the AI-built bookkeeping ledger with a chat
+// panel at top that walks the client through anything the categoriser
+// wasn't sure about.
+//
+// Two subcomponents (both client-only):
+//   - BankClarifyChat: picks the next uncategorised / low-confidence
+//     transaction, asks the client to describe it, re-runs the AI
+//     classifier.
+//   - BankLedgerTable: grouped view of every transaction, totals, and
+//     inline category edits.
+//
+// Renders nothing when the client hasn't uploaded a bank statement
+// yet; the Documents section's bank slot has the upload prompt.
+
+import { BankClarifyChat } from "./bank-clarify-chat";
+import {
+  BankLedgerTable,
+  type BankTransactionView,
+} from "./bank-ledger-table";
+
+type Props = {
+  caseId: string;
+  transactions: BankTransactionView[];
+  editable?: boolean;
+};
+
+function countPending(transactions: BankTransactionView[]): number {
+  let n = 0;
+  for (const t of transactions) {
+    if (t.category == null) { n += 1; continue; }
+    if (t.category === "uncategorized") { n += 1; continue; }
+    if (t.categoryConfidence === "low") { n += 1; continue; }
+  }
+  return n;
+}
+
+export function LedgerSection({ caseId, transactions, editable = true }: Props) {
+  if (transactions.length === 0) return null;
+  const pending = countPending(transactions);
+  return (
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-slate-900">Your bookkeeping</h3>
+          <p className="mt-1 text-xs text-slate-600">
+            {transactions.length} transaction{transactions.length === 1 ? "" : "s"} read from your bank statement{transactions.length === 1 ? "" : "s"}.
+            {pending > 0
+              ? ` ${pending} still need${pending === 1 ? "s" : ""} your input.`
+              : " Nothing left to clarify."}
+          </p>
+        </div>
+      </header>
+      {editable ? (
+        <BankClarifyChat caseId={caseId} initialPendingCount={pending} />
+      ) : null}
+      <BankLedgerTable caseId={caseId} transactions={transactions} editable={editable} />
+    </div>
+  );
+}

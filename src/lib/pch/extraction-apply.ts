@@ -359,6 +359,27 @@ export const SLOT_APPLY_MAPS: Record<string, SlotApplyMap> = {
       deadline: { table: "none" },
     },
   },
+
+  // ----- Identity (Phase 6 Slice 1) -------------------------------
+  "PCH-24": {
+    label: {
+      documentNumber: "ID document number",
+      fullName: "Full name",
+      dateOfBirth: "Date of birth",
+      address: "Address",
+      postcode: "Postcode",
+    },
+    targets: {
+      // documentNumber is kept for the audit trail only (we never need
+      // to re-print it; passport/licence numbers are PII we shouldn't
+      // store in a header column).
+      documentNumber: { table: "none" },
+      fullName: { table: "pch_cases", column: "cl_name" },
+      dateOfBirth: { table: "pch_cases", column: "cl_dob" },
+      address: { table: "pch_cases", column: "cl_address" },
+      postcode: { table: "pch_cases", column: "cl_postcode" },
+    },
+  },
 };
 
 // Transforms applied just before the DB write.

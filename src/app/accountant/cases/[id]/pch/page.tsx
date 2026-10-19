@@ -35,7 +35,7 @@ export default async function PchAccountantPage({
     redirect(`/accountant/cases/${id}`);
   }
 
-  const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta] = await Promise.all([
+  const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta, addonRows, incomeLines, expenseLines] = await Promise.all([
     admin.from("pch_check_items").select("*").order("sort_order"),
     admin.from("pch_check_status").select("*").eq("case_id", id),
     admin.from("pch_cases").select("*").eq("case_id", id).single(),
@@ -44,13 +44,28 @@ export default async function PchAccountantPage({
     // Resolve the display names for the audit trail author column.
     // Keep this query cheap; we only need id + full_name.
     admin.from("users").select("id, full_name"),
-    // Slice 5: slots the client flagged "I don't have this document".
+    // Slice 5 (Phase 5): slots the client flagged "I don't have this document".
     admin.from("pch_doc_status")
       .select("slot_code, status, note, updated_at")
       .eq("case_id", id)
       .eq("status", "Awaiting accountant")
       .order("updated_at", { ascending: true }),
     admin.from("pch_doc_slots").select("code, section, display_name"),
+    // Phase 6 Slice 5: addons on this case (hide 'rejected' noise).
+    admin.from("case_addons")
+      .select("id, description, amount_pence, status, created_at")
+      .eq("case_id", id)
+      .in("status", ["pending_admin", "pending_payment", "paid"])
+      .order("created_at", { ascending: false }),
+    // Phase 6 Slice 6: line-item P&L edit grid feed.
+    admin.from("pch_income_lines")
+      .select("id, source, gross_takings_pence, platform_fee_pence, on_trip_miles, dead_miles, line_type, ai_proposed_json, edited_by, edited_at")
+      .eq("case_id", id)
+      .order("sort_order", { ascending: true }),
+    admin.from("pch_expense_lines")
+      .select("id, label, amount_paid_pence, category, sa103s_box, ai_proposed_json, edited_by, edited_at")
+      .eq("case_id", id)
+      .order("sort_order", { ascending: true }),
   ]);
 
   const snapshot = (head.data?.engine_snapshot ?? null) as TaxEngineOutput | null;
@@ -95,6 +110,48 @@ export default async function PchAccountantPage({
       priorYearAnomalies={anomalies}
       priorYearLabel={priorYearLabel}
       awaitingAccountantSlots={blocked}
+      addons={(addonRows.data ?? []).map((a) => ({
+        id: a.id as string,
+        description: a.description as string,
+        amount_pence: Number(a.amount_pence),
+        status: a.status as "pending_admin" | "pending_payment" | "paid" | "rejected",
+        created_at: a.created_at as string,
+      }))}
+      incomeLines={(incomeLines.data ?? []).map((l) => ({
+        id: l.id as string,
+        source: l.source as string,
+        gross_takings_pence: Number(l.gross_takings_pence ?? 0),
+        platform_fee_pence: Number(l.platform_fee_pence ?? 0),
+        on_trip_miles: Number(l.on_trip_miles ?? 0),
+        dead_miles: Number(l.dead_miles ?? 0),
+        line_type: (l.line_type ?? "Fares") as "Fares" | "Other" | "VAT",
+        ai_proposed_json: (l.ai_proposed_json ?? null) as {
+          source?: string;
+          gross_takings_pence?: number;
+          platform_fee_pence?: number;
+        } | null,
+        edited_by: (l.edited_by as string | null) ?? null,
+        edited_at: (l.edited_at as string | null) ?? null,
+      }))}
+      expenseLines={(expenseLines.data ?? []).map((l) => ({
+        id: l.id as string,
+        label: l.label as string,
+        amount_paid_pence: Number(l.amount_paid_pence ?? 0),
+        category: (l.category as string) ?? "",
+        sa103s_box: Number(l.sa103s_box ?? 0),
+        ai_proposed_json: (l.ai_proposed_json ?? null) as {
+          label?: string;
+          amount_paid_pence?: number;
+        } | null,
+        edited_by: (l.edited_by as string | null) ?? null,
+        edited_at: (l.edited_at as string | null) ?? null,
+      }))}
+      bookkeepingConfirmedAt={(head.data?.bookkeeping_confirmed_at as string | null) ?? null}
+      bookkeepingConfirmedByLabel={
+        head.data?.bookkeeping_confirmed_by
+          ? userById.get(head.data.bookkeeping_confirmed_by as string) ?? null
+          : null
+      }
       messagesPanel={<CaseMessagesPanel caseId={id} messages={messages} viewerRole="accountant" viewerUserId={me.id} />}
     />
   );
