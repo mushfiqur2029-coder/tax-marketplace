@@ -42,6 +42,18 @@ type IncomeLine = {
   source: string | null;
   line_type: "Fares" | "Other" | "VAT" | null;
 };
+type ExpenseLine = {
+  label: string | null;
+  amount_paid_pence: number | null;
+  evidence: string | null;
+  category: string | null;
+  sa103s_box: number | null;
+};
+type BankTxn = {
+  txn_date: string | null;
+  category: string | null;
+};
+type Vehicle = Record<string, unknown>;
 
 // Shared timestamp so the audit trail for a single page load reflects
 // one coherent derivation moment rather than N micro-skewed ones.
@@ -60,7 +72,11 @@ export async function deriveChecklistPrefills(
     // manually" and the manual Done/N/A buttons stay available.
     console.warn("[deriveChecklistPrefills] head/income cluster failed:", err);
   }
-  // Slice 7.5b: expense + bank + vehicle cluster lands here.
+  try {
+    await deriveExpenseVehicleCluster(caseId, admin, prefills);
+  } catch (err) {
+    console.warn("[deriveChecklistPrefills] expense/vehicle cluster failed:", err);
+  }
   // Slice 7.5c: engine + prior-year + SA302 cluster lands here.
   return prefills;
 }
@@ -100,6 +116,329 @@ async function deriveHeadIncomeCluster(
 
   const p6 = deriveIncomeMix(income, pch25Count);
   if (p6) prefills.set(6, p6);
+}
+
+// -------------------------------------------------------------------
+// 7.5b: expense_lines + bank_txns + vehicle cluster
+// -------------------------------------------------------------------
+async function deriveExpenseVehicleCluster(
+  caseId: string,
+  admin: ReturnType<typeof createAdminClient>,
+  prefills: Map<number, ChecklistPrefill>,
+): Promise<void> {
+  const [expenseQ, bankQ, vehicleQ, headQ] = await Promise.all([
+    admin.from("pch_expense_lines")
+      .select("label, amount_paid_pence, evidence, category, sa103s_box")
+      .eq("case_id", caseId),
+    admin.from("pch_bank_transactions")
+      .select("txn_date, category")
+      .eq("case_id", caseId),
+    admin.from("pch_vehicle").select("*").eq("case_id", caseId).maybeSingle(),
+    admin.from("pch_cases").select("tax_year").eq("case_id", caseId).maybeSingle(),
+  ]);
+  const expenses = (expenseQ.data ?? []) as ExpenseLine[];
+  const bankTxns = (bankQ.data ?? []) as BankTxn[];
+  const vehicle = (vehicleQ.data ?? null) as Vehicle | null;
+  const taxYear = (headQ.data?.tax_year as string | undefined) ?? "2025/26";
+
+  const p8 = deriveExpenseEvidence(expenses);         if (p8) prefills.set(8, p8);
+  const p9 = deriveBankTxnDateRange(bankTxns, taxYear); if (p9) prefills.set(9, p9);
+  const p10 = deriveExpenseExclusions(expenses, bankTxns); if (p10) prefills.set(10, p10);
+
+  if (vehicle) {
+    const p12 = deriveVehicleBusinessPct(vehicle);  if (p12) prefills.set(12, p12);
+    const p13 = deriveVehicleCo2Rate(vehicle);      if (p13) prefills.set(13, p13);
+    const p14 = deriveVehicleWdv(vehicle);          if (p14) prefills.set(14, p14);
+    const p15 = deriveVehicleMethod(vehicle);       if (p15) prefills.set(15, p15);
+  }
+}
+
+// Parse "YYYY/YY" -> { fromIso, toIso }. Mirrors parsePeriod in
+// export-data.ts but kept local since that one is not exported. The
+// UK tax year runs 6 April to 5 April of the following year.
+function parseTaxYearRange(taxYear: string): { fromIso: string; toIso: string } {
+  const m = /^(\d{4})\/(\d{2})$/.exec(taxYear);
+  const startYear = m ? Number(m[1]) : new Date().getFullYear();
+  return { fromIso: `${startYear}-04-06`, toIso: `${startYear + 1}-04-05` };
+}
+
+// Item 8: every positive-amount expense line has a non-empty evidence
+// method. Mirrors the server-side canRequestFiling check so an
+// accountant seeing green here matches what Advance to client approval
+// will accept.
+function deriveExpenseEvidence(expenses: ExpenseLine[]): ChecklistPrefill | null {
+  const positive = expenses.filter((e) => (e.amount_paid_pence ?? 0) > 0);
+  if (positive.length === 0) {
+    return {
+      item: 8,
+      verdict: "nothing_to_show",
+      evidence: "No positive-amount expense lines yet.",
+      derivedAt: now(),
+    };
+  }
+  const missing = positive.filter((e) => !(e.evidence && e.evidence.trim().length > 0));
+  if (missing.length === 0) {
+    return {
+      item: 8,
+      verdict: "pass",
+      evidence: `All ${positive.length} expense line${positive.length === 1 ? "" : "s"} have an evidence method recorded.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 8,
+    verdict: "warn",
+    evidence:
+      `${missing.length} of ${positive.length} line${positive.length === 1 ? "" : "s"} missing evidence (${missing.slice(0, 3).map((e) => e.label ?? "unlabelled").join(", ")}${missing.length > 3 ? ", ..." : ""}). Set a method on each before filing.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 9: every bank transaction's txn_date falls inside the case's
+// tax year. Catches statement-overrun uploads (e.g. a Dec-to-Mar
+// statement that crosses year end) and typos. Does not look at
+// pch_income_lines / pch_expense_lines because those are already
+// derived from bank_txns.
+function deriveBankTxnDateRange(bankTxns: BankTxn[], taxYear: string): ChecklistPrefill | null {
+  if (bankTxns.length === 0) {
+    return {
+      item: 9,
+      verdict: "nothing_to_show",
+      evidence: "No bank transactions ingested yet.",
+      derivedAt: now(),
+    };
+  }
+  const { fromIso, toIso } = parseTaxYearRange(taxYear);
+  const outside = bankTxns.filter((t) => {
+    const d = t.txn_date;
+    if (!d) return false;
+    return d < fromIso || d > toIso;
+  });
+  if (outside.length === 0) {
+    const [startYear, endYear] = [fromIso.slice(0, 4), toIso.slice(0, 4)];
+    return {
+      item: 9,
+      verdict: "pass",
+      evidence: `All ${bankTxns.length} bank transactions dated 6 April ${startYear} to 5 April ${endYear} inclusive.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 9,
+    verdict: "warn",
+    evidence:
+      `${outside.length} of ${bankTxns.length} transactions dated outside ${fromIso} to ${toIso}. Check for statement overrun or carry-over.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 10: no fines/PCNs or capital/HP-principal items leaking into
+// expenses. The categoriser marks `fine` as direction=excluded so by
+// construction these are already out of pch_expense_lines, but we
+// still surface the count so the accountant sees we found some and
+// discarded them (zero gives silent reassurance). Also scans
+// pch_expense_lines labels for capital-sounding keywords in case a
+// manual edit introduced one.
+function deriveExpenseExclusions(expenses: ExpenseLine[], bankTxns: BankTxn[]): ChecklistPrefill | null {
+  const fineCount = bankTxns.filter((t) => (t.category ?? "").toLowerCase() === "fine").length;
+  const CAPITAL_RE = /\b(purchase|deposit|principal|balloon|part[- ]exchange)\b/i;
+  const suspicious = expenses.filter((e) => CAPITAL_RE.test(e.label ?? ""));
+  if (suspicious.length === 0 && fineCount === 0) {
+    return {
+      item: 10,
+      verdict: "pass",
+      evidence: "No fines or capital/HP-principal items detected in expenses.",
+      derivedAt: now(),
+    };
+  }
+  if (suspicious.length === 0) {
+    return {
+      item: 10,
+      verdict: "pass",
+      evidence: `${fineCount} fine/PCN transaction${fineCount === 1 ? "" : "s"} detected and excluded from expenses by the categoriser.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 10,
+    verdict: "warn",
+    evidence:
+      `${suspicious.length} expense line${suspicious.length === 1 ? "" : "s"} look capital-ish (${suspicious.slice(0, 3).map((e) => e.label).join(", ")}${suspicious.length > 3 ? ", ..." : ""}). Confirm these are allowable or move to capital allowances.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 12: business use % evidenced on the pch_vehicle row from the
+// VEHICLE_CA interview or mileage odometer readings.
+function deriveVehicleBusinessPct(vehicle: Vehicle): ChecklistPrefill | null {
+  const status = typeof vehicle.status === "string" ? vehicle.status : null;
+  if (status === "Leased" || status === "Rented" || status === "No vehicle") {
+    return {
+      item: 12,
+      verdict: "nothing_to_show",
+      evidence: `Vehicle status: ${status}. No capital-allowance business %  needed.`,
+      derivedAt: now(),
+    };
+  }
+  const pctOverride = Number(vehicle.business_pct_override ?? 0);
+  const odoStart = Number(vehicle.odo_start ?? 0);
+  const odoEnd = Number(vehicle.odo_end ?? 0);
+  if (pctOverride > 0) {
+    const pct = Math.round(pctOverride * 100);
+    return {
+      item: 12,
+      verdict: "pass",
+      evidence: `Business use ${pct}% recorded via the VEHICLE_CA interview override.`,
+      derivedAt: now(),
+    };
+  }
+  if (odoStart > 0 && odoEnd > odoStart) {
+    const total = odoEnd - odoStart;
+    return {
+      item: 12,
+      verdict: "pass",
+      evidence: `Odometer start ${odoStart.toLocaleString()} / end ${odoEnd.toLocaleString()} (${total.toLocaleString()} miles total). Engine computes business % from app miles vs total.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 12,
+    verdict: "warn",
+    evidence:
+      "No business % override and no odometer readings. Run the VEHICLE_CA interview and set the business-use percentage.",
+    derivedAt: now(),
+  };
+}
+
+// Item 13: CO2 recorded + implied allowance rate correct. 2025/26
+// bands: 0 g/km (new EV) qualifies for 100% FYA; 1-50 g/km uses the
+// main pool at 18%; 51+ g/km uses the special-rate pool at 6%.
+function deriveVehicleCo2Rate(vehicle: Vehicle): ChecklistPrefill | null {
+  const status = typeof vehicle.status === "string" ? vehicle.status : null;
+  if (status === "Leased" || status === "Rented" || status === "No vehicle") {
+    return {
+      item: 13,
+      verdict: "nothing_to_show",
+      evidence: `Vehicle status: ${status}. CO2 band irrelevant without a CA pool.`,
+      derivedAt: now(),
+    };
+  }
+  const co2Raw = vehicle.co2_gpkm;
+  if (co2Raw == null) {
+    return {
+      item: 13,
+      verdict: "warn",
+      evidence: "CO2 not recorded. Run the VEHICLE_CA interview and capture g/km from the V5C logbook.",
+      derivedAt: now(),
+    };
+  }
+  const co2 = Number(co2Raw);
+  const impliedRate = co2 === 0 ? "100% FYA (zero-emission)"
+    : co2 <= 50 ? "18% WDA (main pool)"
+    : "6% WDA (special rate pool)";
+  const overrideRaw = vehicle.ca_rate_override;
+  if (overrideRaw != null && overrideRaw !== "") {
+    const over = Number(overrideRaw);
+    return {
+      item: 13,
+      verdict: "warn",
+      evidence: `CO2 ${co2} g/km implies ${impliedRate}; accountant override set to ${(over * 100).toFixed(0)}%. Confirm override is deliberate.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 13,
+    verdict: "pass",
+    evidence: `CO2 ${co2} g/km recorded. Implied allowance: ${impliedRate}.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 14: WDV brought forward recorded on the pch_vehicle row. The
+// prior-year carry-forward comparison lands in the engine/prior-year
+// cluster (7.5c); here we just confirm the figure is present and
+// surface the amount for the accountant to cross-check.
+function deriveVehicleWdv(vehicle: Vehicle): ChecklistPrefill | null {
+  const status = typeof vehicle.status === "string" ? vehicle.status : null;
+  if (status === "Leased" || status === "Rented" || status === "No vehicle") {
+    return {
+      item: 14,
+      verdict: "nothing_to_show",
+      evidence: `Vehicle status: ${status}. No CA pool, no WDV to carry forward.`,
+      derivedAt: now(),
+    };
+  }
+  const wdvPence = Number(vehicle.wdv_brought_forward_pence ?? 0);
+  const previousMethod = typeof vehicle.previous_method === "string" ? vehicle.previous_method : null;
+  if (previousMethod === "First year" || (wdvPence === 0 && !previousMethod)) {
+    return {
+      item: 14,
+      verdict: "nothing_to_show",
+      evidence: "First year on this vehicle (per the VEHICLE_CA interview). No WDV brought forward applicable.",
+      derivedAt: now(),
+    };
+  }
+  if (wdvPence === 0) {
+    return {
+      item: 14,
+      verdict: "warn",
+      evidence:
+        `Previous method: ${previousMethod ?? "unknown"}. WDV brought forward is £0, confirm this against last year's tax computation (fully written down, or figure not yet transferred).`,
+      derivedAt: now(),
+    };
+  }
+  const pounds = (wdvPence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return {
+    item: 14,
+    verdict: "pass",
+    evidence: `WDV brought forward £${pounds} recorded. Confirm against last year's SA302 or carry-forward schedule.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 15: mileage vs actual compared; method allowed. The VEHICLE_CA
+// interview captures method_choice; the engine's recommendedMethod is
+// then available in the snapshot (handled in 7.5c for the comparison).
+// Here we just confirm method is chosen.
+function deriveVehicleMethod(vehicle: Vehicle): ChecklistPrefill | null {
+  const status = typeof vehicle.status === "string" ? vehicle.status : null;
+  if (status === "Leased" || status === "Rented" || status === "No vehicle") {
+    return {
+      item: 15,
+      verdict: "nothing_to_show",
+      evidence: `Vehicle status: ${status}. Lease rent and running costs go through expenses directly, no method choice needed.`,
+      derivedAt: now(),
+    };
+  }
+  const method = typeof vehicle.method_choice === "string" ? vehicle.method_choice : null;
+  const previousMethod = typeof vehicle.previous_method === "string" ? vehicle.previous_method : null;
+  if (!method) {
+    return {
+      item: 15,
+      verdict: "warn",
+      evidence:
+        "Method not chosen in the VEHICLE_CA interview. Decide between Simplified mileage and Actual costs before filing.",
+      derivedAt: now(),
+    };
+  }
+  // Rule: if last year's method was "Actual costs (CAs claimed)" the
+  // client cannot switch to simplified mileage.
+  if (method === "Simplified mileage" && previousMethod === "Actual costs (capital allowances claimed)") {
+    return {
+      item: 15,
+      verdict: "warn",
+      evidence:
+        "Method set to Simplified mileage but last year was Actual costs with CAs claimed, switching to simplified mileage is not allowed on the same vehicle. Keep Actual costs or confirm the vehicle changed.",
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 15,
+    verdict: "pass",
+    evidence:
+      `Method: ${method}${previousMethod ? ` (previous year: ${previousMethod})` : ""}. Allowed for this vehicle.`,
+    derivedAt: now(),
+  };
 }
 
 // Item 1: UTR / NINO / DOB / postcode captured in HMRC-compatible shape.
