@@ -171,6 +171,9 @@ export default async function PchClientPage({
         description: a.description as string,
         amount_pence: Number(a.amount_pence),
       }))}
+      finalPackSentAt={(head.data?.final_pack_sent_at as string | null) ?? null}
+      finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
+      finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
       engineSnapshot={
         showFigures
           ? ((snapshot.data?.engine_snapshot ?? null) as TaxEngineOutput | null)

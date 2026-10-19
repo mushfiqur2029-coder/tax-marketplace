@@ -152,6 +152,11 @@ export default async function PchAccountantPage({
           ? userById.get(head.data.bookkeeping_confirmed_by as string) ?? null
           : null
       }
+      clientApprovalAt={(head.data?.client_approval_at as string | null) ?? null}
+      clientApprovalName={(head.data?.client_approval_name as string | null) ?? null}
+      finalPackSentAt={(head.data?.final_pack_sent_at as string | null) ?? null}
+      finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
+      finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
       messagesPanel={<CaseMessagesPanel caseId={id} messages={messages} viewerRole="accountant" viewerUserId={me.id} />}
     />
   );

@@ -38,6 +38,7 @@ import {
   type IncomeLineRow,
   type ExpenseLineRow,
 } from "./pl-edit-grid";
+import { FinalSignoffPanel } from "./final-signoff-panel";
 
 type CheckItem = { item_number: number; area: string; description: string };
 type CheckStatus = {
@@ -65,6 +66,11 @@ export function PchAccountantView(props: {
   expenseLines: ExpenseLineRow[];
   bookkeepingConfirmedAt: string | null;
   bookkeepingConfirmedByLabel: string | null;
+  clientApprovalAt: string | null;
+  clientApprovalName: string | null;
+  finalPackSentAt: string | null;
+  finalPackConfirmedAt: string | null;
+  finalPackConfirmedName: string | null;
   messagesPanel: React.ReactNode;
 }) {
   const router = useRouter();
@@ -222,6 +228,18 @@ export function PchAccountantView(props: {
             status={statusByItem.get(item.item_number)}
           />
         ))}
+      </div>
+
+      <div className="mt-10">
+        <FinalSignoffPanel
+          caseId={props.caseId}
+          clientApprovalAt={props.clientApprovalAt}
+          clientApprovalName={props.clientApprovalName}
+          finalPackSentAt={props.finalPackSentAt}
+          finalPackConfirmedAt={props.finalPackConfirmedAt}
+          finalPackConfirmedName={props.finalPackConfirmedName}
+          caseStatus={props.caseStatus}
+        />
       </div>
 
       <div className="mt-10">

@@ -11,6 +11,7 @@ import {
 } from "@/app/client/pch/actions";
 import { startAddonCheckoutAction } from "@/app/client/actions";
 import { AddonPayBanner } from "../addon-pay-banner";
+import { FinalPackReview } from "./final-pack-review";
 import { IdentitySection, type IdentityHead } from "./identity-section";
 import { LedgerSection } from "./ledger-section";
 import type { BankTransactionView } from "./bank-ledger-table";
@@ -19,12 +20,8 @@ import {
   ExtractionReview,
   type ExtractionReviewPayload,
 } from "./extraction-review";
-import { InterviewPanel } from "./interview-panel";
 import { AccountantHelpPrompt } from "./accountant-help-prompt";
-import {
-  canRequestAlternative,
-  hasInterviewFor,
-} from "@/lib/pch/ai-interview-slots";
+import { canRequestAlternative } from "@/lib/pch/ai-interview-slots";
 import {
   PriorYearPrompt,
   type PriorYearOption,
@@ -80,6 +77,9 @@ export function PchClientWorkspace(props: {
   priorYearOptions: PriorYearOption[];
   bankTransactions: BankTransactionView[];
   pendingAddons: Array<{ id: string; description: string; amount_pence: number }>;
+  finalPackSentAt: string | null;
+  finalPackConfirmedAt: string | null;
+  finalPackConfirmedName: string | null;
   messagesPanel: React.ReactNode;
   engineSnapshot: TaxEngineOutput | null;
   engineSnapshotAt: string | null;
@@ -120,7 +120,7 @@ export function PchClientWorkspace(props: {
         </p>
       </div>
 
-      {awaitingApproval && props.engineSnapshot ? (
+      {awaitingApproval && props.engineSnapshot && !props.approvalAt ? (
         <ApprovalView
           caseId={props.caseId}
           snapshot={props.engineSnapshot}
@@ -128,6 +128,29 @@ export function PchClientWorkspace(props: {
           approvalAt={props.approvalAt}
           approvalName={props.approvalName}
         />
+      ) : awaitingApproval && props.finalPackSentAt ? (
+        <FinalPackReview
+          caseId={props.caseId}
+          sentAt={props.finalPackSentAt}
+          confirmedAt={props.finalPackConfirmedAt}
+          confirmedName={props.finalPackConfirmedName}
+          prefillName={(props.head?.cl_name as string | undefined) ?? props.approvalName ?? ""}
+        />
+      ) : awaitingApproval && props.approvalAt ? (
+        <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <div
+            className="text-[11px] font-semibold uppercase tracking-widest text-slate-700"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            Awaiting final pack from your accountant
+          </div>
+          <h2 className="mt-1 text-base font-semibold text-ink">
+            Figures approved on {new Date(props.approvalAt).toLocaleString("en-GB")}
+          </h2>
+          <p className="mt-1 text-xs text-slate-700">
+            Your accountant is preparing the final accounts pack. You&apos;ll be prompted to review and confirm it here once it&apos;s ready.
+          </p>
+        </section>
       ) : filed && props.engineSnapshot ? (
         <FiledView
           snapshot={props.engineSnapshot}
@@ -400,24 +423,18 @@ function DocRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [interviewOpen, setInterviewOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const inputId = `up-${slot.code}`;
   const isRequired = /^Required/i.test(slot.required_rule);
   const effectiveStatus =
     status?.status ?? (uploaded.length ? "Uploaded" : "Awaiting");
-  const interviewAvailable = canEdit && hasInterviewFor(slot.code);
-  const hasInterviewExtraction = extractions.some(
-    (e) => e.source === "ai_interview",
-  );
-  // Non-interview fallback: show "I don't have this document" that
-  // opens the lightweight accountant-help request. Hidden on the
-  // mandatory-upload slots (PCH-14 bank statements, PCH-23 sign-off)
-  // and once help has already been requested.
+  // Phase 6 Slice 7: the per-slot AI-interview path (PCH-01/02/03) is
+  // gone; the only non-upload option left is the accountant-help
+  // request. Shown on non-mandatory slots once no help request is
+  // already in flight.
   const helpAvailable =
     canEdit
     && canRequestAlternative(slot.code)
-    && !hasInterviewFor(slot.code)
     && effectiveStatus !== "Awaiting accountant";
   const onPick = async (file: File) => {
     setBusy(true); setErr(null);
@@ -497,16 +514,6 @@ function DocRow({
           className={"inline-block cursor-pointer rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 " + (busy ? "opacity-50" : "")}>
           {busy ? "Uploading..." : "Upload"}
         </label>
-        {interviewAvailable && !hasInterviewExtraction && !interviewOpen && (
-          <button
-            type="button"
-            onClick={() => setInterviewOpen(true)}
-            disabled={busy}
-            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1 text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
-          >
-            I don&apos;t have this document
-          </button>
-        )}
         {helpAvailable && !helpOpen && (
           <button
             type="button"
@@ -525,17 +532,6 @@ function DocRow({
         )}
         {err && <span className="text-red-600">{err}</span>}
       </div>
-      {interviewAvailable && interviewOpen ? (
-        <InterviewPanel
-          caseId={caseId}
-          slotCode={slot.code}
-          slotLabel={slot.display_name}
-          onClose={() => {
-            setInterviewOpen(false);
-            onChanged();
-          }}
-        />
-      ) : null}
       {helpAvailable && helpOpen ? (
         <AccountantHelpPrompt
           caseId={caseId}

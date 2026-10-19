@@ -483,3 +483,99 @@ export async function editExpenseLineAction(
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };
 }
+
+// -------------------------------------------------------------------
+// Phase 6 Slice 7: final sign-off gate.
+//
+// sendFinalPackAction, accountant marks the final accounts pack sent
+//   to the client. Preconditions: case status is 'client_approval' (or
+//   later) + the client has approved the figures (pch_cases.client_
+//   approval_at is set). Writes the timestamp + user id; the client
+//   workspace then shows the "review the final pack" card instead of
+//   the figures-approval card.
+//
+// The actual pack is the existing Phase 2b PDF/XLSX export; this
+// action just flips the gate so the client knows a new version is
+// ready for the final review step. If the client needs to change
+// something, the accountant can clear the gate by not re-sending.
+// -------------------------------------------------------------------
+export async function sendFinalPackAction(
+  caseId: string,
+): Promise<ActionResult> {
+  const { me } = await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const { data: head } = await admin
+    .from("pch_cases")
+    .select("client_approval_at, final_pack_sent_at")
+    .eq("case_id", caseId)
+    .maybeSingle();
+  if (!head?.client_approval_at) {
+    return {
+      ok: false,
+      error: "The client has not approved the figures yet; send the figures for approval first.",
+    };
+  }
+  if (head.final_pack_sent_at) {
+    return {
+      ok: false,
+      error: "Final pack has already been sent. Clear the gate first if you need to re-send.",
+    };
+  }
+  const { error } = await admin
+    .from("pch_cases")
+    .update({
+      final_pack_sent_at: new Date().toISOString(),
+      final_pack_sent_by: me.id,
+    })
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
+export async function clearFinalPackAction(
+  caseId: string,
+): Promise<ActionResult> {
+  await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("pch_cases")
+    .update({
+      final_pack_sent_at: null,
+      final_pack_sent_by: null,
+      final_pack_confirmed_at: null,
+      final_pack_confirmed_name: null,
+    })
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  return { ok: true };
+}
+
+export async function markFiledWithHmrcAction(
+  caseId: string,
+): Promise<ActionResult> {
+  await requireAccountantPchCase(caseId);
+  const admin = createAdminClient();
+  const { data: head } = await admin
+    .from("pch_cases")
+    .select("final_pack_confirmed_at")
+    .eq("case_id", caseId)
+    .maybeSingle();
+  if (!head?.final_pack_confirmed_at) {
+    return {
+      ok: false,
+      error: "Client has not confirmed the final pack yet.",
+    };
+  }
+  const { error } = await admin
+    .from("cases")
+    .update({ status: "filed" })
+    .eq("id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  return { ok: true };
+}

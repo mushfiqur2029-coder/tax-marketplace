@@ -697,3 +697,49 @@ export async function recordClientApprovalAction(
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };
 }
+
+// -------------------------------------------------------------------
+// Phase 6 Slice 7: client-side confirmation of the final accounts pack.
+//
+// Separate from Phase 2b's recordClientApprovalAction (which captures
+// the figures approval). This second gate records the client's sign-off
+// on the final pack the accountant just delivered. Only once this is
+// set can the accountant click "Mark filed with HMRC".
+// -------------------------------------------------------------------
+export async function confirmFinalPackAction(
+  caseId: string,
+  signedName: string,
+): Promise<ActionResult> {
+  const { caseRow } = await requirePchCase(caseId);
+  const admin = createAdminClient();
+  const { data: head } = await admin
+    .from("pch_cases")
+    .select("final_pack_sent_at, final_pack_confirmed_at")
+    .eq("case_id", caseId)
+    .maybeSingle();
+  if (!head?.final_pack_sent_at) {
+    return {
+      ok: false,
+      error: "Your accountant hasn't sent the final pack yet.",
+    };
+  }
+  if (head.final_pack_confirmed_at) {
+    return { ok: false, error: "You've already confirmed the final pack." };
+  }
+  const trimmed = (signedName ?? "").trim();
+  if (trimmed.length < 2) {
+    return { ok: false, error: "Please type your full name to confirm." };
+  }
+  const { error } = await admin
+    .from("pch_cases")
+    .update({
+      final_pack_confirmed_at: new Date().toISOString(),
+      final_pack_confirmed_name: trimmed,
+    })
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
+  void caseRow;
+  return { ok: true };
+}
