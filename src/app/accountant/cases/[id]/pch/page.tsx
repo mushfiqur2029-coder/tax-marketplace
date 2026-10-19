@@ -100,7 +100,7 @@ export default async function PchAccountantPage({
   // derive" fallback), 7.5 fills in the 20 auto items cluster by
   // cluster. Non-blocking: a derivation failure doesn't crash the
   // page, the UI just falls back to manual Done/N/A on affected rows.
-  const prefills = await deriveChecklistPrefills(id, admin);
+  const prefills = await deriveChecklistPrefills(id, admin, { anomalies });
   const prefillList: ChecklistPrefill[] = Array.from(prefills.values());
 
   // Decorate blocked slots with display name + section from pch_doc_slots.

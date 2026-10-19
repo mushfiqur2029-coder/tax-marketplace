@@ -21,6 +21,8 @@
 // pch_check_status.note for audit.
 
 import type { createAdminClient } from "@/lib/supabase/admin";
+import type { TaxEngineOutput } from "@/lib/tax-engine";
+import type { Anomaly } from "@/lib/pch/prior-year-anomalies";
 
 export type ChecklistPrefillVerdict = "pass" | "warn" | "nothing_to_show";
 
@@ -59,9 +61,17 @@ type Vehicle = Record<string, unknown>;
 // one coherent derivation moment rather than N micro-skewed ones.
 function now(): string { return new Date().toISOString(); }
 
+// Context pre-computed by the caller (page.tsx already runs the
+// prior-year anomaly engine for the dedicated panel; passing the
+// result in here avoids re-running computePriorYearAnomalies).
+export type ChecklistDerivationContext = {
+  anomalies?: Anomaly[];
+};
+
 export async function deriveChecklistPrefills(
   caseId: string,
   admin: ReturnType<typeof createAdminClient>,
+  context?: ChecklistDerivationContext,
 ): Promise<Map<number, ChecklistPrefill>> {
   const prefills = new Map<number, ChecklistPrefill>();
   try {
@@ -77,7 +87,11 @@ export async function deriveChecklistPrefills(
   } catch (err) {
     console.warn("[deriveChecklistPrefills] expense/vehicle cluster failed:", err);
   }
-  // Slice 7.5c: engine + prior-year + SA302 cluster lands here.
+  try {
+    await deriveEngineCluster(caseId, admin, prefills, context?.anomalies ?? []);
+  } catch (err) {
+    console.warn("[deriveChecklistPrefills] engine cluster failed:", err);
+  }
   return prefills;
 }
 
@@ -669,6 +683,297 @@ function deriveApproval(head: Head): ChecklistPrefill | null {
     verdict: "pass",
     evidence:
       `Figures approved by ${approvedName ?? "client"} on ${fmt(approvedAt)}; final pack confirmed by ${confirmedName ?? "client"} on ${fmt(confirmedAt)}. PDF + Excel downloads live in the workspace header.`,
+    derivedAt: now(),
+  };
+}
+
+// -------------------------------------------------------------------
+// 7.5c: engine + prior-year + sa302_comparison cluster
+// -------------------------------------------------------------------
+async function deriveEngineCluster(
+  caseId: string,
+  admin: ReturnType<typeof createAdminClient>,
+  prefills: Map<number, ChecklistPrefill>,
+  anomalies: Anomaly[],
+): Promise<void> {
+  const { data: head } = await admin
+    .from("pch_cases")
+    .select("engine_snapshot, sa302_comparison, vat_registered, tax_year")
+    .eq("case_id", caseId)
+    .maybeSingle();
+  if (!head) return;
+  const snapshot = (head.engine_snapshot ?? null) as TaxEngineOutput | null;
+  const sa302 = (head.sa302_comparison ?? null) as Record<string, unknown> | null;
+  const vatRegistered = head.vat_registered === true;
+  const taxYear = (head.tax_year as string | null) ?? null;
+
+  // Prior-year lookup, same shape as loadPriorYearAnomalies in page.tsx:
+  // same client + tier, earlier tax_year, pick the latest sibling.
+  let priorSnapshot: TaxEngineOutput | null = null;
+  if (snapshot && taxYear) {
+    const { data: caseRow } = await admin
+      .from("cases")
+      .select("client_id, tier")
+      .eq("id", caseId)
+      .maybeSingle();
+    if (caseRow) {
+      const { data: siblings } = await admin
+        .from("cases")
+        .select("id, tax_year_label")
+        .eq("client_id", caseRow.client_id as string)
+        .eq("tier", caseRow.tier as string)
+        .neq("id", caseId);
+      const priorCandidates = (siblings ?? [])
+        .map((s) => ({ caseId: s.id as string, taxYear: (s.tax_year_label as string | null) ?? "" }))
+        .filter((s) => s.taxYear && s.taxYear < taxYear)
+        .sort((a, b) => b.taxYear.localeCompare(a.taxYear));
+      const prior = priorCandidates[0];
+      if (prior) {
+        const { data: priorHead } = await admin
+          .from("pch_cases")
+          .select("engine_snapshot")
+          .eq("case_id", prior.caseId)
+          .maybeSingle();
+        priorSnapshot = (priorHead?.engine_snapshot ?? null) as TaxEngineOutput | null;
+      }
+    }
+  }
+
+  const p17 = derivePlAnomalies(anomalies); if (p17) prefills.set(17, p17);
+  if (snapshot) {
+    const p22 = deriveVatThreshold(snapshot, vatRegistered); if (p22) prefills.set(22, p22);
+    const p24 = deriveMtdCurrent(snapshot);                  if (p24) prefills.set(24, p24);
+    const p29 = deriveSa302Reconciliation(snapshot, sa302);  if (p29) prefills.set(29, p29);
+    const p30 = derivePoaReduction(snapshot, priorSnapshot); if (p30) prefills.set(30, p30);
+  }
+  const p23 = deriveMtdPrior(priorSnapshot); if (p23) prefills.set(23, p23);
+}
+
+// Item 17: P&L lines compared vs prior year; changes over 25%
+// explained. Reads from the already-computed anomalies list so the
+// "Each P&L line" check and the panel above it stay in agreement.
+function derivePlAnomalies(anomalies: Anomaly[]): ChecklistPrefill | null {
+  if (anomalies.length === 0) {
+    return {
+      item: 17,
+      verdict: "pass",
+      evidence: "No P&L line moved more than 25% vs prior year (or no prior year on file to compare).",
+      derivedAt: now(),
+    };
+  }
+  const sample = anomalies.slice(0, 3).map((a) => a.label ?? a.key ?? "").filter(Boolean);
+  return {
+    item: 17,
+    verdict: "warn",
+    evidence:
+      `${anomalies.length} P&L line${anomalies.length === 1 ? "" : "s"} moved more than 25% vs prior year${sample.length > 0 ? ` (${sample.join(", ")}${anomalies.length > sample.length ? ", ..." : ""})` : ""}. Explain each in the panel above or override.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 22: VAT threshold test (£90k turnover for 2025/26). Not a true
+// pass/warn, more of a stage indicator. We pass unless the client is
+// genuinely close to the threshold without being registered yet.
+function deriveVatThreshold(snapshot: TaxEngineOutput, vatRegistered: boolean): ChecklistPrefill | null {
+  const VAT_THRESHOLD = 90000; // 2025/26 standard registration threshold
+  const APPROACHING = 85000;
+  const turnover = snapshot.pl?.turnover ?? 0;
+  const fmt = (n: number) =>
+    "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (vatRegistered) {
+    return {
+      item: 22,
+      verdict: "nothing_to_show",
+      evidence: `Client is already VAT-registered. Turnover ${fmt(turnover)}. No threshold test needed.`,
+      derivedAt: now(),
+    };
+  }
+  if (turnover >= VAT_THRESHOLD) {
+    return {
+      item: 22,
+      verdict: "warn",
+      evidence:
+        `Turnover ${fmt(turnover)} is at or above the £${VAT_THRESHOLD.toLocaleString()} VAT registration threshold. Client must register. Flag before filing.`,
+      derivedAt: now(),
+    };
+  }
+  if (turnover >= APPROACHING) {
+    return {
+      item: 22,
+      verdict: "warn",
+      evidence:
+        `Turnover ${fmt(turnover)} is approaching the £${VAT_THRESHOLD.toLocaleString()} VAT threshold. Discuss registration planning with the client.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 22,
+    verdict: "pass",
+    evidence: `Turnover ${fmt(turnover)} well below the £${VAT_THRESHOLD.toLocaleString()} VAT threshold.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 23: MTD status read from prior-year (2024/25) income. Over £50k
+// means mandatory from 6 Apr 2026.
+function deriveMtdPrior(priorSnapshot: TaxEngineOutput | null): ChecklistPrefill | null {
+  if (!priorSnapshot) {
+    return {
+      item: 23,
+      verdict: "nothing_to_show",
+      evidence: "No prior-year case on file. First-year client, MTD threshold is tracked from this year onwards.",
+      derivedAt: now(),
+    };
+  }
+  const priorIncome = priorSnapshot.income?.totalTurnover ?? priorSnapshot.pl?.turnover ?? 0;
+  const fmt = (n: number) =>
+    "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (priorIncome >= 50000) {
+    return {
+      item: 23,
+      verdict: "warn",
+      evidence:
+        `Prior-year (2024/25) qualifying income ${fmt(priorIncome)} is over £50,000. Client is in MTD for ITSA from 6 Apr 2026. Confirm quarterly updates started on time.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 23,
+    verdict: "pass",
+    evidence: `Prior-year qualifying income ${fmt(priorIncome)} below £50,000. MTD not mandatory from 6 Apr 2026.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 24: Current-year MTD status. Engine already computes mtd.status
+// so we just map it to a verdict + friendly message.
+function deriveMtdCurrent(snapshot: TaxEngineOutput): ChecklistPrefill | null {
+  const mtd = snapshot.mtd;
+  if (!mtd) {
+    return {
+      item: 24,
+      verdict: "nothing_to_show",
+      evidence: "Engine snapshot has no MTD status (recompute via the Refresh snapshot button).",
+      derivedAt: now(),
+    };
+  }
+  const fmt = (n: number) =>
+    "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const income = fmt(mtd.qualifyingIncome);
+  switch (mtd.status) {
+    case "IN_MTD_NOW":
+      return { item: 24, verdict: "warn", evidence: `Qualifying income ${income}. Client is already in MTD for ITSA. Confirm they're on the quarterly cadence.`, derivedAt: now() };
+    case "MANDATORY_APR_2027":
+      return { item: 24, verdict: "warn", evidence: `Qualifying income ${income} is over £50,000. Tell the client MTD starts 6 Apr 2027.`, derivedAt: now() };
+    case "LIKELY_MANDATORY_APR_2028":
+      return { item: 24, verdict: "warn", evidence: `Qualifying income ${income} is over £30,000. Tell the client MTD likely starts 6 Apr 2028.`, derivedAt: now() };
+    case "BELOW_THRESHOLDS":
+      return { item: 24, verdict: "pass", evidence: `Qualifying income ${income} below both MTD thresholds. Nothing to flag to the client.`, derivedAt: now() };
+    default:
+      return null;
+  }
+}
+
+// Item 29: SA103S boxes copied into the filing software; SA302
+// reconciliation agrees with the engine. The reconciliation blob on
+// pch_cases.sa302_comparison stores one key per box with the accountant
+// input; empty keys mean the box hasn't been pasted yet.
+function deriveSa302Reconciliation(
+  snapshot: TaxEngineOutput,
+  sa302: Record<string, unknown> | null,
+): ChecklistPrefill | null {
+  if (!sa302 || Object.keys(sa302).length === 0) {
+    return {
+      item: 29,
+      verdict: "nothing_to_show",
+      evidence: "SA302 reconciliation panel is empty, paste the figures from the filing software to compare against the engine.",
+      derivedAt: now(),
+    };
+  }
+  // Keys like "box9_turnover", "box21_netProfit" sit alongside metadata
+  // (recorded_at, recorded_by). Pull the box_* entries where the
+  // accountant has set a numeric value and compare to the engine.
+  const engineBoxes = snapshot.sa103s;
+  if (!engineBoxes) {
+    return {
+      item: 29,
+      verdict: "nothing_to_show",
+      evidence: "Engine snapshot has no SA103S boxes yet. Refresh the snapshot first.",
+      derivedAt: now(),
+    };
+  }
+  const diffs: string[] = [];
+  for (const [key, raw] of Object.entries(sa302)) {
+    if (key.startsWith("sa302_") || key === "recorded_at" || key === "recorded_by") continue;
+    if (raw === null || raw === undefined) continue;
+    const accountantN = Number(raw);
+    if (!Number.isFinite(accountantN)) continue;
+    const engineN = Number((engineBoxes as unknown as Record<string, unknown>)[key] ?? 0);
+    if (Math.abs(engineN - accountantN) >= 1) {
+      diffs.push(key);
+    }
+  }
+  if (diffs.length === 0) {
+    return {
+      item: 29,
+      verdict: "pass",
+      evidence: "All pasted SA103S boxes agree with the engine (within rounding).",
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 29,
+    verdict: "warn",
+    evidence:
+      `${diffs.length} SA103S box${diffs.length === 1 ? "" : "es"} differ between the filing-software paste and the engine (${diffs.slice(0, 3).join(", ")}${diffs.length > 3 ? ", ..." : ""}). Resolve in the reconciliation panel above before filing.`,
+    derivedAt: now(),
+  };
+}
+
+// Item 30: POA reviewed; a reduction claim is only honest when next
+// year's profit really will fall. Compare current profit vs prior; a
+// drop > 10% justifies at least considering a reduction, a rise says
+// no reduction.
+function derivePoaReduction(
+  snapshot: TaxEngineOutput,
+  priorSnapshot: TaxEngineOutput | null,
+): ChecklistPrefill | null {
+  const currentProfit = snapshot.pl?.taxableProfit ?? 0;
+  if (!priorSnapshot) {
+    return {
+      item: 30,
+      verdict: "nothing_to_show",
+      evidence: "No prior-year case on file. No baseline to assess a POA reduction claim against.",
+      derivedAt: now(),
+    };
+  }
+  const priorProfit = priorSnapshot.pl?.taxableProfit ?? 0;
+  const fmt = (n: number) =>
+    "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (priorProfit <= 0) {
+    return {
+      item: 30,
+      verdict: "nothing_to_show",
+      evidence: `Prior-year profit ${fmt(priorProfit)}. No basis for a reduction comparison.`,
+      derivedAt: now(),
+    };
+  }
+  const delta = currentProfit - priorProfit;
+  const pct = (delta / priorProfit) * 100;
+  if (pct >= -10) {
+    return {
+      item: 30,
+      verdict: "pass",
+      evidence:
+        `Current profit ${fmt(currentProfit)} vs prior ${fmt(priorProfit)} (${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%). No reduction claim justified.`,
+      derivedAt: now(),
+    };
+  }
+  return {
+    item: 30,
+    verdict: "warn",
+    evidence:
+      `Profit fell ${fmt(Math.abs(delta))} (${pct.toFixed(0)}%) vs prior year. Review whether a POA reduction claim is honest for 2026/27, discuss with the client.`,
     derivedAt: now(),
   };
 }
