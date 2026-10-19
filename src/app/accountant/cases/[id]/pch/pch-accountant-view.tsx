@@ -259,6 +259,30 @@ function money(n: number): string {
   });
 }
 
+// SA103S filing-box UI metadata: friendly label (primary), the raw HMRC
+// box number (shown as a muted chip), and the subgroup the row belongs
+// to on the accountant snapshot panel. Keep in sync with the FieldDef
+// list in src/lib/pch/overrides.ts; this is presentation-only, no
+// override logic depends on it.
+type Sa103sSubgroup = "Income" | "Allowable expenses" | "Capital allowances" | "Totals";
+const SA103S_UI: Record<string, { friendly: string; box: string; subgroup: Sa103sSubgroup }> = {
+  "sa103s.box9_turnover":                    { friendly: "Turnover",                        box: "Box 9",    subgroup: "Income" },
+  "sa103s.box12_carVanTravel":               { friendly: "Car, van and travel costs",       box: "Box 12",   subgroup: "Allowable expenses" },
+  "sa103s.box14_rentRatesPowerInsurance":    { friendly: "Rent, rates, power, insurance",   box: "Box 14",   subgroup: "Allowable expenses" },
+  "sa103s.box16_accountancyLegalProf":       { friendly: "Accountancy, legal, professional",box: "Box 16",   subgroup: "Allowable expenses" },
+  "sa103s.box17_interestBankCardCharges":    { friendly: "Interest, bank and card charges", box: "Box 17",   subgroup: "Allowable expenses" },
+  "sa103s.box18_phoneAndOfficeCosts":        { friendly: "Phone and office costs",          box: "Box 18",   subgroup: "Allowable expenses" },
+  "sa103s.box19_otherAllowable":             { friendly: "Other allowable expenses",        box: "Box 19",   subgroup: "Allowable expenses" },
+  "sa103s.box20_totalAllowable":             { friendly: "Total allowable expenses",        box: "Box 20",   subgroup: "Totals" },
+  "sa103s.box21_netProfit":                  { friendly: "Net profit before capital allowances", box: "Box 21", subgroup: "Totals" },
+  "sa103s.box24_1_zeroEmissionCarFya":       { friendly: "Zero-emission car FYA",           box: "Box 24.1", subgroup: "Capital allowances" },
+  "sa103s.box25_otherCapitalAllowances":     { friendly: "Other capital allowances",        box: "Box 25",   subgroup: "Capital allowances" },
+  "sa103s.box26_balancingCharges":           { friendly: "Balancing charges",               box: "Box 26",   subgroup: "Capital allowances" },
+  "sa103s.box31_totalTaxableProfits":        { friendly: "Total taxable profit",            box: "Box 31",   subgroup: "Totals" },
+};
+const SA103S_SUBGROUP_ORDER: Sa103sSubgroup[] =
+  ["Income", "Allowable expenses", "Capital allowances", "Totals"];
+
 function OverridableSnapshot({
   caseId, snapshot, snapshotAt, history,
 }: {
@@ -268,54 +292,170 @@ function OverridableSnapshot({
   history: OverrideRow[];
 }) {
   const effective = useMemo(() => effectiveValues(snapshot, history), [snapshot, history]);
-  const groups: Array<"P&L" | "Tax & NIC" | "SA103S boxes"> = [
-    "P&L", "Tax & NIC", "SA103S boxes",
-  ];
-  const fieldsByGroup = useMemo(() => {
-    const m = new Map<string, FieldDef[]>();
-    for (const f of PCH_OVERRIDE_FIELDS) {
-      const arr = m.get(f.group) ?? [];
+  const [showAll, setShowAll] = useState(false);
+
+  const plFields = PCH_OVERRIDE_FIELDS.filter((f) => f.group === "P&L");
+  const taxFields = PCH_OVERRIDE_FIELDS.filter((f) => f.group === "Tax & NIC");
+  const sa103sFields = PCH_OVERRIDE_FIELDS.filter((f) => f.group === "SA103S boxes");
+
+  const sa103sBySubgroup = useMemo(() => {
+    const m = new Map<Sa103sSubgroup, FieldDef[]>();
+    for (const f of sa103sFields) {
+      const sg = SA103S_UI[f.path]?.subgroup;
+      if (!sg) continue;
+      const arr = m.get(sg) ?? [];
       arr.push(f);
-      m.set(f.group, arr);
+      m.set(sg, arr);
     }
     return m;
-  }, []);
+  }, [sa103sFields]);
+
+  const zeroCount = sa103sFields.filter((f) => {
+    const eff = effective.get(f.path);
+    return eff && !eff.isOverride && Math.abs(eff.value) < 0.005;
+  }).length;
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-xs text-slate-500 mb-3">
+    <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-5">
+      <p className="text-xs text-slate-500">
         Snapshot last run: {snapshotAt ? new Date(snapshotAt).toLocaleString() : ", "}
         {" · "}
         <span className="text-slate-400">Click any value to override.</span>
       </p>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-sm">
-        {groups.map((g) => (
-          <div key={g}>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">{g}</h4>
-            <table className="w-full">
-              <tbody>
-                {(fieldsByGroup.get(g) ?? []).map((f) => {
-                  const eff = effective.get(f.path)!;
-                  return (
-                    <OverridableRow
-                      key={f.path}
-                      caseId={caseId}
-                      field={f}
-                      value={eff.value}
-                      calculated={eff.calculated}
-                      isOverride={eff.isOverride}
-                    />
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ))}
-      </div>
+
+      {/* Headline figures: P&L + Tax & NIC together in a compact card */}
+      <section>
+        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Headline figures</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 rounded border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
+          {[...plFields, ...taxFields].map((f) => {
+            const eff = effective.get(f.path)!;
+            return (
+              <HeadlineRow
+                key={f.path}
+                caseId={caseId}
+                field={f}
+                value={eff.value}
+                calculated={eff.calculated}
+                isOverride={eff.isOverride}
+              />
+            );
+          })}
+        </div>
+      </section>
+
+      {/* SA103S boxes grouped by purpose; zero rows hidden behind a toggle */}
+      <section>
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">SA103S return boxes</h4>
+          {zeroCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowAll((s) => !s)}
+              className="text-[11px] text-slate-500 underline underline-offset-2 hover:text-slate-700"
+            >
+              {showAll ? `Hide ${zeroCount} empty box${zeroCount === 1 ? "" : "es"}` : `Show all ${sa103sFields.length} boxes`}
+            </button>
+          ) : null}
+        </div>
+        <div className="space-y-3">
+          {SA103S_SUBGROUP_ORDER.map((sg) => {
+            const fields = sa103sBySubgroup.get(sg) ?? [];
+            const visible = fields.filter((f) => {
+              const eff = effective.get(f.path);
+              if (!eff) return false;
+              if (showAll) return true;
+              if (eff.isOverride) return true;
+              return Math.abs(eff.value) >= 0.005;
+            });
+            if (visible.length === 0) return null;
+            return (
+              <div key={sg} className="rounded border border-slate-200">
+                <div className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  {sg}
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {visible.map((f) => {
+                    const eff = effective.get(f.path)!;
+                    const ui = SA103S_UI[f.path];
+                    return (
+                      <Sa103sRow
+                        key={f.path}
+                        caseId={caseId}
+                        field={f}
+                        friendly={ui.friendly}
+                        box={ui.box}
+                        value={eff.value}
+                        calculated={eff.calculated}
+                        isOverride={eff.isOverride}
+                      />
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }
 
-function OverridableRow({
+// Compact headline row (P&L / Tax & NIC): label on the left, click-to-
+// override value on the right. No HMRC box chip since these are internal
+// engine totals, not filing boxes.
+function HeadlineRow({
+  caseId, field, value, calculated, isOverride,
+}: {
+  caseId: string; field: FieldDef;
+  value: number; calculated: number; isOverride: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1">
+      <span className="text-slate-700">{field.label}</span>
+      <OverrideValueButton
+        caseId={caseId}
+        field={field}
+        value={value}
+        calculated={calculated}
+        isOverride={isOverride}
+      />
+    </div>
+  );
+}
+
+// SA103S return-box row: friendly label primary, muted "Box 12" chip
+// secondary, click-to-override value on the right.
+function Sa103sRow({
+  caseId, field, friendly, box, value, calculated, isOverride,
+}: {
+  caseId: string; field: FieldDef;
+  friendly: string; box: string;
+  value: number; calculated: number; isOverride: boolean;
+}) {
+  return (
+    <li className="flex items-baseline justify-between gap-3 px-3 py-1.5 text-sm">
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+        <span className="text-slate-800">{friendly}</span>
+        <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          {box}
+        </span>
+      </span>
+      <OverrideValueButton
+        caseId={caseId}
+        field={field}
+        value={value}
+        calculated={calculated}
+        isOverride={isOverride}
+      />
+    </li>
+  );
+}
+
+// Shared value button + edit popover used by both HeadlineRow and
+// Sa103sRow. Extracted so both layouts get identical override behaviour
+// (click to edit, reason prompt on material change, revert button when
+// an override is active).
+function OverrideValueButton({
   caseId, field, value, calculated, isOverride,
 }: {
   caseId: string; field: FieldDef;
@@ -362,68 +502,63 @@ function OverridableRow({
 
   if (editing) {
     return (
-      <tr>
-        <td colSpan={2} className="py-1">
-          <div className="rounded border border-sky-200 bg-sky-50/40 p-2 space-y-2">
-            <div className="flex items-center gap-2 text-xs text-slate-600">
-              <span className="font-semibold">{field.label}</span>
-              <span className="text-slate-400">Calculated: {money(calculated)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number" step="0.01" value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                className="w-32 rounded border border-slate-300 px-2 py-1 text-sm text-right"
-                autoFocus />
-              <button type="button" onClick={save} disabled={!canSave || pending}
-                className="rounded bg-slate-900 px-3 py-1 text-white text-xs disabled:opacity-50">
-                {pending ? "Saving..." : "Save"}
-              </button>
-              <button type="button" onClick={cancel} disabled={pending}
-                className="rounded border border-slate-300 bg-white px-3 py-1 text-xs">
-                Cancel
-              </button>
-              {isOverride && (
-                <button type="button" onClick={revert} disabled={pending}
-                  className="rounded border border-slate-300 bg-white px-3 py-1 text-xs text-slate-600 hover:text-red-700">
-                  Revert to calculated
-                </button>
-              )}
-            </div>
-            {needsReason && (
-              <div>
-                <input
-                  type="text" value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="Reason required (3+ chars)"
-                  className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Change of £{Math.abs(parsed - value).toFixed(2)} needs a short rationale for the audit trail.
-                </p>
-              </div>
-            )}
-            {err && <p className="text-xs text-red-600">{err}</p>}
+      <div className="w-full">
+        <div className="rounded border border-sky-200 bg-sky-50/40 p-2 space-y-2">
+          <div className="flex items-center gap-2 text-xs text-slate-600">
+            <span className="font-semibold">{field.label}</span>
+            <span className="text-slate-400">Calculated: {money(calculated)}</span>
           </div>
-        </td>
-      </tr>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="number" step="0.01" value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="w-32 rounded border border-slate-300 px-2 py-1 text-sm text-right"
+              autoFocus />
+            <button type="button" onClick={save} disabled={!canSave || pending}
+              className="rounded bg-slate-900 px-3 py-1 text-white text-xs disabled:opacity-50">
+              {pending ? "Saving..." : "Save"}
+            </button>
+            <button type="button" onClick={cancel} disabled={pending}
+              className="rounded border border-slate-300 bg-white px-3 py-1 text-xs">
+              Cancel
+            </button>
+            {isOverride && (
+              <button type="button" onClick={revert} disabled={pending}
+                className="rounded border border-slate-300 bg-white px-3 py-1 text-xs text-slate-600 hover:text-red-700">
+                Revert to calculated
+              </button>
+            )}
+          </div>
+          {needsReason && (
+            <div>
+              <input
+                type="text" value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason required (3+ chars)"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Change of £{Math.abs(parsed - value).toFixed(2)} needs a short rationale for the audit trail.
+              </p>
+            </div>
+          )}
+          {err && <p className="text-xs text-red-600">{err}</p>}
+        </div>
+      </div>
     );
   }
   return (
-    <tr>
-      <td className="py-1 pr-4 text-slate-600">{field.label}</td>
-      <td className="py-1 text-right">
-        <button type="button" onClick={open}
-          className={"font-medium hover:underline underline-offset-2 " +
-            (isOverride ? "text-amber-700" : "text-slate-900")}>
-          {money(value)}
-        </button>
-        {isOverride && (
-          <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
-            override
-          </span>
-        )}
-      </td>
-    </tr>
+    <span className="whitespace-nowrap">
+      <button type="button" onClick={open}
+        className={"tabular-nums font-medium hover:underline underline-offset-2 " +
+          (isOverride ? "text-amber-700" : "text-slate-900")}>
+        {money(value)}
+      </button>
+      {isOverride && (
+        <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+          override
+        </span>
+      )}
+    </span>
   );
 }
 

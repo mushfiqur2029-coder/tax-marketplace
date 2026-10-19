@@ -260,9 +260,12 @@ export async function commitPchVehicleInterviewAction(
           break;
         }
         case "business_pct_override": {
-          const n = Math.round(Number(field.value));
+          const n = Number(field.value);
+          // AI returns a percentage 0..100 (see VEHICLE_CA interview spec in
+          // ai-interview.ts); the DB column is numeric(4,2) 0..1 per migration
+          // 0080, which is what the tax engine's businessPctOverride consumes.
           if (Number.isFinite(n) && n >= 0 && n <= 100) {
-            patch.business_pct_override = n;
+            patch.business_pct_override = Math.round(n) / 100;
             written.push(key);
           }
           break;
