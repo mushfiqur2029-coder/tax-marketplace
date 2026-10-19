@@ -158,6 +158,101 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
       },
     ],
   },
+
+  // ------------------------------------------------------------------
+  // Phase 7 Slice 7.6: RELIEFS, personal reliefs that can lower the
+  // tax bill. Writes to existing pch_cases columns:
+  //   personal_pension_net_pence, gift_aid_net_pence,
+  //   marriage_allowance_status.
+  // ------------------------------------------------------------------
+  RELIEFS: {
+    slotCode: "RELIEFS",
+    title: "Reliefs and personal allowances",
+    resultLabel: "AI interview: personal reliefs",
+    opener:
+      "Three quick questions about personal reliefs, these can lower your tax bill. First, did you pay into a personal pension this year (anything outside a workplace pension your employer runs)? If yes, how much in total? Numbers in pounds are fine, I'll handle the gross-up.",
+    fields: [
+      {
+        key: "personal_pension_net_gbp",
+        label: "Personal pension contributions, net (GBP)",
+        description:
+          "Numeric GBP. Total paid into a personal pension this tax year, net of basic-rate tax relief at source. Only workplace pension deducted via payroll does NOT count here. Mark missing (0 is fine) if the client paid nothing or doesn't know; the accountant can still ask them for an annual statement.",
+      },
+      {
+        key: "gift_aid_net_gbp",
+        label: "Gift Aid donations, net (GBP)",
+        description:
+          "Numeric GBP. Total charitable donations this tax year where the client ticked the Gift Aid box. Net of basic-rate tax relief (standard presentation). Mark missing (0 is fine) if no donations or client doesn't know.",
+      },
+      {
+        key: "marriage_allowance_status",
+        label: "Marriage Allowance status",
+        description:
+          "Exactly one of: 'None', 'Transferring', 'Receiving'. 'Transferring' means the client is transferring 10% of their personal allowance to a lower-earning spouse. 'Receiving' means the client is the lower earner receiving the transfer. 'None' means neither applies.",
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------------
+  // Phase 7 Slice 7.6: INCOME_PROBE, confirm nil activity on other
+  // platforms. Writes to pch_cases.nil_platforms_note.
+  // ------------------------------------------------------------------
+  INCOME_PROBE: {
+    slotCode: "INCOME_PROBE",
+    title: "Any other income sources?",
+    resultLabel: "AI interview: nil-platform confirmation",
+    opener:
+      "Quick check on income sources, we've picked up your main platform earnings from the bank statement. Did you drive for any other platforms this year (Bolt, FreeNow, Addison Lee, Uber Eats, Deliveroo, Just Eat), even if you earned nothing? If nothing else, just say 'only Uber' (or whichever platform you did use).",
+    fields: [
+      {
+        key: "nil_platforms_note",
+        label: "Other platforms / nil activity note",
+        description:
+          "Free-form client answer summarising what platforms they drove for and which (if any) had nil activity this year. Keep it short, one or two sentences; the accountant reads this verbatim.",
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------------
+  // Phase 7 Slice 7.6: EXPENSES_PROBE, often-missed costs + estimate
+  // workings. Combines two conversational questions (checklist items
+  // 11 and 27) into one flow. Writes to pch_cases.expenses_probe_note.
+  // ------------------------------------------------------------------
+  EXPENSES_PROBE: {
+    slotCode: "EXPENSES_PROBE",
+    title: "Any expenses we missed?",
+    resultLabel: "AI interview: expenses probe",
+    opener:
+      "Two quick questions on expenses before you submit. First, did you have any costs we might have missed? These come up often but aren't always on your bank statement, PCO vehicle rental, DBS or medical check fees, VED (road tax) on an EV, or breakdown cover. Second, were any of your expense numbers estimates rather than exact figures (for example, 'about £40 a week on car cleaning')? If so, how did you work the estimate out?",
+    fields: [
+      {
+        key: "expenses_probe_note",
+        label: "Expenses probe answer",
+        description:
+          "Free-form client answer covering (a) any often-missed costs they want the accountant to add, and (b) the method behind any estimated figures. Keep it short, two or three sentences; the accountant reads this verbatim and decides whether to add expense lines.",
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------------
+  // Phase 7 Slice 7.6: FILING_DETAILS, repayment account name. Single
+  // question. Writes to pch_cases.repayment_account_name.
+  // ------------------------------------------------------------------
+  FILING_DETAILS: {
+    slotCode: "FILING_DETAILS",
+    title: "Where should a refund go?",
+    resultLabel: "AI interview: repayment account",
+    opener:
+      "Last quick question before you submit, when HMRC refunds you (if there's any refund due this year), whose bank account should it go to? Normally this is your own account; the name on the account must exactly match your HMRC-registered name. If you'd rather HMRC paid someone else (a 'nominee'), tell me their full name.",
+    fields: [
+      {
+        key: "repayment_account_name",
+        label: "Repayment account holder name",
+        description:
+          "Full name on the UK bank account where HMRC should send any refund. Must match the account's registered name exactly. Could be the client themselves, a spouse, or a nominee. One line, no account numbers or sort codes.",
+      },
+    ],
+  },
 };
 
 export function getInterviewFlow(slotCode: string): InterviewFlow | null {

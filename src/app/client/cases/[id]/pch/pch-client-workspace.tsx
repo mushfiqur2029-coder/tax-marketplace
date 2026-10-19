@@ -16,6 +16,21 @@ import { IdentitySection, type IdentityHead } from "./identity-section";
 import { LedgerSection } from "./ledger-section";
 import type { BankTransactionView } from "./bank-ledger-table";
 import { VehicleSection, type VehicleSummary } from "./vehicle-section";
+import { AiInterviewPanel } from "@/components/case/ai-interview-panel";
+import {
+  startPchReliefsInterviewAction,
+  advancePchReliefsInterviewAction,
+  commitPchReliefsInterviewAction,
+  startPchIncomeProbeInterviewAction,
+  advancePchIncomeProbeInterviewAction,
+  commitPchIncomeProbeInterviewAction,
+  startPchExpensesProbeInterviewAction,
+  advancePchExpensesProbeInterviewAction,
+  commitPchExpensesProbeInterviewAction,
+  startPchFilingDetailsInterviewAction,
+  advancePchFilingDetailsInterviewAction,
+  commitPchFilingDetailsInterviewAction,
+} from "@/app/client/pch/other-interview-actions";
 import {
   ExtractionReview,
   type ExtractionReviewPayload,
@@ -233,6 +248,83 @@ export function PchClientWorkspace(props: {
                 editable={editable}
               />
             </div>
+
+            {editable ? (
+              <>
+                <h2 className={h2}>5. Reliefs and personal allowances</h2>
+                <div className={card}>
+                  <ReliefsSection
+                    caseId={props.caseId}
+                    pensionPence={Number(props.head?.personal_pension_net_pence ?? 0) || 0}
+                    giftAidPence={Number(props.head?.gift_aid_net_pence ?? 0) || 0}
+                    maStatus={(props.head?.marriage_allowance_status as string | null) ?? "None"}
+                  />
+                </div>
+
+                <h2 className={h2}>6. Any other income sources?</h2>
+                <div className={card}>
+                  <SingleAnswerSection
+                    caseId={props.caseId}
+                    title="Nil-platform check"
+                    body="Quick confirmation that we have every platform you drove for this year, even the ones that paid nothing. Takes about 30 seconds."
+                    answer={(props.head?.nil_platforms_note as string | null) ?? null}
+                    emptyPrompt="You haven't told us yet about any other platforms you drove for."
+                    openLabel="Walk through it with the AI"
+                    reopenLabel="Update your answer"
+                    panelFlowLabel="Any other income sources?"
+                    panelFlowSubtitle="Confirming any platforms with nil activity"
+                    panelFinishedMessage="Thanks, saving that answer now."
+                    panelCommitLabel="Save this answer"
+                    panelCommitPendingLabel="Saving..."
+                    startAction={startPchIncomeProbeInterviewAction}
+                    advanceAction={advancePchIncomeProbeInterviewAction}
+                    commitAction={commitPchIncomeProbeInterviewAction}
+                  />
+                </div>
+
+                <h2 className={h2}>7. Any expenses we missed?</h2>
+                <div className={card}>
+                  <SingleAnswerSection
+                    caseId={props.caseId}
+                    title="Expenses probe"
+                    body="Two quick questions: any costs we may have missed (PCO rental, DBS/medical, VED, breakdown), and if any of your expense figures were estimates, how you worked them out."
+                    answer={(props.head?.expenses_probe_note as string | null) ?? null}
+                    emptyPrompt="You haven't told us yet about any often-missed costs or how any estimates were worked out."
+                    openLabel="Walk through it with the AI"
+                    reopenLabel="Update your answer"
+                    panelFlowLabel="Any expenses we missed?"
+                    panelFlowSubtitle="Often-missed costs + estimate workings"
+                    panelFinishedMessage="Thanks, saving that answer now."
+                    panelCommitLabel="Save this answer"
+                    panelCommitPendingLabel="Saving..."
+                    startAction={startPchExpensesProbeInterviewAction}
+                    advanceAction={advancePchExpensesProbeInterviewAction}
+                    commitAction={commitPchExpensesProbeInterviewAction}
+                  />
+                </div>
+
+                <h2 className={h2}>8. Where should a refund go?</h2>
+                <div className={card}>
+                  <SingleAnswerSection
+                    caseId={props.caseId}
+                    title="Repayment account name"
+                    body="If HMRC owes you a refund this year, whose bank account should it be paid into? The name on the account must match your HMRC-registered name exactly."
+                    answer={(props.head?.repayment_account_name as string | null) ?? null}
+                    emptyPrompt="You haven't told us yet whose account HMRC should refund to."
+                    openLabel="Walk through it with the AI"
+                    reopenLabel="Update your answer"
+                    panelFlowLabel="Where should a refund go?"
+                    panelFlowSubtitle="Account name only, no account numbers needed yet"
+                    panelFinishedMessage="Thanks, saving that answer now."
+                    panelCommitLabel="Save this answer"
+                    panelCommitPendingLabel="Saving..."
+                    startAction={startPchFilingDetailsInterviewAction}
+                    advanceAction={advancePchFilingDetailsInterviewAction}
+                    commitAction={commitPchFilingDetailsInterviewAction}
+                  />
+                </div>
+              </>
+            ) : null}
           </fieldset>
 
           {editable ? (
@@ -260,6 +352,135 @@ function WithAccountantBanner() {
         get a notification when they are ready for your approval. Your intake
         below is read-only while they work.
       </p>
+    </div>
+  );
+}
+
+// Phase 7 Slice 7.6b: reusable section for single-answer interview
+// flows (INCOME_PROBE, EXPENSES_PROBE, FILING_DETAILS). Shows what the
+// client has previously answered (if anything), lets them open/update
+// the chat. The RELIEFS flow has its own section component below
+// because the "already captured" summary needs to format three fields.
+function SingleAnswerSection({
+  caseId, title, body, answer, emptyPrompt, openLabel, reopenLabel,
+  panelFlowLabel, panelFlowSubtitle, panelFinishedMessage,
+  panelCommitLabel, panelCommitPendingLabel,
+  startAction, advanceAction, commitAction,
+}: {
+  caseId: string;
+  title: string;
+  body: string;
+  answer: string | null;
+  emptyPrompt: string;
+  openLabel: string;
+  reopenLabel: string;
+  panelFlowLabel: string;
+  panelFlowSubtitle: string;
+  panelFinishedMessage: string;
+  panelCommitLabel: string;
+  panelCommitPendingLabel: string;
+  startAction: (caseId: string) => Promise<{ ok: true; opener: { role: "user" | "assistant"; content: string } } | { ok: false; error: string }>;
+  advanceAction: Parameters<typeof AiInterviewPanel>[0]["advance"];
+  commitAction: Parameters<typeof AiInterviewPanel>[0]["commit"];
+}) {
+  const [open, setOpen] = useState(false);
+  const hasAnswer = (answer ?? "").trim().length > 0;
+  return (
+    <div className="space-y-3">
+      <div className="text-sm font-medium text-slate-900">{title}</div>
+      <p className="text-xs text-slate-600">{body}</p>
+      {hasAnswer ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+          <div className="font-semibold mb-0.5">Captured answer</div>
+          <div className="whitespace-pre-wrap">{answer}</div>
+        </div>
+      ) : (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          {emptyPrompt}
+        </div>
+      )}
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+        >
+          {hasAnswer ? reopenLabel : openLabel}
+        </button>
+      ) : (
+        <AiInterviewPanel
+          caseId={caseId}
+          onClose={() => setOpen(false)}
+          flowLabel={panelFlowLabel}
+          flowSubtitle={panelFlowSubtitle}
+          finishedMessage={panelFinishedMessage}
+          commitButtonLabel={panelCommitLabel}
+          commitPendingLabel={panelCommitPendingLabel}
+          start={startAction}
+          advance={advanceAction}
+          commit={commitAction}
+        />
+      )}
+    </div>
+  );
+}
+
+// Phase 7 Slice 7.6b: Reliefs section. Formats the three captured
+// fields (pension net, Gift Aid net, Marriage Allowance status) into
+// a short summary; otherwise same open / re-open UX as
+// SingleAnswerSection above.
+function ReliefsSection({
+  caseId, pensionPence, giftAidPence, maStatus,
+}: {
+  caseId: string;
+  pensionPence: number;
+  giftAidPence: number;
+  maStatus: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasAny = pensionPence > 0 || giftAidPence > 0 || (maStatus && maStatus !== "None");
+  const fmt = (p: number) =>
+    "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <div className="space-y-3">
+      <div className="text-sm font-medium text-slate-900">Pension, Gift Aid, Marriage Allowance</div>
+      <p className="text-xs text-slate-600">
+        Three quick questions on reliefs that can lower your tax bill. Takes about a minute.
+      </p>
+      {hasAny ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-0.5">
+          <div className="font-semibold mb-0.5">Captured so far</div>
+          <div>Personal pension (net): <strong>{fmt(pensionPence)}</strong></div>
+          <div>Gift Aid (net): <strong>{fmt(giftAidPence)}</strong></div>
+          <div>Marriage Allowance: <strong>{maStatus || "None"}</strong></div>
+        </div>
+      ) : (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          You haven&apos;t told us yet about any pension contributions, Gift Aid or Marriage Allowance.
+        </div>
+      )}
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+        >
+          {hasAny ? "Update your reliefs" : "Walk through it with the AI"}
+        </button>
+      ) : (
+        <AiInterviewPanel
+          caseId={caseId}
+          onClose={() => setOpen(false)}
+          flowLabel="Reliefs and personal allowances"
+          flowSubtitle="Pension, Gift Aid, Marriage Allowance"
+          finishedMessage="Thanks, saving your reliefs now."
+          commitButtonLabel="Save my reliefs"
+          commitPendingLabel="Saving your reliefs..."
+          start={startPchReliefsInterviewAction}
+          advance={advancePchReliefsInterviewAction}
+          commit={commitPchReliefsInterviewAction}
+        />
+      )}
     </div>
   );
 }
