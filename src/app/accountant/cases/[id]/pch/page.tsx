@@ -63,12 +63,26 @@ export default async function PchAccountantPage({
       .eq("case_id", id)
       .order("sort_order", { ascending: true }),
     admin.from("pch_expense_lines")
-      .select("id, label, amount_paid_pence, category, sa103s_box, ai_proposed_json, edited_by, edited_at")
+      .select("id, label, amount_paid_pence, category, sa103s_box, evidence, ai_proposed_json, edited_by, edited_at")
       .eq("case_id", id)
       .order("sort_order", { ascending: true }),
   ]);
 
   const snapshot = (head.data?.engine_snapshot ?? null) as TaxEngineOutput | null;
+  const snapshotAt = (head.data?.engine_snapshot_at as string | null) ?? null;
+
+  // "Stale snapshot" indicator: any P&L edit after the snapshot time
+  // means the figures the accountant sees in the snapshot panel + SA302
+  // reconciliation table are out of date. The view uses this count to
+  // render a yellow banner with a Refresh button that calls
+  // rerunPchEngineSnapshotAction.
+  const snapshotTs = snapshotAt ? Date.parse(snapshotAt) : 0;
+  const countEditsAfter = (rows: Array<{ edited_at: string | null }>) =>
+    rows.filter((r) => r.edited_at && Date.parse(r.edited_at) > snapshotTs).length;
+  const editsSinceSnapshot =
+    countEditsAfter((incomeLines.data ?? []) as Array<{ edited_at: string | null }>)
+    + countEditsAfter((expenseLines.data ?? []) as Array<{ edited_at: string | null }>);
+
   const userById = new Map(
     (users.data ?? []).map((u) => [u.id, u.full_name as string | null]),
   );
@@ -101,7 +115,8 @@ export default async function PchAccountantPage({
       checksMeta={checksMeta.data ?? []}
       checkStatus={checkStatus.data ?? []}
       snapshot={snapshot}
-      snapshotAt={head.data?.engine_snapshot_at ?? null}
+      snapshotAt={snapshotAt}
+      editsSinceSnapshot={editsSinceSnapshot}
       approvalAt={head.data?.client_approval_at ?? null}
       approvalName={head.data?.client_approval_name ?? null}
       overrideHistory={overrideHistory.data ?? []}
@@ -139,6 +154,7 @@ export default async function PchAccountantPage({
         amount_paid_pence: Number(l.amount_paid_pence ?? 0),
         category: (l.category as string) ?? "",
         sa103s_box: Number(l.sa103s_box ?? 0),
+        evidence: (l.evidence as string | null) ?? null,
         ai_proposed_json: (l.ai_proposed_json ?? null) as {
           label?: string;
           amount_paid_pence?: number;

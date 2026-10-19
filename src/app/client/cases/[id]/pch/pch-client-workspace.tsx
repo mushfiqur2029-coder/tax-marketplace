@@ -678,8 +678,9 @@ function ApprovalSection({
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
       <p className="text-sm text-slate-700">
         By typing your name below I approve the attached Profit and Loss Account for the year
-        ended 5 April 2026 and authorise my accountant to file the Self Assessment on this
-        basis.
+        ended 5 April 2026 and authorise my accountant to prepare the final accounts pack for
+        filing on this basis. Your accountant will send a final pack for you to confirm before
+        anything goes to HMRC.
       </p>
       <div className="flex items-center gap-3">
         <input
@@ -690,7 +691,7 @@ function ApprovalSection({
         />
         <button type="button" onClick={submit} disabled={pending || name.trim().length < 2}
           className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-          {pending ? "Filing..." : "Approve and file"}
+          {pending ? "Approving..." : "Approve figures"}
         </button>
       </div>
       {err && <p className="text-red-600 text-xs">{err}</p>}

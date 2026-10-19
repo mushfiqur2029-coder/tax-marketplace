@@ -52,6 +52,11 @@ export type ExpenseLineRow = {
   amount_paid_pence: number;
   category: string;
   sa103s_box: number;
+  // Evidence method code (bank statement, receipt, estimate code, etc.).
+  // Required for the advance-to-approval readiness gate; surfaced inline
+  // on each row with a quick-pick so the accountant can set it in a
+  // single click rather than opening the full edit panel.
+  evidence: string | null;
   ai_proposed_json: {
     label?: string;
     amount_paid_pence?: number;
@@ -59,6 +64,11 @@ export type ExpenseLineRow = {
   edited_by: string | null;
   edited_at: string | null;
 };
+
+// Common evidence method codes. The free-form field (via the full edit
+// panel) still accepts anything, but 95% of lines fall into one of
+// these buckets, so the inline quick-pick covers the common path.
+const EVIDENCE_QUICK_PICKS = ["Bank statement", "Receipt", "Invoice", "Estimate E2"] as const;
 
 type Props = {
   caseId: string;
@@ -353,6 +363,7 @@ function ExpenseRow({
 
   const aiAmount = line.ai_proposed_json?.amount_paid_pence ?? null;
   const amountDiff = aiAmount != null && aiAmount !== line.amount_paid_pence;
+  const missingEvidence = !line.evidence || line.evidence.trim().length === 0;
 
   const save = () => start(async () => {
     setErr(null);
@@ -365,8 +376,20 @@ function ExpenseRow({
     router.refresh();
   });
 
+  const quickPickEvidence = (method: string) => start(async () => {
+    setErr(null);
+    const r = await editExpenseLineAction(caseId, line.id, { evidence: method });
+    if (!r.ok) { setErr(r.error); return; }
+    router.refresh();
+  });
+
   return (
-    <li className="rounded border border-slate-200 bg-slate-50/60 p-3 text-xs">
+    <li className={
+      "rounded border p-3 text-xs "
+      + (missingEvidence && editable
+        ? "border-amber-300 bg-amber-50/50"
+        : "border-slate-200 bg-slate-50/60")
+    }>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="font-medium text-slate-900">{line.label}</div>
@@ -376,6 +399,16 @@ function ExpenseRow({
           <div className="mt-0.5 text-[11px] text-slate-500">
             Amount <strong>{formatPence(line.amount_paid_pence)}</strong>
             {amountDiff ? <DiffPill ai={aiAmount!} /> : null}
+          </div>
+          <div className="mt-0.5 text-[11px]">
+            Evidence{" "}
+            {missingEvidence ? (
+              <span className="font-medium text-amber-800">
+                Missing, this blocks Advance to client approval
+              </span>
+            ) : (
+              <strong className="text-slate-700">{line.evidence}</strong>
+            )}
           </div>
           {line.edited_at ? (
             <div className="mt-0.5 text-[10px] text-slate-500">
@@ -393,6 +426,24 @@ function ExpenseRow({
           </button>
         ) : null}
       </div>
+      {editable && missingEvidence && !editing ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+            Mark as:
+          </span>
+          {EVIDENCE_QUICK_PICKS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => quickPickEvidence(m)}
+              disabled={pending}
+              className="rounded border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {editing ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="block">

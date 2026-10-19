@@ -23,12 +23,13 @@ import {
   sendPchReadyToApproveEmail,
   sendPchFiledEmail,
 } from "@/lib/pch/status-emails";
-import type { TaxEngineOutput } from "@/lib/tax-engine";
+import { computeAll, type TaxEngineOutput } from "@/lib/tax-engine";
 import {
   PCH_OVERRIDE_FIELD_BY_PATH,
   reasonRequired,
 } from "@/lib/pch/overrides";
 import { canRequestFiling } from "@/lib/pch/validation";
+import { hydrateInputsFromDb } from "@/lib/pch/engine-snapshot";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -454,6 +455,11 @@ export async function editIncomeLineAction(
 type ExpenseLinePatch = {
   label?: string;
   amount_paid_pence?: number;
+  // Evidence method code (e.g. "Bank statement", "Receipt", "Estimate E2").
+  // Required for canRequestFiling. Allow setting via the inline quick-pick
+  // on the P&L edit grid so the accountant doesn't have to open the full
+  // edit modal just to flag the method.
+  evidence?: string;
 };
 
 export async function editExpenseLineAction(
@@ -470,6 +476,9 @@ export async function editExpenseLineAction(
   if (typeof patch.amount_paid_pence === "number" && patch.amount_paid_pence >= 0) {
     normalised.amount_paid_pence = Math.round(patch.amount_paid_pence);
   }
+  if (typeof patch.evidence === "string" && patch.evidence.trim().length > 0) {
+    normalised.evidence = patch.evidence.trim();
+  }
   if (Object.keys(normalised).length === 0) {
     return { ok: false, error: "Nothing to update." };
   }
@@ -485,6 +494,47 @@ export async function editExpenseLineAction(
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };
+}
+
+// -------------------------------------------------------------------
+// Re-run the tax engine on the current DB state and overwrite the
+// snapshot stored on pch_cases. Lets the accountant refresh the
+// engine snapshot after editing P&L lines without having to bounce
+// the case back to the client. Not allowed once the case has left
+// in_review, the snapshot the client approved must be the one that
+// gets filed.
+// -------------------------------------------------------------------
+export async function rerunPchEngineSnapshotAction(
+  caseId: string,
+): Promise<ActionResult> {
+  const { caseRow } = await requireAccountantPchCase(caseId);
+  if (caseRow.status !== "in_review") {
+    return {
+      ok: false,
+      error:
+        "Snapshot is locked once the case has left in_review. Revert bookkeeping or clear the final pack if a change is needed.",
+    };
+  }
+  const admin = createAdminClient();
+  try {
+    const inputs = await hydrateInputsFromDb(caseId, admin);
+    const snapshot = computeAll(inputs);
+    const { error } = await admin
+      .from("pch_cases")
+      .update({
+        engine_snapshot: snapshot,
+        engine_snapshot_at: new Date().toISOString(),
+      })
+      .eq("case_id", caseId);
+    if (error) return { ok: false, error: error.message };
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not refresh engine snapshot.",
+    };
+  }
 }
 
 // -------------------------------------------------------------------

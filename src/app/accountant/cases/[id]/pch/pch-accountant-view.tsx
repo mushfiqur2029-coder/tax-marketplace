@@ -9,6 +9,7 @@ import {
   applyPchOverrideAction,
   revertPchOverrideAction,
   savePchSa302ComparisonAction,
+  rerunPchEngineSnapshotAction,
 } from "@/app/accountant/pch/actions";
 import {
   PCH_OVERRIDE_FIELDS,
@@ -53,6 +54,7 @@ export function PchAccountantView(props: {
   checkStatus: CheckStatus[];
   snapshot: TaxEngineOutput | null;
   snapshotAt: string | null;
+  editsSinceSnapshot: number;
   approvalAt: string | null;
   approvalName: string | null;
   overrideHistory: OverrideRow[];
@@ -83,6 +85,16 @@ export function PchAccountantView(props: {
   ).length;
   const total = props.checksMeta.length;
   const allResolved = resolvedCount >= total;
+
+  // Second advance-to-approval gate: every positive-amount expense line
+  // must carry an evidence method. Mirrors the server-side canRequestFiling
+  // check so the accountant sees the blocker count up-front, not just as
+  // an error after clicking the big button.
+  const missingEvidenceCount = props.expenseLines.filter(
+    (l) => l.amount_paid_pence > 0 && !(l.evidence && l.evidence.trim().length > 0),
+  ).length;
+  const allEvidenced = missingEvidenceCount === 0;
+  const canAdvance = allResolved && allEvidenced;
 
   const requestFiling = () => start(async () => {
     const r = await requestClientFilingAction(props.caseId);
@@ -157,6 +169,16 @@ export function PchAccountantView(props: {
             </span>{" "}
             Accountant checks: <strong>{resolvedCount} of {total}</strong> resolved
           </li>
+          <li>
+            <span className={allEvidenced ? "text-emerald-700" : "text-amber-700"}>
+              {allEvidenced ? "✓" : "•"}
+            </span>{" "}
+            Expense evidence:{" "}
+            {allEvidenced
+              ? <>all <strong>{props.expenseLines.length}</strong> line{props.expenseLines.length === 1 ? "" : "s"} have a method recorded</>
+              : <><strong>{missingEvidenceCount}</strong> line{missingEvidenceCount === 1 ? "" : "s"} still need an evidence method, set one from each row above using the amber quick-pick</>
+            }
+          </li>
           {props.approvalAt ? (
             <li>
               <span className="text-emerald-700">✓</span>{" "}
@@ -168,7 +190,7 @@ export function PchAccountantView(props: {
         <div className="mt-4 flex items-center gap-3">
           <button type="button"
             onClick={requestFiling}
-            disabled={pending || !allResolved}
+            disabled={pending || !canAdvance}
             className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
             {pending ? "Requesting..." : "Advance to client approval"}
           </button>
@@ -183,6 +205,13 @@ export function PchAccountantView(props: {
 
       {/* Engine snapshot with inline overrides */}
       <h2 className="text-lg font-bold mb-3">Engine snapshot</h2>
+      {props.snapshot && props.editsSinceSnapshot > 0 && props.caseStatus === "in_review" ? (
+        <StaleSnapshotBanner
+          caseId={props.caseId}
+          editsSinceSnapshot={props.editsSinceSnapshot}
+          snapshotAt={props.snapshotAt}
+        />
+      ) : null}
       {!props.snapshot
         ? <p className="text-sm text-slate-500">No draft has been run by the client yet.</p>
         : <OverridableSnapshot
@@ -257,6 +286,49 @@ function money(n: number): string {
   return "£" + n.toLocaleString("en-GB", {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
+}
+
+// Shown above the Engine snapshot panel when the accountant has edited
+// one or more P&L lines since the snapshot was last computed. One-click
+// Refresh re-runs the engine against the current DB state and overwrites
+// the snapshot (so the SA103S boxes + SA302 reconciliation on this page
+// line up with the edited lines).
+function StaleSnapshotBanner({
+  caseId,
+  editsSinceSnapshot,
+  snapshotAt,
+}: {
+  caseId: string;
+  editsSinceSnapshot: number;
+  snapshotAt: string | null;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const refresh = () => start(async () => {
+    setErr(null);
+    const r = await rerunPchEngineSnapshotAction(caseId);
+    if (!r.ok) { setErr(r.error); return; }
+    router.refresh();
+  });
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+      <span>
+        Engine snapshot stale, <strong>{editsSinceSnapshot}</strong> P&amp;L edit{editsSinceSnapshot === 1 ? "" : "s"} since the last run{snapshotAt ? ` on ${new Date(snapshotAt).toLocaleString("en-GB")}` : ""}. Refresh to recompute the SA103S boxes and SA302 reconciliation against the current lines.
+      </span>
+      <div className="flex items-center gap-2">
+        {err ? <span className="text-rose-700">{err}</span> : null}
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={pending}
+          className="rounded bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+        >
+          {pending ? "Refreshing..." : "Refresh snapshot"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // SA103S filing-box UI metadata: friendly label (primary), the raw HMRC
