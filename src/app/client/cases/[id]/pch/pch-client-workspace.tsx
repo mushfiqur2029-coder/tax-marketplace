@@ -507,6 +507,12 @@ function DocRow({
               ? ".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
               : ".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*"
           }
+          // Photo ID: hint mobile browsers to offer the rear camera so
+          // the client can tap and take a photo of their passport or
+          // licence directly. Desktop ignores capture and behaves as a
+          // normal file picker; mobile still exposes the gallery/files
+          // option alongside the camera.
+          capture={slot.code === "PCH-24" ? "environment" : undefined}
           className="hidden"
           disabled={busy}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }}

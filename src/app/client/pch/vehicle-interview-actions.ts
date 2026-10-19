@@ -175,7 +175,20 @@ export async function commitPchVehicleInterviewAction(
     const lock = assertEditable(caseRow.status);
     if (lock) return lock;
 
-    const final = await runInterviewTurn("VEHICLE_CA", transcript);
+    // The client appends a cosmetic closing assistant message once the
+    // interview reaches 'done' (see vehicle-interview-panel.tsx `send`).
+    // Anthropic's Messages API requires the last message to be from the
+    // user, so strip any trailing non-user turns before re-finalising.
+    // The last real user message is what originally produced the 'done'
+    // turn; replaying from there should produce 'done' again.
+    const finalizeTranscript = [...transcript];
+    while (
+      finalizeTranscript.length > 0
+      && finalizeTranscript[finalizeTranscript.length - 1].role !== "user"
+    ) {
+      finalizeTranscript.pop();
+    }
+    const final = await runInterviewTurn("VEHICLE_CA", finalizeTranscript);
     if (final.kind !== "done") {
       return {
         ok: false,

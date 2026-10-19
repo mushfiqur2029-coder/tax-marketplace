@@ -149,7 +149,6 @@ export function CaseMessagesPanel({
 
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 text-xs text-slate-500">
-            <ShortcutHint />
             {showCharWarn ? (
               <span className={charsLeft < 100 ? "text-amber-700" : "text-slate-500"}>
                 {charsLeft} characters left
@@ -164,6 +163,7 @@ export function CaseMessagesPanel({
               type="button"
               onClick={submit}
               disabled={!canSend}
+              title="Ctrl/Cmd + Enter to send"
               className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               {pending ? (
@@ -179,41 +179,6 @@ export function CaseMessagesPanel({
         </div>
       </div>
     </section>
-  );
-}
-
-// Keyboard hint. Detects the viewer's platform so Mac users see
-// a Cmd key graphic and everyone else sees Ctrl. Rendered with
-// <kbd> for a native-looking key cap, no raw "Ctrl/Cmd" string.
-function ShortcutHint() {
-  // navigator.platform is deprecated but still the most reliable signal;
-  // userAgentData is Chromium-only. Mac covers Intel + Apple Silicon +
-  // iPad/iPhone (same shortcut semantics). Lazy initial state so the
-  // check runs once on mount without a post-render effect flip.
-  const modLabel = useMemo(() => {
-    if (typeof navigator === "undefined") return "Ctrl";
-    const plat = (navigator.platform ?? "").toLowerCase();
-    const ua = (navigator.userAgent ?? "").toLowerCase();
-    const isMac =
-      plat.includes("mac") || ua.includes("mac") || ua.includes("iphone") || ua.includes("ipad");
-    return isMac ? "⌘" : "Ctrl";
-  }, []);
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span>Press</span>
-      <Kbd>{modLabel}</Kbd>
-      <span>+</span>
-      <Kbd>Enter</Kbd>
-      <span>to send</span>
-    </span>
-  );
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-block min-w-[1.25rem] rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-center text-[11px] font-medium leading-none text-slate-700 shadow-sm">
-      {children}
-    </kbd>
   );
 }
 
