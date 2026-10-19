@@ -184,10 +184,10 @@ async function loadMessages(
 ): Promise<CaseMessageView[]> {
   const { data: rows } = await admin
     .from("case_messages")
-    .select("id, author_id, author_role, body, created_at")
+    .select("id, author_id, author_role, body, created_at, attachments")
     .eq("case_id", caseId)
     .order("created_at", { ascending: true });
-  const list = (rows ?? []) as { id: string; author_id: string; author_role: "client" | "accountant" | "admin"; body: string; created_at: string }[];
+  const list = (rows ?? []) as { id: string; author_id: string; author_role: "client" | "accountant" | "admin"; body: string; created_at: string; attachments: unknown }[];
   if (list.length === 0) return [];
   const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
   const { data: users } = await admin.from("users").select("id, email").in("id", authorIds);
@@ -198,6 +198,9 @@ async function loadMessages(
     authorLabel: emailById.get(m.author_id) ?? m.author_id.slice(0, 8),
     body: m.body,
     createdAt: m.created_at,
+    attachments: Array.isArray(m.attachments)
+      ? (m.attachments as CaseMessageView["attachments"])
+      : null,
   }));
 }
 
