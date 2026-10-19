@@ -8,6 +8,7 @@ import {
   CaseMessagesPanel,
   type CaseMessageView,
 } from "@/components/case/case-messages-panel";
+import { deriveChecklistPrefills, type ChecklistPrefill } from "@/lib/pch/checklist-prefills";
 
 // Phase 2a accountant surface: 33-check review + read-only engine
 // snapshot + "request client filing" button. Full override UI + SA
@@ -93,6 +94,15 @@ export default async function PchAccountantPage({
 
   const messages = await loadMessages(admin, id);
 
+  // Phase 7 Slice 7.4: pre-fill map for the 33-point checklist. Shape
+  // is a Map<item_number, ChecklistPrefill>; 7.4 ships a stub that
+  // returns an empty Map (so auto rows render their "AI could not
+  // derive" fallback), 7.5 fills in the 20 auto items cluster by
+  // cluster. Non-blocking: a derivation failure doesn't crash the
+  // page, the UI just falls back to manual Done/N/A on affected rows.
+  const prefills = await deriveChecklistPrefills(id, admin);
+  const prefillList: ChecklistPrefill[] = Array.from(prefills.values());
+
   // Decorate blocked slots with display name + section from pch_doc_slots.
   const slotMetaByCode = new Map(
     (slotMeta.data ?? []).map((s) => [
@@ -114,6 +124,7 @@ export default async function PchAccountantPage({
       caseStatus={caseRow.status}
       checksMeta={checksMeta.data ?? []}
       checkStatus={checkStatus.data ?? []}
+      checkPrefills={prefillList}
       snapshot={snapshot}
       snapshotAt={snapshotAt}
       editsSinceSnapshot={editsSinceSnapshot}

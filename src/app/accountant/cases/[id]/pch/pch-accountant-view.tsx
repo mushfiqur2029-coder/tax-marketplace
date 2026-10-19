@@ -25,6 +25,8 @@ import {
   type Sa302Group,
 } from "@/lib/pch/sa302";
 import type { Anomaly } from "@/lib/pch/prior-year-anomalies";
+import type { ChecklistPrefill } from "@/lib/pch/checklist-prefills";
+import { classifyChecklistItem, type ChecklistKind } from "@/lib/pch/checklist-classification";
 import { PriorYearAnomalyPanel } from "./prior-year-anomaly-panel";
 import {
   AwaitingAccountantPanel,
@@ -52,6 +54,11 @@ export function PchAccountantView(props: {
   caseStatus: string;
   checksMeta: CheckItem[];
   checkStatus: CheckStatus[];
+  // Phase 7 Slice 7.4: per-item pre-fill from the server-side derive
+  // step. Items with kind=auto in CHECKLIST_CLASSIFICATION map to one
+  // entry here when derivation succeeded; empty in 7.4 (stub) and
+  // filled per cluster in 7.5. Rendered inside CheckRow.
+  checkPrefills: ChecklistPrefill[];
   snapshot: TaxEngineOutput | null;
   snapshotAt: string | null;
   editsSinceSnapshot: number;
@@ -80,6 +87,7 @@ export function PchAccountantView(props: {
   const [err, setErr] = useState<string | null>(null);
 
   const statusByItem = new Map(props.checkStatus.map((s) => [s.item_number, s]));
+  const prefillByItem = new Map(props.checkPrefills.map((p) => [p.item, p]));
   const resolvedCount = props.checkStatus.filter(
     (s) => s.status === "Done" || s.status === "N/A"
   ).length;
@@ -256,6 +264,7 @@ export function PchAccountantView(props: {
             caseId={props.caseId}
             item={item}
             status={statusByItem.get(item.item_number)}
+            prefill={prefillByItem.get(item.item_number) ?? null}
           />
         ))}
       </div>
@@ -888,12 +897,20 @@ function GroupRows({
   );
 }
 
-// -------------------- 33-check row (unchanged from phase 2a) --------------------
+// -------------------- 33-check row (Phase 7 Slice 7.4 kind-aware) --------------------
+//
+// Row shape depends on the item's classification kind (auto / interview
+// / manual). Original Done/N/A/Reset buttons stay on every row as an
+// escape hatch so an accountant is never blocked by a bad prefill or a
+// missing interview answer.
 
 function CheckRow({
-  caseId, item, status,
+  caseId, item, status, prefill,
 }: {
-  caseId: string; item: CheckItem; status: CheckStatus | undefined;
+  caseId: string;
+  item: CheckItem;
+  status: CheckStatus | undefined;
+  prefill: ChecklistPrefill | null;
 }) {
   const router = useRouter();
   const [currentStatus, setCurrentStatus] = useState<"Done" | "N/A" | "Not started">(
@@ -902,32 +919,65 @@ function CheckRow({
   const [note, setNote] = useState(status?.note ?? "");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
-  const save = (nextStatus?: "Done" | "N/A" | "Not started") => start(async () => {
+
+  const classification = classifyChecklistItem(item.item_number);
+  const kind: ChecklistKind = classification.kind;
+
+  // Shared status write. Optional noteOverride lets the auto-row's
+  // Confirm button stamp the AI's evidence string into pch_check_status
+  // .note so the audit trail carries what the AI said at confirm time,
+  // not just the status flip.
+  const save = (
+    nextStatus?: "Done" | "N/A" | "Not started",
+    noteOverride?: string,
+  ) => start(async () => {
     const s = nextStatus ?? currentStatus;
     setCurrentStatus(s);
-    const r = await setPchCheckStatusAction(caseId, item.item_number, s, note || undefined);
+    const effectiveNote = noteOverride !== undefined ? noteOverride : (note || undefined);
+    if (noteOverride !== undefined) setNote(noteOverride);
+    const r = await setPchCheckStatusAction(caseId, item.item_number, s, effectiveNote);
     if (!r.ok) setMsg(r.error);
     else { setMsg(null); router.refresh(); }
   });
+
   const badge = currentStatus === "Done"
     ? "bg-emerald-100 text-emerald-800"
     : currentStatus === "N/A"
       ? "bg-slate-100 text-slate-600"
       : "bg-amber-100 text-amber-800";
+
   return (
     <div className="rounded border border-slate-200 bg-white p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="text-xs text-slate-500">
-            <span className="font-mono mr-2">#{item.item_number}</span>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="font-mono">#{item.item_number}</span>
             <span className="uppercase tracking-wide">{item.area}</span>
+            <KindBadge kind={kind} />
           </div>
           <div className="text-sm mt-1">{item.description}</div>
         </div>
-        <span className={"text-xs font-semibold rounded px-2 py-0.5 " + badge}>
+        <span className={"text-xs font-semibold rounded px-2 py-0.5 shrink-0 " + badge}>
           {currentStatus}
         </span>
       </div>
+
+      {kind === "auto" ? (
+        <AutoCheckSurface
+          prefill={prefill}
+          pending={pending}
+          currentStatus={currentStatus}
+          onConfirm={(evidence) => save("Done", evidence)}
+        />
+      ) : null}
+
+      {kind === "interview" ? (
+        <InterviewCheckSurface
+          pending={pending}
+          currentStatus={currentStatus}
+        />
+      ) : null}
+
       <div className="mt-2 flex items-center gap-2 text-xs">
         <button type="button" onClick={() => save("Done")} disabled={pending}
           className="rounded border border-slate-300 bg-white px-2 py-1 hover:bg-emerald-50 disabled:opacity-50">
@@ -947,6 +997,105 @@ function CheckRow({
           onBlur={() => save()} />
         {msg && <span className="text-red-600">{msg}</span>}
       </div>
+    </div>
+  );
+}
+
+// Small chip rendered inside the row header so the accountant can see
+// at a glance whether a row is AI-prefilled, waiting on a client
+// interview, or genuine manual judgement.
+function KindBadge({ kind }: { kind: ChecklistKind }) {
+  if (kind === "auto") {
+    return (
+      <span className="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-800">
+        AI prefilled
+      </span>
+    );
+  }
+  if (kind === "interview") {
+    return (
+      <span className="inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-800">
+        From client
+      </span>
+    );
+  }
+  return (
+    <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+      Manual review
+    </span>
+  );
+}
+
+// Auto-row surface. Three visual states driven by the prefill:
+//   - prefill present with verdict pass or warn:
+//       emerald/amber chip + evidence line + one-click Confirm
+//   - prefill verdict nothing_to_show:
+//       muted "AI had nothing to flag" line + Confirm still available
+//   - prefill null (derivation returned no entry):
+//       amber "AI could not derive this, review manually" fallback;
+//       the manual Done/N/A buttons below handle it
+function AutoCheckSurface({
+  prefill, pending, currentStatus, onConfirm,
+}: {
+  prefill: ChecklistPrefill | null;
+  pending: boolean;
+  currentStatus: "Done" | "N/A" | "Not started";
+  onConfirm: (evidence: string) => void;
+}) {
+  if (!prefill) {
+    return (
+      <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+        AI could not derive this one, review manually using the buttons below.
+      </div>
+    );
+  }
+  const toneClass =
+    prefill.verdict === "pass" ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+    : prefill.verdict === "warn" ? "border-amber-200 bg-amber-50 text-amber-900"
+    : "border-slate-200 bg-slate-50 text-slate-700";
+  const verdictLabel =
+    prefill.verdict === "pass" ? "Pass"
+    : prefill.verdict === "warn" ? "Review"
+    : "Nothing to flag";
+  const alreadyDone = currentStatus === "Done";
+  return (
+    <div className={"mt-2 rounded border px-2 py-1.5 text-xs " + toneClass}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <span className="font-semibold mr-1">AI: {verdictLabel}.</span>
+          <span>{prefill.evidence}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onConfirm(prefill.evidence)}
+          disabled={pending || alreadyDone}
+          className="shrink-0 rounded bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white disabled:opacity-50"
+        >
+          {alreadyDone ? "Confirmed" : "Confirm"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Interview-row surface. 7.4 renders the "waiting on the client" shell
+// only; 7.6 wires the Collect button to open the matching interview
+// flow and, once the client has answered, surfaces the answer with its
+// own Confirm button. For now the manual Done/N/A below is the way out.
+function InterviewCheckSurface({
+  pending, currentStatus,
+}: {
+  pending: boolean;
+  currentStatus: "Done" | "N/A" | "Not started";
+}) {
+  void pending;
+  if (currentStatus === "Done") return null;
+  return (
+    <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs text-indigo-900">
+      Waiting on the client to answer. The client interview that captures
+      this will land in Phase 7 Slice 7.6; for now use the Done / N/A
+      buttons below once you&apos;ve clarified with the client over the
+      message thread.
     </div>
   );
 }
