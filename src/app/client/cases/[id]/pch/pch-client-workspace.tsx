@@ -21,6 +21,7 @@ import {
   type ExtractionReviewPayload,
 } from "./extraction-review";
 import { AccountantHelpPrompt } from "./accountant-help-prompt";
+import { CameraCaptureModal } from "@/components/case/camera-capture-modal";
 import { canRequestAlternative } from "@/lib/pch/ai-interview-slots";
 import {
   PriorYearPrompt,
@@ -47,6 +48,11 @@ type Slot = {
   code: string; section: string; display_name: string;
   why_we_need_it: string | null; accepted_formats: string; required_rule: string;
   sort_order: number;
+  // Phase 7 Slice 7.1: when true the DocRow renders <input multiple>
+  // and loops uploadPchDocumentAction per file (bank statements across
+  // several accounts, bulk cash-receipt upload). Added via migration
+  // 0099; the client page.tsx picks it up through select("*").
+  allow_multiple: boolean;
 };
 type DocStatus = { case_id: string; slot_code: string; status: string; note: string | null };
 type UploadedDoc = { id: string; file_name: string; uploaded_at: string; requirement_key: string | null };
@@ -423,8 +429,11 @@ function DocRow({
   canEdit: boolean; onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const inputId = `up-${slot.code}`;
   const isRequired = /^Required/i.test(slot.required_rule);
   const effectiveStatus =
@@ -437,26 +446,44 @@ function DocRow({
     canEdit
     && canRequestAlternative(slot.code)
     && effectiveStatus !== "Awaiting accountant";
-  const onPick = async (file: File) => {
+  // Phase 7 Slice 7.1: camera button on every image-accepting slot. The
+  // bank-statement slot (PCH-14) accepts images now too so a client can
+  // photograph a paper statement; parsed via Claude vision in
+  // bank-parse.ts. Only PCH-14's CSV/XLSX cousins (non-image) would be
+  // odd targets for the camera; the check below picks every slot whose
+  // accept list carries an image mime hint.
+  const imageSlot = /image|jpg|png|jpeg|heic|webp/i.test(slot.accepted_formats);
+
+  // Phase 7 Slice 7.1: one file at a time upload loop so we can give
+  // per-file progress feedback for multi-file slots (bank statements
+  // across accounts, bulk receipts). The server action still accepts
+  // one file per call; this is a client-side loop around it.
+  const uploadMany = async (files: File[]) => {
+    if (files.length === 0) return;
     setBusy(true); setErr(null);
-    const fd = new FormData();
-    fd.set("file", file);
-    // Any network / body-size / server error has to clear the busy
-    // state and surface a message; otherwise the Upload label is stuck
-    // at "Uploading..." forever and the client has no idea what happened.
+    setProgress({ done: 0, total: files.length });
     try {
-      const r = await uploadPchDocumentAction(caseId, slot.code, fd);
-      if (!r.ok) setErr(r.error);
-    } catch (e) {
-      setErr(
-        e instanceof Error
-          ? "Upload failed: " + e.message
-          : "Upload failed. Try again, and if it keeps failing, re-save the file smaller.",
-      );
+      for (let i = 0; i < files.length; i++) {
+        const fd = new FormData();
+        fd.set("file", files[i]);
+        try {
+          const r = await uploadPchDocumentAction(caseId, slot.code, fd);
+          if (!r.ok) { setErr(r.error); break; }
+        } catch (e) {
+          setErr(
+            e instanceof Error
+              ? "Upload failed: " + e.message
+              : "Upload failed. Try again, and if it keeps failing, re-save the file smaller.",
+          );
+          break;
+        }
+        setProgress({ done: i + 1, total: files.length });
+      }
     } finally {
       setBusy(false);
+      setProgress(null);
+      onChanged();
     }
-    onChanged();
   };
   const markNA = async () => {
     setBusy(true); setErr(null);
@@ -465,8 +492,45 @@ function DocRow({
     if (!r.ok) setErr(r.error);
     onChanged();
   };
+  // Phase 7 Slice 7.1: drag-drop handlers wrap the whole row. Visual
+  // feedback via the sky border when dragOver.
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!canEdit || busy) return;
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setDragOver(true);
+  };
+  const onDragOver = (e: React.DragEvent) => {
+    if (!canEdit || busy) return;
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const onDragLeave = (e: React.DragEvent) => {
+    if (!canEdit || busy) return;
+    e.preventDefault();
+    setDragOver(false);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    if (!canEdit || busy) return;
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length === 0) return;
+    uploadMany(slot.allow_multiple ? files : files.slice(0, 1));
+  };
   return (
-    <div className="rounded border border-slate-200 bg-white p-3">
+    <div
+      className={
+        "rounded border bg-white p-3 transition "
+        + (dragOver ? "border-sky-400 ring-2 ring-sky-200" : "border-slate-200")
+      }
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="font-medium text-sm">
@@ -478,7 +542,11 @@ function DocRow({
           {slot.why_we_need_it && (
             <div className="text-xs text-slate-500 mt-1">{slot.why_we_need_it}</div>
           )}
-          <div className="text-xs text-slate-400 mt-1">Accepts: {slot.accepted_formats}</div>
+          <div className="text-xs text-slate-400 mt-1">
+            Accepts: {slot.accepted_formats}
+            {slot.allow_multiple ? " · multiple files OK" : null}
+            {canEdit ? " · drag and drop here too" : null}
+          </div>
         </div>
         <div className="text-right text-xs">
           <span className={
@@ -498,29 +566,45 @@ function DocRow({
           ))}
         </ul>
       )}
-      <div className="mt-2 flex items-center gap-2 text-xs">
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         <input
           id={inputId}
           type="file"
+          multiple={slot.allow_multiple}
           accept={
             slot.code === "PCH-14"
-              ? ".pdf,.csv,.xlsx,.xls,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              // Bank statement accept list (Phase 7 Slice 7.1): PDF/CSV/XLSX
+              // as before, plus JPG/PNG/WebP for photographed paper
+              // statements. HEIC is intentionally excluded, the Claude
+              // vision parser does not accept it and the server rejects
+              // it with a specific re-export error.
+              ? ".pdf,.csv,.xlsx,.xls,.jpg,.jpeg,.png,.webp,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,image/jpeg,image/png,image/webp"
               : ".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*"
           }
-          // Photo ID: hint mobile browsers to offer the rear camera so
-          // the client can tap and take a photo of their passport or
-          // licence directly. Desktop ignores capture and behaves as a
-          // normal file picker; mobile still exposes the gallery/files
-          // option alongside the camera.
-          capture={slot.code === "PCH-24" ? "environment" : undefined}
           className="hidden"
           disabled={busy}
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }}
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            uploadMany(slot.allow_multiple ? files : files.slice(0, 1));
+            e.target.value = "";
+          }}
         />
         <label htmlFor={inputId}
-          className={"inline-block cursor-pointer rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 " + (busy ? "opacity-50" : "")}>
-          {busy ? "Uploading..." : "Upload"}
+          className={"inline-block cursor-pointer rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 " + (busy ? "opacity-50 cursor-not-allowed" : "")}>
+          {busy
+            ? (progress ? `Uploading ${progress.done}/${progress.total}...` : "Uploading...")
+            : (slot.allow_multiple ? "Choose files" : "Upload")}
         </label>
+        {imageSlot && canEdit && (
+          <button
+            type="button"
+            onClick={() => setCameraOpen(true)}
+            disabled={busy}
+            className="rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Take photo
+          </button>
+        )}
         {helpAvailable && !helpOpen && (
           <button
             type="button"
@@ -539,6 +623,11 @@ function DocRow({
         )}
         {err && <span className="text-red-600">{err}</span>}
       </div>
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(file) => { setCameraOpen(false); uploadMany([file]); }}
+      />
       {helpAvailable && helpOpen ? (
         <AccountantHelpPrompt
           caseId={caseId}

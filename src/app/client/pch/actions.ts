@@ -112,27 +112,43 @@ export async function uploadPchDocumentAction(
   if (file.size > MAX) return { ok: false, error: "File is over 50 MB." };
 
   // Allowed file types per slot:
-  //   PCH-14 (bank statements): PDF, CSV, XLSX
+  //   PCH-14 (bank statements): PDF, CSV, XLSX, plus phone photos
+  //     (JPG/PNG/WebP) parsed via Claude vision. HEIC is rejected with
+  //     a specific re-export message because Anthropic's vision API
+  //     accepts JPEG/PNG/WebP only.
   //   PCH-24 (Photo ID): PDF, JPG, PNG, HEIC
   //   Everything else: PDF, JPG, PNG (original Phase 3 spec)
   const nameLower = file.name.toLowerCase();
   const typeLower = (file.type || "").toLowerCase();
   const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+  const isHeic =
+    typeLower === "image/heic" || typeLower === "image/heif"
+    || /\.heic$/.test(nameLower);
   const isImage = typeLower.startsWith("image/") || /\.(jpe?g|png|heic|webp)$/.test(nameLower);
+  const isVisionImage =
+    (typeLower === "image/jpeg" || typeLower === "image/png" || typeLower === "image/webp")
+    || /\.(jpe?g|png|webp)$/.test(nameLower);
   const isCsv = typeLower === "text/csv" || nameLower.endsWith(".csv");
   const isXlsx =
     typeLower.includes("spreadsheet")
     || typeLower === "application/vnd.ms-excel"
     || nameLower.endsWith(".xlsx")
     || nameLower.endsWith(".xls");
+  if (slotCode === "PCH-14" && isHeic) {
+    return {
+      ok: false,
+      error:
+        "HEIC photos aren't supported for bank statements. Change your iPhone's Camera > Formats to 'Most Compatible', or export the photo as JPEG and re-upload.",
+    };
+  }
   const looksRight =
     slotCode === "PCH-14"
-      ? (isPdf || isCsv || isXlsx)
+      ? (isPdf || isCsv || isXlsx || isVisionImage)
       : (isPdf || isImage);
   if (!looksRight) {
     const expected =
       slotCode === "PCH-14"
-        ? "PDF, CSV or Excel"
+        ? "PDF, CSV, Excel, or JPG/PNG/WebP photo"
         : "PDF, JPG or PNG";
     return { ok: false, error: "This slot accepts " + expected + " only." };
   }

@@ -58,6 +58,23 @@ export async function parseBankStatement(input: BankInput): Promise<ParseResult>
   if (mt === "application/pdf" || name.endsWith(".pdf")) {
     return parsePdf(input);
   }
+  // Phase 7 Slice 7.1: a photo of a paper statement goes through the
+  // same Claude vision tool-use as PDFs. HEIC is rejected explicitly
+  // because Anthropic's API accepts JPEG/PNG/WebP only; we handle that
+  // at the server-action layer with a clear re-export message, but the
+  // guard below is a defensive second line (if a client somehow bypasses
+  // the UI, they get the error here instead of a cryptic 400 from the model).
+  if (/\.heic$/i.test(name) || mt === "image/heic" || mt === "image/heif") {
+    throw new Error(
+      "HEIC isn't supported for bank statements. Change your iPhone's Camera > Formats to 'Most Compatible', or export the photo as JPEG and re-upload.",
+    );
+  }
+  if (
+    mt === "image/jpeg" || mt === "image/png" || mt === "image/webp"
+    || /\.(jpe?g|png|webp)$/.test(name)
+  ) {
+    return parseImage(input);
+  }
   throw new Error(
     "Unsupported bank statement format: " + (input.mimeType || "unknown"),
   );
@@ -247,65 +264,69 @@ function anthropic(): Anthropic {
   return new Anthropic({ apiKey });
 }
 
-async function parsePdf(input: BankInput): Promise<ParseResult> {
+// Tool-use schema shared by parsePdf and parseImage. Pulled out so both
+// vision paths describe their expected output identically; keeps the
+// server-side acceptance surface narrow.
+const RETURN_TRANSACTIONS_TOOL: Anthropic.Tool = {
+  name: "return_transactions",
+  description: "Return every transaction row from the statement.",
+  input_schema: {
+    type: "object",
+    properties: {
+      pages: { type: "integer", description: "Number of pages you read." },
+      rows: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            date: { type: "string", description: "yyyy-mm-dd, or empty string if missing." },
+            description: { type: "string", description: "Transaction description as printed. Trim whitespace. Preserve references." },
+            amountPence: {
+              type: "integer",
+              description:
+                "Signed integer in pence. Positive for money in (credit), negative for money out (debit).",
+            },
+            balancePence: {
+              type: "integer",
+              description:
+                "Running balance in pence after this transaction, if printed. Omit if missing.",
+            },
+          },
+          required: ["date", "description", "amountPence"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["pages", "rows"],
+    additionalProperties: false,
+  } as unknown as Anthropic.Tool["input_schema"],
+};
+
+const BANK_PARSE_SYSTEM =
+  "You are a precise bank-statement reader. The user uploads a UK bank statement; you return every transaction row as structured data. Do not categorise, do not guess merchants: just return date, description (as printed), signed amount in pence (positive for money in, negative for money out), and running balance in pence if the statement includes one. Skip rows that are headers, carry-forward totals, or interest summaries. Dates in yyyy-mm-dd.";
+
+const BANK_PARSE_USER_PROMPT =
+  "Extract every transaction from this UK bank statement. Return rows via the tool. Signed amountPence: positive = money in, negative = money out.";
+
+// Core vision call: takes an Anthropic content block (PDF document or
+// image) and runs the shared tool-use parse. The label is used only
+// for the dropped-row warning tag and the "Parsed from X" note so the
+// operator can tell which path produced which result in the audit log.
+async function runVisionParse(
+  contentBlock: Anthropic.ContentBlockParam,
+  label: "PDF" | "image",
+): Promise<ParseResult> {
   const client = anthropic();
-  const base64 = Buffer.from(input.bytes).toString("base64");
   const response = await client.messages.create({
     model: PDF_PARSE_MODEL,
     max_tokens: 8192,
-    system:
-      "You are a precise bank-statement reader. The user uploads a UK bank statement PDF; you return every transaction row as structured data. Do not categorise, do not guess merchants: just return date, description (as printed), signed amount in pence (positive for money in, negative for money out), and running balance in pence if the statement includes one. Skip rows that are headers, carry-forward totals, or interest summaries. Dates in yyyy-mm-dd.",
-    tools: [
-      {
-        name: "return_transactions",
-        description: "Return every transaction row from the statement.",
-        input_schema: {
-          type: "object",
-          properties: {
-            pages: { type: "integer", description: "Number of pages you read." },
-            rows: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  date: { type: "string", description: "yyyy-mm-dd, or empty string if missing." },
-                  description: { type: "string", description: "Transaction description as printed. Trim whitespace. Preserve references." },
-                  amountPence: {
-                    type: "integer",
-                    description:
-                      "Signed integer in pence. Positive for money in (credit), negative for money out (debit).",
-                  },
-                  balancePence: {
-                    type: "integer",
-                    description:
-                      "Running balance in pence after this transaction, if printed. Omit if missing.",
-                  },
-                },
-                required: ["date", "description", "amountPence"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["pages", "rows"],
-          additionalProperties: false,
-        } as unknown as Anthropic.Tool["input_schema"],
-      },
-    ],
+    system: BANK_PARSE_SYSTEM,
+    tools: [RETURN_TRANSACTIONS_TOOL],
     tool_choice: { type: "tool", name: "return_transactions" },
     messages: [
       {
         role: "user",
-        content: [
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64 },
-          },
-          {
-            type: "text",
-            text:
-              "Extract every transaction from this UK bank statement. Return rows via the tool. Signed amountPence: positive = money in, negative = money out.",
-          },
-        ],
+        content: [contentBlock, { type: "text", text: BANK_PARSE_USER_PROMPT }],
       },
     ],
   });
@@ -313,7 +334,7 @@ async function parsePdf(input: BankInput): Promise<ParseResult> {
   const toolUse = response.content.find((c) => c.type === "tool_use");
   if (!toolUse || toolUse.type !== "tool_use") {
     throw new Error(
-      "Model did not return a tool call for the PDF parse (stop_reason=" + response.stop_reason + ").",
+      `Model did not return a tool call for the ${label} parse (stop_reason=${response.stop_reason}).`,
     );
   }
   const payload = toolUse.input as {
@@ -328,6 +349,7 @@ async function parsePdf(input: BankInput): Promise<ParseResult> {
   const warnings: string[] = [];
   const transactions: RawTransaction[] = [];
   const rows = payload.rows ?? [];
+  const warnPrefix = label === "PDF" ? "pdf-row-" : "image-row-";
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const description = typeof r.description === "string" ? r.description.trim() : "";
@@ -336,7 +358,7 @@ async function parsePdf(input: BankInput): Promise<ParseResult> {
         ? Math.round(r.amountPence)
         : null;
     if (description.length === 0 || amountPence === null) {
-      warnings.push("pdf-row-" + i + "-dropped");
+      warnings.push(warnPrefix + i + "-dropped");
       continue;
     }
     const txnDate =
@@ -347,11 +369,44 @@ async function parsePdf(input: BankInput): Promise<ParseResult> {
         : null;
     transactions.push({ txnDate, description, amountPence, balancePence });
   }
+  const pageText = label === "PDF" ? ` across ${payload.pages ?? "?"} page(s)` : "";
   return {
     transactions,
-    note: `Parsed ${transactions.length} rows from PDF across ${payload.pages ?? "?"} page(s).`,
+    note: `Parsed ${transactions.length} rows from ${label}${pageText}.`,
     warnings,
   };
+}
+
+async function parsePdf(input: BankInput): Promise<ParseResult> {
+  const base64 = Buffer.from(input.bytes).toString("base64");
+  return runVisionParse(
+    {
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data: base64 },
+    },
+    "PDF",
+  );
+}
+
+async function parseImage(input: BankInput): Promise<ParseResult> {
+  const base64 = Buffer.from(input.bytes).toString("base64");
+  const mt = (input.mimeType || "").toLowerCase();
+  const name = (input.fileName || "").toLowerCase();
+  // Pick the exact media type Anthropic needs. Default to image/jpeg
+  // for ambiguous inputs because JPEG is by far the most common
+  // phone-camera output; this only matters if the browser forgets to
+  // set mimeType on upload.
+  const mediaType: "image/jpeg" | "image/png" | "image/webp" =
+    mt === "image/png" || name.endsWith(".png") ? "image/png"
+    : mt === "image/webp" || name.endsWith(".webp") ? "image/webp"
+    : "image/jpeg";
+  return runVisionParse(
+    {
+      type: "image",
+      source: { type: "base64", media_type: mediaType, data: base64 },
+    },
+    "image",
+  );
 }
 
 // ---------- Shared number / date parsing -----------------------------
