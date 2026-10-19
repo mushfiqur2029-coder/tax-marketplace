@@ -923,17 +923,24 @@ function CheckRow({
   const classification = classifyChecklistItem(item.item_number);
   const kind: ChecklistKind = classification.kind;
 
-  // Shared status write. Optional noteOverride lets the auto-row's
-  // Confirm button stamp the AI's evidence string into pch_check_status
-  // .note so the audit trail carries what the AI said at confirm time,
-  // not just the status flip.
+  // Shared status write. Optional noteOverride lets:
+  //   - auto-row Confirm button stamp the AI's evidence string into
+  //     pch_check_status.note so the audit trail carries what the AI
+  //     said at confirm time
+  //   - interview-row Re-open button wipe the client's stored answer by
+  //     passing "" (empty string), so the "Waiting on client" strip
+  //     renders cleanly on the next load
   const save = (
     nextStatus?: "Done" | "N/A" | "Not started",
     noteOverride?: string,
   ) => start(async () => {
     const s = nextStatus ?? currentStatus;
     setCurrentStatus(s);
-    const effectiveNote = noteOverride !== undefined ? noteOverride : (note || undefined);
+    // Empty-string override means "wipe the note"; undefined means
+    // "keep whatever's in the local note field".
+    const effectiveNote = noteOverride !== undefined
+      ? (noteOverride.length === 0 ? undefined : noteOverride)
+      : (note || undefined);
     if (noteOverride !== undefined) setNote(noteOverride);
     const r = await setPchCheckStatusAction(caseId, item.item_number, s, effectiveNote);
     if (!r.ok) setMsg(r.error);
@@ -975,6 +982,8 @@ function CheckRow({
         <InterviewCheckSurface
           pending={pending}
           currentStatus={currentStatus}
+          clientAnswer={status?.note ?? null}
+          onReopen={() => save("Not started", "")}
         />
       ) : null}
 
@@ -1078,24 +1087,58 @@ function AutoCheckSurface({
   );
 }
 
-// Interview-row surface. 7.4 renders the "waiting on the client" shell
-// only; 7.6 wires the Collect button to open the matching interview
-// flow and, once the client has answered, surfaces the answer with its
-// own Confirm button. For now the manual Done/N/A below is the way out.
+// Interview-row surface. Two states driven by (status, note):
+//
+//   status=Done + note present  -> client has answered via the AI
+//     interview. Shows "Client answered: {note}" + a Re-open button
+//     that resets to Not started AND wipes the note (so a re-run of
+//     the interview starts fresh rather than seeing stale text).
+//
+//   status=Done + no note       -> accountant marked Done manually
+//     without a client interview answer. Render nothing; the manual
+//     Done chip in the header already conveys state.
+//
+//   status=Not started          -> standard "waiting on client" strip.
+//
+//   status=N/A                  -> render nothing.
+//
+// 7.6b wires the actual interview flows into the client workspace; this
+// surface only shows the accountant side of the handoff.
 function InterviewCheckSurface({
-  pending, currentStatus,
+  pending, currentStatus, clientAnswer, onReopen,
 }: {
   pending: boolean;
   currentStatus: "Done" | "N/A" | "Not started";
+  clientAnswer: string | null;
+  onReopen: () => void;
 }) {
-  void pending;
-  if (currentStatus === "Done") return null;
+  if (currentStatus === "Done") {
+    if (!clientAnswer || clientAnswer.trim().length === 0) return null;
+    return (
+      <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs text-indigo-900">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <span className="font-semibold mr-1">Client answered:</span>
+            <span className="whitespace-pre-wrap">{clientAnswer}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onReopen}
+            disabled={pending}
+            className="shrink-0 rounded border border-indigo-300 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            Re-open
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (currentStatus === "N/A") return null;
   return (
     <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs text-indigo-900">
-      Waiting on the client to answer. The client interview that captures
-      this will land in Phase 7 Slice 7.6; for now use the Done / N/A
-      buttons below once you&apos;ve clarified with the client over the
-      message thread.
+      Waiting on the client to answer. The matching AI interview is on
+      the client workspace; once they commit, this row flips to Done
+      with their answer below.
     </div>
   );
 }
