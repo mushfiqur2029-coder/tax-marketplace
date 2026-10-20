@@ -99,7 +99,12 @@ export type ExpenseLine = {
 
 // Vehicle + mileage inputs (populated by the VEHICLE_CA interview).
 export type VehicleInputs = {
-  status: "Owned outright" | "Bought on HP / loan" | "Rented weekly (PCO hire)" | "Leased";
+  // Phase 8 Slice 8.1: expanded to the 7-value VEHICLE_CA vocabulary.
+  // "No vehicle" short-circuits capital allowances; the ownership
+  // statuses (Owned outright, Hire purchase, PCP, Loan) all qualify
+  // for CA; the lease/rent statuses expense through running costs
+  // only.
+  status: "Owned outright" | "Hire purchase" | "PCP" | "Loan" | "Leased" | "Rented" | "No vehicle";
   fuel: "Petrol" | "Diesel" | "Hybrid" | "Electric";
   co2Gpkm?: number;
   boughtThisYear: "Yes" | "No";

@@ -105,6 +105,45 @@ async function writeCheckStatus(
   );
 }
 
+// Phase 8 Slice 8.1: one-click "Not applicable" escape hatch for the
+// AI interview flows (RELIEFS, INCOME_PROBE, EXPENSES_PROBE,
+// FILING_DETAILS, and the Phase 8.5 INCOME_INTERVIEW). The client
+// signals that the whole flow doesn't apply to them; we flip every
+// mapped pch_check_status row to Done with a note of "Client confirmed
+// not applicable" so the accountant can see the row has been resolved
+// deliberately rather than left to default. No DB column writes:
+// skipping the chat means there's no answer to persist.
+//
+// VEHICLE_CA doesn't call this because its 'No vehicle' is already an
+// in-flow answer the finalise commits properly to pch_vehicle.
+const NA_NOTE = "Client confirmed not applicable";
+
+export async function markPchChecklistNotApplicableAction(
+  caseId: string,
+  itemNumbers: number[],
+): Promise<ActionResult> {
+  try {
+    if (!Array.isArray(itemNumbers) || itemNumbers.length === 0) {
+      return { ok: false, error: "No checklist items supplied." };
+    }
+    const { me, caseRow, admin } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+    for (const n of itemNumbers) {
+      if (!Number.isInteger(n) || n < 1 || n > 33) {
+        return { ok: false, error: `Invalid checklist item number: ${n}` };
+      }
+    }
+    for (const n of itemNumbers) {
+      await writeCheckStatus(admin, caseId, n, NA_NOTE, me.id);
+    }
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not record 'not applicable'." };
+  }
+}
+
 // Pull a single string field out of the AI's finalise output.
 function pickString(final: InterviewTurnResult, key: string): string | null {
   if (final.kind !== "done") return null;

@@ -73,7 +73,7 @@ export async function hydrateInputsFromDb(
     })),
     vehicle: {
       status: (veh?.status ?? "Owned outright") as
-        "Owned outright" | "Bought on HP / loan" | "Rented weekly (PCO hire)" | "Leased",
+        "Owned outright" | "Hire purchase" | "PCP" | "Loan" | "Leased" | "Rented" | "No vehicle",
       fuel: (veh?.fuel ?? "Petrol") as "Petrol" | "Diesel" | "Hybrid" | "Electric",
       co2Gpkm: veh?.co2_gpkm ?? undefined,
       boughtThisYear: (veh?.bought_this_year ? "Yes" : "No") as "Yes" | "No",

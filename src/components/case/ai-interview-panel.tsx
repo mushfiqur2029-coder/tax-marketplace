@@ -52,6 +52,20 @@ type Props = {
   start: (caseId: string) => Promise<StartResult>;
   advance: (caseId: string, transcript: InterviewMessage[]) => Promise<AdvanceResult>;
   commit: (caseId: string, transcript: InterviewMessage[]) => Promise<CommitResult>;
+
+  // Phase 8 Slice 8.1: optional one-click "Not applicable" escape hatch
+  // so a client with nothing to say for this flow (no pension, no other
+  // income, no refund due) can mark the matching checklist item(s) done
+  // without typing the whole conversation. Flows that pass this prop
+  // render a "Not applicable" button in the header next to Close; the
+  // button calls the action and then invokes onClose on success. The
+  // action is expected to upsert pch_check_status with Done + a note
+  // of "Client confirmed not applicable". VEHICLE_CA deliberately does
+  // not use this because 'No vehicle' is already an in-flow answer.
+  notApplicable?: {
+    label?: string;               // Button copy, defaults to "Not applicable"
+    action: () => Promise<{ ok: true } | { ok: false; error: string }>;
+  };
 };
 
 const DEFAULT_PLACEHOLDER =
@@ -69,6 +83,7 @@ export function AiInterviewPanel({
   start: startAction,
   advance: advanceAction,
   commit: commitAction,
+  notApplicable,
 }: Props) {
   const router = useRouter();
   const [transcript, setTranscript] = useState<InterviewMessage[]>([]);
@@ -145,23 +160,50 @@ export function AiInterviewPanel({
     });
   };
 
+  const notApplicableClick = () => {
+    if (!notApplicable) return;
+    start(async () => {
+      setErr(null);
+      const r = await notApplicable.action();
+      if (!r.ok) {
+        setErr(r.error);
+        return;
+      }
+      router.refresh();
+      onClose();
+    });
+  };
+
   return (
     <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 text-xs">
-      <header className="mb-2 flex items-baseline justify-between gap-2">
-        <div>
+      <header className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <div className="min-w-0">
           <span className="font-semibold text-slate-900">{flowLabel}</span>
           {flowSubtitle ? (
             <span className="ml-2 text-slate-600">{flowSubtitle}</span>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={pending}
-          className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          Close
-        </button>
+        <div className="flex items-center gap-2">
+          {notApplicable ? (
+            <button
+              type="button"
+              onClick={notApplicableClick}
+              disabled={pending}
+              title="Mark this section as not applicable without running the chat"
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {notApplicable.label ?? "Not applicable"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Close
+          </button>
+        </div>
       </header>
 
       <div
@@ -210,19 +252,17 @@ export function AiInterviewPanel({
             className="w-full resize-y rounded border border-slate-300 bg-white px-2 py-1 text-sm"
             disabled={pending}
           />
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-slate-500">Ctrl/Cmd+Enter to send</span>
-            <div className="flex items-center gap-2">
-              {err ? <span className="text-rose-700">{err}</span> : null}
-              <button
-                type="button"
-                onClick={send}
-                disabled={pending || draft.trim().length === 0}
-                className="rounded bg-slate-900 px-3 py-1.5 font-medium text-white disabled:opacity-50"
-              >
-                {pending ? "Sending..." : "Send"}
-              </button>
-            </div>
+          <div className="flex items-center justify-end gap-2">
+            {err ? <span className="text-rose-700">{err}</span> : null}
+            <button
+              type="button"
+              onClick={send}
+              disabled={pending || draft.trim().length === 0}
+              title="Ctrl/Cmd + Enter to send"
+              className="rounded bg-slate-900 px-3 py-1.5 font-medium text-white disabled:opacity-50"
+            >
+              {pending ? "Sending..." : "Send"}
+            </button>
           </div>
         </div>
       ) : (

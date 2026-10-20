@@ -30,6 +30,7 @@ import {
   startPchFilingDetailsInterviewAction,
   advancePchFilingDetailsInterviewAction,
   commitPchFilingDetailsInterviewAction,
+  markPchChecklistNotApplicableAction,
 } from "@/app/client/pch/other-interview-actions";
 import {
   ExtractionReview,
@@ -279,6 +280,7 @@ export function PchClientWorkspace(props: {
                     startAction={startPchIncomeProbeInterviewAction}
                     advanceAction={advancePchIncomeProbeInterviewAction}
                     commitAction={commitPchIncomeProbeInterviewAction}
+                    checklistItems={[5]}
                   />
                 </div>
 
@@ -300,6 +302,7 @@ export function PchClientWorkspace(props: {
                     startAction={startPchExpensesProbeInterviewAction}
                     advanceAction={advancePchExpensesProbeInterviewAction}
                     commitAction={commitPchExpensesProbeInterviewAction}
+                    checklistItems={[11, 27]}
                   />
                 </div>
 
@@ -321,6 +324,7 @@ export function PchClientWorkspace(props: {
                     startAction={startPchFilingDetailsInterviewAction}
                     advanceAction={advancePchFilingDetailsInterviewAction}
                     commitAction={commitPchFilingDetailsInterviewAction}
+                    checklistItems={[31]}
                   />
                 </div>
               </>
@@ -366,6 +370,7 @@ function SingleAnswerSection({
   panelFlowLabel, panelFlowSubtitle, panelFinishedMessage,
   panelCommitLabel, panelCommitPendingLabel,
   startAction, advanceAction, commitAction,
+  checklistItems,
 }: {
   caseId: string;
   title: string;
@@ -382,6 +387,10 @@ function SingleAnswerSection({
   startAction: (caseId: string) => Promise<{ ok: true; opener: { role: "user" | "assistant"; content: string } } | { ok: false; error: string }>;
   advanceAction: Parameters<typeof AiInterviewPanel>[0]["advance"];
   commitAction: Parameters<typeof AiInterviewPanel>[0]["commit"];
+  // Phase 8 Slice 8.1: checklist item(s) to flip to Done + "Client
+  // confirmed not applicable" when the client taps "Not applicable"
+  // in the panel header.
+  checklistItems: number[];
 }) {
   const [open, setOpen] = useState(false);
   const hasAnswer = (answer ?? "").trim().length > 0;
@@ -419,6 +428,10 @@ function SingleAnswerSection({
           start={startAction}
           advance={advanceAction}
           commit={commitAction}
+          notApplicable={{
+            label: "Not applicable",
+            action: () => markPchChecklistNotApplicableAction(caseId, checklistItems),
+          }}
         />
       )}
     </div>
@@ -479,6 +492,10 @@ function ReliefsSection({
           start={startPchReliefsInterviewAction}
           advance={advancePchReliefsInterviewAction}
           commit={commitPchReliefsInterviewAction}
+          notApplicable={{
+            label: "None of these apply",
+            action: () => markPchChecklistNotApplicableAction(caseId, [19]),
+          }}
         />
       )}
     </div>

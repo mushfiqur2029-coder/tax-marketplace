@@ -18,6 +18,7 @@ import type {
   IncomeTotals,
   ExpenseTotals,
   VehicleOutputs,
+  VehicleInputs,
   ProfitAndLoss,
   TaxComputation,
   MtdStatus,
@@ -79,7 +80,16 @@ export function computeVehicle(
     : businessPctFromMileage ?? 0.9;
 
   // --- Capital allowances (B35..B45) ---
-  const caEligible = v.status === "Owned outright" || v.status === "Bought on HP / loan";
+  // Phase 8 Slice 8.1: ownership statuses that qualify for capital
+  // allowances. The HP / PCP / Loan variants are all forms of a
+  // finance purchase where the client is working toward owning the
+  // vehicle, which HMRC treats the same as Owned outright for CA.
+  // Leased, Rented and No vehicle route costs through the P&L
+  // directly instead.
+  const CA_ELIGIBLE_STATUSES = new Set<VehicleInputs["status"]>([
+    "Owned outright", "Hire purchase", "PCP", "Loan",
+  ]);
+  const caEligible = CA_ELIGIBLE_STATUSES.has(v.status);
   const caAddition = caEligible && v.boughtThisYear === "Yes"
     ? (v.purchasePrice ?? 0)
     : 0;
@@ -544,8 +554,12 @@ export function computeZeroTaxCheck(
   const totalExpensesNeeded = turnover - vehicle.wdvBroughtForward - targetTaxableProfit;
   const expensesPctNow = turnover === 0 ? 0 : pl.expensesTotal / turnover;
   const expensesPctNeeded = turnover === 0 ? 0 : (totalExpensesNeeded) / turnover;
+  // Phase 8 Slice 8.1: lease/rent statuses roll through the P&L
+  // directly (no CA pool), so the zero-tax expense ceiling runs
+  // higher (0.65) than for owned/HP/PCP/Loan vehicles (0.5). "No
+  // vehicle" falls into the default bucket.
   const ceilingForClient =
-    vehicle.status === "Rented weekly (PCO hire)" || vehicle.status === "Leased"
+    vehicle.status === "Rented" || vehicle.status === "Leased"
       ? 0.65
       : 0.5;
   const gap = profitReductionNeeded;
