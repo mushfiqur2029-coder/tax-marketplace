@@ -34,6 +34,9 @@ import {
   startPchIncomeInterviewAction,
   advancePchIncomeInterviewAction,
   commitPchIncomeInterviewAction,
+  startPchExpenseInterviewAction,
+  advancePchExpenseInterviewAction,
+  commitPchExpenseInterviewAction,
   markPchChecklistNotApplicableAction,
 } from "@/app/client/pch/other-interview-actions";
 import {
@@ -252,11 +255,17 @@ export function PchClientWorkspace(props: {
               </>
             ) : editable ? (
               <>
-                <h2 className={h2}>3. Your income (from our chat)</h2>
+                <h2 className={h2}>3. Your income and expenses (from our chat)</h2>
                 <div className={card}>
                   <IncomeInterviewSection
                     caseId={props.caseId}
                     interviewLine={findInterviewIncomeLine(props.incomeLines)}
+                  />
+                </div>
+                <div className={card}>
+                  <ExpenseInterviewSection
+                    caseId={props.caseId}
+                    interviewLines={findInterviewExpenseLines(props.expenseLines)}
                   />
                 </div>
               </>
@@ -529,6 +538,87 @@ function IncomeInterviewSection({
           start={startPchIncomeInterviewAction}
           advance={advancePchIncomeInterviewAction}
           commit={commitPchIncomeInterviewAction}
+        />
+      )}
+    </div>
+  );
+}
+
+// EXPENSE_INTERVIEW section (post Phase 8). Companion to the income
+// section above. Walks the client through non-vehicle allowable
+// expenses one category at a time, writing a single pch_expense_lines
+// row per confirmed category. Vehicle running costs (fuel, repairs,
+// finance) stay with VEHICLE_CA; this section only covers the
+// consumables that would otherwise fall through for a no-bank client.
+function findInterviewExpenseLines(lines: ExpenseRow[]): ExpenseRow[] {
+  return lines.filter(
+    (l) => typeof l.label === "string" && l.label.startsWith(INCOME_INTERVIEW_SOURCE_PREFIX),
+  );
+}
+
+function ExpenseInterviewSection({
+  caseId, interviewLines,
+}: {
+  caseId: string;
+  interviewLines: ExpenseRow[];
+}) {
+  const [open, setOpen] = useState(false);
+  const captured = interviewLines.length > 0;
+  const fmt = (p: number) =>
+    "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const total = interviewLines.reduce((n, l) => n + l.amount_paid_pence, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="text-sm font-medium text-slate-900">Capture your business expenses by chat</div>
+      <p className="text-xs text-slate-600">
+        Phone, cleaning, parking and tolls, insurance, licences, anything
+        else. Every category is optional, say &quot;none&quot; or &quot;don&apos;t know&quot;
+        for anything that doesn&apos;t apply and we&apos;ll skip it. Vehicle running
+        costs (fuel, repairs, finance) are already covered in section 4.
+      </p>
+      {captured ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-0.5">
+          <div className="font-semibold mb-0.5">Captured so far</div>
+          <ul className="space-y-0.5">
+            {interviewLines.map((l) => (
+              <li key={l.label}>
+                {l.label.slice(INCOME_INTERVIEW_SOURCE_PREFIX.length)}: <strong>{fmt(l.amount_paid_pence)}</strong>
+              </li>
+            ))}
+          </ul>
+          <div className="pt-1 border-t border-emerald-200 mt-1">
+            Total: <strong>{fmt(total)}</strong>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          No business expenses captured yet. You can still submit without
+          them (we won&apos;t block you), but you may miss out on claimable
+          costs. Walk through the AI chat here, or upload a bank statement
+          under Documents above.
+        </div>
+      )}
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+        >
+          {captured ? "Update my expenses" : "Walk through it with the AI"}
+        </button>
+      ) : (
+        <AiInterviewPanel
+          caseId={caseId}
+          onClose={() => setOpen(false)}
+          flowLabel="Capture your business expenses by chat"
+          flowSubtitle="Phone, cleaning, parking, insurance, subs, other"
+          finishedMessage="Thanks, saving your expenses now."
+          commitButtonLabel="Save my expenses"
+          commitPendingLabel="Saving your expenses..."
+          start={startPchExpenseInterviewAction}
+          advance={advancePchExpenseInterviewAction}
+          commit={commitPchExpenseInterviewAction}
         />
       )}
     </div>

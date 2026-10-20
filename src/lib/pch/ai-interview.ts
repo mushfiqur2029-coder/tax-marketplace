@@ -321,6 +321,78 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
   },
 
   // ------------------------------------------------------------------
+  // EXPENSE_INTERVIEW (post Phase 8): chat-based non-vehicle allowable
+  // expense capture for drivers without a bank statement. Companion to
+  // INCOME_INTERVIEW. Vehicle running costs (fuel, repairs, finance,
+  // depreciation) are deliberately NOT in scope here, VEHICLE_CA
+  // handles the CA-eligible side and bank statements handle the
+  // consumable side; this flow focuses on consumables that aren't
+  // caught by either path for a no-bank client.
+  //
+  // Each category is skippable in-flow: client says "none" or
+  // "don't know" and the AI records confidence='missing', value=null,
+  // moves on. The commit action writes one pch_expense_lines row per
+  // field that has a confirmed positive value; missing fields never
+  // produce a row. Nothing in this flow blocks submission.
+  //
+  // Idempotency: all written rows carry a "Interview: " label prefix,
+  // matching the bank aggregator's "Bank: " convention. Commit deletes
+  // every row with that prefix before inserting fresh ones, so re-runs
+  // never duplicate and never clobber manual or bank-origin rows.
+  // ------------------------------------------------------------------
+  EXPENSE_INTERVIEW: {
+    slotCode: "EXPENSE_INTERVIEW",
+    title: "Capture your business expenses by chat",
+    resultLabel: "AI interview: expense reconstruction",
+    opener:
+      "We'll walk through your business expenses one at a time. For each category, give me the annual total you spent, or say 'none' or 'don't know' and we'll skip it. The six categories: phone and data (business portion), vehicle cleaning, parking and tolls (not fines), insurance, licences and subscriptions, and anything else. Starting with phone, what did you spend on your mobile bill for the year, business portion only? If your bill is 60 pounds a month and you use the phone 80 percent for driving, that's about 576 pounds for the year.",
+    fields: [
+      {
+        key: "phone_data_gbp",
+        label: "Phone and data, annual business portion (GBP)",
+        description:
+          "Numeric GBP. Annual spend on mobile phone + data, business portion only (not total household bill). If the client gives a monthly figure, help them multiply out and confirm the annual total before recording. Mark missing if the client says 'don't know', 'none', or doesn't use their phone for driving work.",
+      },
+      {
+        key: "cleaning_gbp",
+        label: "Vehicle cleaning / valeting, annual (GBP)",
+        description:
+          "Numeric GBP. Annual spend on vehicle cleaning or valeting (interior + exterior). Common weekly cost; help with weekly to annual multiplication if useful. Mark missing if the client says 'none' or 'don't know'.",
+      },
+      {
+        key: "parking_tolls_gbp",
+        label: "Congestion, ULEZ, parking, annual (GBP)",
+        description:
+          "Numeric GBP. Annual spend on congestion charge, ULEZ, and legitimate parking. Fines and PCNs are NOT claimable, exclude them from the figure. Mark missing if the client says 'none' or 'don't know'.",
+      },
+      {
+        key: "insurance_gbp",
+        label: "Insurance, annual (GBP)",
+        description:
+          "Numeric GBP. Annual vehicle insurance premium (hire + reward is the typical PHV policy). If the client has non-vehicle business insurance too, add it. Mark missing if the client says 'none' or 'don't know'.",
+      },
+      {
+        key: "subs_fees_gbp",
+        label: "Licences and subscriptions, annual (GBP)",
+        description:
+          "Numeric GBP. Annual total for the PHV driver and vehicle licence, DBS check, medical check, breakdown cover, trade body subscriptions, and similar recurring driver-side fees. Mark missing if the client says 'none' or 'don't know'.",
+      },
+      {
+        key: "other_business_gbp",
+        label: "Any other allowable business cost, annual (GBP)",
+        description:
+          "Numeric GBP. One figure for anything else the client wants to claim that wasn't covered above AND is strictly for the driving business. Mark missing if the client has nothing else to add.",
+      },
+      {
+        key: "other_business_label",
+        label: "What was the 'other' cost?",
+        description:
+          "Short free text naming the 'other' cost from the previous answer (e.g. 'Dashcam', 'Headrests', 'Air freshener subscription'). Only ask when other_business_gbp has a positive value; mark missing (null) when other_business_gbp is missing or 0.",
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------------
   // Phase 7 Slice 7.6: FILING_DETAILS, repayment account name. Single
   // question. Writes to pch_cases.repayment_account_name.
   // ------------------------------------------------------------------

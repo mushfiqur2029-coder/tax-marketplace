@@ -517,6 +517,153 @@ export async function commitPchIncomeInterviewAction(
 }
 
 // -------------------------------------------------------------------
+// (F) EXPENSE_INTERVIEW, chat-based non-vehicle expense capture
+//
+// Companion to INCOME_INTERVIEW. Six optional expense categories:
+// each one, if the client confirms a positive annual figure, writes
+// a single pch_expense_lines row with the fixed category / car_cost /
+// SA103S box for that category. Missing / zero fields never produce a
+// row. The write carries evidence = "Estimate (E2) via AI interview"
+// so the auto-derived checklist item 8 (every expense line has
+// evidence) stays satisfied.
+//
+// Idempotency: all written rows carry a "Interview: " label prefix.
+// Commit deletes every row with that prefix for this case before
+// inserting fresh ones; manual + bank-origin rows ("Bank: " prefix)
+// are untouched.
+// -------------------------------------------------------------------
+
+type ExpenseFieldSpec = {
+  key: string;
+  friendlyLabel: string;
+  car_cost: "Yes" | "No" | "Phone";
+  category: string;
+  box: 12 | 14 | 16 | 17 | 18 | 19;
+};
+
+const EXPENSE_INTERVIEW_FIELDS: ReadonlyArray<ExpenseFieldSpec> = [
+  { key: "phone_data_gbp", friendlyLabel: "Mobile phone and data",
+    car_cost: "Phone", category: "Phone & technology", box: 18 },
+  { key: "cleaning_gbp", friendlyLabel: "Vehicle cleaning",
+    car_cost: "Yes", category: "Vehicle running costs", box: 12 },
+  { key: "parking_tolls_gbp", friendlyLabel: "Congestion, ULEZ and parking",
+    car_cost: "Yes", category: "Congestion, ULEZ, tolls & parking", box: 12 },
+  { key: "insurance_gbp", friendlyLabel: "Vehicle insurance",
+    car_cost: "Yes", category: "Accountancy & insurance", box: 14 },
+  { key: "subs_fees_gbp", friendlyLabel: "Licences and subscriptions",
+    car_cost: "No", category: "Licences & compliance", box: 19 },
+];
+
+const EXPENSE_INTERVIEW_EVIDENCE = "Estimate (E2) via AI interview";
+
+async function buildExpenseInterviewOpener(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+): Promise<string | undefined> {
+  const { data } = await admin
+    .from("pch_expense_lines")
+    .select("label, amount_paid_pence")
+    .eq("case_id", caseId)
+    .like("label", INTERVIEW_SOURCE_PREFIX + "%");
+  if (!data || data.length === 0) return undefined;
+  const total = data.reduce((n, r) => n + Number(r.amount_paid_pence ?? 0), 0);
+  const fmt = (p: number) =>
+    "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    `Last time you told us: ${data.length} expense line${data.length === 1 ? "" : "s"} totalling ${fmt(total)}. ` +
+    "Anything to change, add, or correct?"
+  );
+}
+
+export async function startPchExpenseInterviewAction(caseId: string) {
+  const { admin } = await requireClientPchCase(caseId);
+  const override = await buildExpenseInterviewOpener(admin, caseId);
+  return startFlow(caseId, "EXPENSE_INTERVIEW", override);
+}
+
+export async function advancePchExpenseInterviewAction(
+  caseId: string,
+  transcript: InterviewMessage[],
+) {
+  return advanceFlow(caseId, "EXPENSE_INTERVIEW", transcript);
+}
+
+export async function commitPchExpenseInterviewAction(
+  caseId: string,
+  transcript: InterviewMessage[],
+): Promise<ActionResult> {
+  try {
+    const { caseRow, admin } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+    const final = await runInterviewTurn("EXPENSE_INTERVIEW", trimForFinalize(transcript));
+    if (final.kind !== "done") {
+      return { ok: false, error: "The AI isn't finished yet, keep going in the chat." };
+    }
+
+    // Replace prior interview-origin expense rows (idempotent re-run).
+    await admin
+      .from("pch_expense_lines")
+      .delete()
+      .eq("case_id", caseId)
+      .like("label", INTERVIEW_SOURCE_PREFIX + "%");
+
+    type Insert = {
+      case_id: string; label: string; amount_paid_pence: number;
+      car_cost: "Yes" | "No" | "Phone"; category: string;
+      sa103s_box: 12 | 14 | 16 | 17 | 18 | 19;
+      evidence: string; sort_order: number;
+    };
+    const inserts: Insert[] = [];
+
+    // The five fixed-category fields.
+    EXPENSE_INTERVIEW_FIELDS.forEach((spec, idx) => {
+      const gbp = pickNumber(final, spec.key);
+      if (gbp == null || gbp <= 0) return;
+      inserts.push({
+        case_id: caseId,
+        label: INTERVIEW_SOURCE_PREFIX + spec.friendlyLabel,
+        amount_paid_pence: Math.round(gbp * 100),
+        car_cost: spec.car_cost,
+        category: spec.category,
+        sa103s_box: spec.box,
+        evidence: EXPENSE_INTERVIEW_EVIDENCE,
+        sort_order: idx,
+      });
+    });
+
+    // The paired "other" field: write iff BOTH a positive amount AND a
+    // non-empty label were captured; otherwise skip so the "Other"
+    // category doesn't land as an unlabelled line the accountant has
+    // to chase.
+    const otherGbp = pickNumber(final, "other_business_gbp");
+    const otherLabel = pickString(final, "other_business_label");
+    if (otherGbp != null && otherGbp > 0 && otherLabel && otherLabel.length > 0) {
+      inserts.push({
+        case_id: caseId,
+        label: INTERVIEW_SOURCE_PREFIX + otherLabel.slice(0, 240),
+        amount_paid_pence: Math.round(otherGbp * 100),
+        car_cost: "No",
+        category: "Other expenses",
+        sa103s_box: 19,
+        evidence: EXPENSE_INTERVIEW_EVIDENCE,
+        sort_order: EXPENSE_INTERVIEW_FIELDS.length,
+      });
+    }
+
+    if (inserts.length > 0) {
+      const { error } = await admin.from("pch_expense_lines").insert(inserts);
+      if (error) return { ok: false, error: error.message };
+    }
+
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not save your expenses." };
+  }
+}
+
+// -------------------------------------------------------------------
 // (D) FILING_DETAILS, item 31
 // -------------------------------------------------------------------
 
