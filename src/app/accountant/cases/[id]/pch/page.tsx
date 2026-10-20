@@ -5,9 +5,10 @@ import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { PchAccountantView } from "./pch-accountant-view";
 import { computePriorYearAnomalies, type Anomaly } from "@/lib/pch/prior-year-anomalies";
 import {
-  CaseMessagesPanel,
   type CaseMessageView,
 } from "@/components/case/case-messages-panel";
+import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
+import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
 import { deriveChecklistPrefills, type ChecklistPrefill } from "@/lib/pch/checklist-prefills";
 
 // Phase 2a accountant surface: 33-check review + read-only engine
@@ -93,6 +94,7 @@ export default async function PchAccountantPage({
   );
 
   const messages = await loadMessages(admin, id);
+  const supportThread = await loadSupportThreadForCaseAndUser(id, me.id);
 
   // Phase 7 Slice 7.4: pre-fill map for the 33-point checklist. Shape
   // is a Map<item_number, ChecklistPrefill>; 7.4 ships a stub that
@@ -184,7 +186,15 @@ export default async function PchAccountantPage({
       finalPackSentAt={(head.data?.final_pack_sent_at as string | null) ?? null}
       finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
       finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
-      messagesPanel={<CaseMessagesPanel caseId={id} messages={messages} viewerRole="accountant" viewerUserId={me.id} />}
+      messagesPanel={
+        <CaseConversationsPanel
+          caseId={id}
+          caseMessages={messages}
+          supportThread={supportThread}
+          viewerRole="accountant"
+          viewerUserId={me.id}
+        />
+      }
     />
   );
 }

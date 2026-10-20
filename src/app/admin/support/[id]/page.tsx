@@ -36,7 +36,7 @@ export default async function AdminSupportThreadPage({
     );
   }
 
-  const { thread, userLabel } = result;
+  const { thread, userLabel, caseShortId } = result;
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
       <div className="mb-4">
@@ -70,6 +70,12 @@ export default async function AdminSupportThreadPage({
           >
             {thread.status === "open" ? "Open" : "Resolved"}
           </span>
+          <Link
+            href={`/admin/cases/${thread.caseId}`}
+            className="text-sky-700 underline"
+          >
+            View case <span className="font-mono">{caseShortId}</span>
+          </Link>
           <span className="text-slate-500">
             Opened {new Date(thread.createdAt).toLocaleDateString("en-GB")}
           </span>
@@ -78,6 +84,7 @@ export default async function AdminSupportThreadPage({
       </div>
 
       <SupportChatPanel
+        caseId={thread.caseId}
         threadId={thread.id}
         messages={thread.messages}
         viewerRole="admin"

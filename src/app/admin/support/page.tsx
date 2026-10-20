@@ -84,6 +84,9 @@ export default async function AdminSupportPage({
                       >
                         {t.userRole}
                       </span>
+                      <span className="text-[11px] text-slate-500">
+                        on Case <span className="font-mono">{t.caseShortId}</span>
+                      </span>
                       {t.status === "resolved" ? (
                         <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
                           Resolved

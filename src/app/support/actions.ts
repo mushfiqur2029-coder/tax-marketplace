@@ -1,17 +1,27 @@
 "use server";
 
-// Phase 7 Slice 7.3: server actions for the admin / support contact
-// channel. One file; user-facing and admin-facing actions sit side by
-// side because every write touches the same two tables.
+// Phase 7 Slice 7.3 / 7.3b: server actions for the admin / support
+// contact channel. 7.3b pivots scope from one-thread-per-user (standalone
+// /help) to one-thread-per-(case,user) (tabbed inside the case page).
 //
-// Writes use the service_role admin client so author_role lands
-// authoritatively (not spoofable from the client); RLS still protects
-// SELECTs on the owner side. Admin reads/writes bypass RLS entirely.
+// Everything case-related must go through this file so author_role
+// lands authoritatively (not spoofable from the client) and the
+// case-membership guard (caller must be client_id or accountant_id on
+// the target case) runs server-side.
+//
+// Types + sync data helpers live in src/lib/support/{types,data}.ts to
+// keep this file strictly async-exports (the "use server" contract).
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { getCurrentUser, requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadThreadMessages, shapeThread } from "@/lib/support/data";
+import type {
+  AttachmentRecord,
+  SupportThreadView,
+  SupportThreadListItem,
+} from "@/lib/support/types";
 
 type ActionOk<T = Record<never, never>> = { ok: true } & T;
 type ActionErr = { ok: false; error: string };
@@ -21,9 +31,6 @@ const MAX_BODY_LENGTH = 4000;
 const MAX_ATTACHMENTS = 5;
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
-// Shared with case-messages/actions.ts (same accept list). Kept
-// in sync by hand; one source list each so the two surfaces can
-// diverge later without touching the other.
 const ALLOWED_MIME = new Set([
   "application/pdf",
   "image/jpeg",
@@ -37,40 +44,29 @@ const ALLOWED_MIME = new Set([
 ]);
 const ALLOWED_EXT_RE = /\.(pdf|jpe?g|png|heic|heif|webp|csv|xlsx?|xls)$/i;
 
-type AttachmentRecord = {
-  path: string;
-  name: string;
-  mime: string;
-  size_bytes: number;
-};
-
 // -------------------------------------------------------------------
-// User-side: get-or-create own thread, send message, read own thread
+// User-side: get-or-create thread for a case, send message, read own
 // -------------------------------------------------------------------
 
-export type SupportMessageView = {
-  id: string;
-  authorRole: "client" | "accountant" | "admin";
-  authorLabel: string;
-  body: string;
-  createdAt: string;
-  attachments: AttachmentRecord[] | null;
-};
+async function requireCaseMembership(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+  userId: string,
+): Promise<{ ok: true; role: "client" | "accountant" } | { ok: false; error: string }> {
+  const { data: caseRow } = await admin
+    .from("cases")
+    .select("id, client_id, accountant_id")
+    .eq("id", caseId)
+    .maybeSingle();
+  if (!caseRow) return { ok: false, error: "Case not found." };
+  if (caseRow.client_id === userId) return { ok: true, role: "client" };
+  if (caseRow.accountant_id === userId) return { ok: true, role: "accountant" };
+  return { ok: false, error: "You do not have access to this case." };
+}
 
-export type SupportThreadView = {
-  id: string;
-  userId: string;
-  userRole: "client" | "accountant";
-  status: "open" | "resolved";
-  assignedAdminId: string | null;
-  lastMessageAt: string | null;
-  createdAt: string;
-  messages: SupportMessageView[];
-};
-
-export async function getOrCreateMyThreadAction(): Promise<
-  ActionResult<{ thread: SupportThreadView }>
-> {
+export async function getOrCreateCaseSupportThreadAction(
+  caseId: string,
+): Promise<ActionResult<{ thread: SupportThreadView }>> {
   try {
     const me = await getCurrentUser();
     if (!me) return { ok: false, error: "Sign in first." };
@@ -78,10 +74,13 @@ export async function getOrCreateMyThreadAction(): Promise<
       return { ok: false, error: "Support channel is for clients and accountants." };
     }
     const admin = createAdminClient();
+    const membership = await requireCaseMembership(admin, caseId, me.id);
+    if (!membership.ok) return membership;
 
     const { data: existing } = await admin
       .from("support_threads")
-      .select("id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
+      .select("id, case_id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
+      .eq("case_id", caseId)
       .eq("user_id", me.id)
       .maybeSingle();
 
@@ -89,8 +88,8 @@ export async function getOrCreateMyThreadAction(): Promise<
     if (!threadRow) {
       const { data: inserted, error } = await admin
         .from("support_threads")
-        .insert({ user_id: me.id, user_role: me.role })
-        .select("id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
+        .insert({ case_id: caseId, user_id: me.id, user_role: membership.role })
+        .select("id, case_id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
         .single();
       if (error || !inserted) {
         return { ok: false, error: error?.message ?? "Could not create your support thread." };
@@ -99,6 +98,8 @@ export async function getOrCreateMyThreadAction(): Promise<
     }
 
     const messages = await loadThreadMessages(admin, threadRow.id);
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
     return { ok: true, thread: shapeThread(threadRow, messages) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not load your support thread." };
@@ -106,6 +107,7 @@ export async function getOrCreateMyThreadAction(): Promise<
 }
 
 export async function sendSupportMessageAction(
+  caseId: string,
   formData: FormData,
 ): Promise<ActionResult> {
   const body = formData.get("body");
@@ -139,21 +141,24 @@ export async function sendSupportMessageAction(
     return { ok: false, error: "Support channel is for clients and accountants." };
   }
   const admin = createAdminClient();
+  const membership = await requireCaseMembership(admin, caseId, me.id);
+  if (!membership.ok) return membership;
 
-  // Lazy-create the thread on first message so a client that visits
-  // /help, closes without typing, and later clicks the sidebar entry
-  // doesn't leave an empty row behind.
+  // Lazy-create the thread on first message so a user can arrive via
+  // the tab, type, and send without a prior "start" step. The UNIQUE
+  // (case_id, user_id) constraint protects against double-insert races.
   let thread = (
     await admin
       .from("support_threads")
       .select("id")
+      .eq("case_id", caseId)
       .eq("user_id", me.id)
       .maybeSingle()
   ).data as { id: string } | null;
   if (!thread) {
     const { data: inserted, error } = await admin
       .from("support_threads")
-      .insert({ user_id: me.id, user_role: me.role })
+      .insert({ case_id: caseId, user_id: me.id, user_role: membership.role })
       .select("id")
       .single();
     if (error || !inserted) {
@@ -218,28 +223,16 @@ export async function sendSupportMessageAction(
     bodyPreview: trimmed,
   });
 
-  revalidatePath("/client/help");
-  revalidatePath("/accountant/help");
+  revalidatePath(`/client/cases/${caseId}/pch`);
+  revalidatePath(`/accountant/cases/${caseId}/pch`);
   revalidatePath("/admin/support");
   revalidatePath(`/admin/support/${thread.id}`);
   return { ok: true };
 }
 
 // -------------------------------------------------------------------
-// Admin-side: list threads, open thread, reply, mark resolved
+// Admin-side: list, read, reply, resolve, reopen
 // -------------------------------------------------------------------
-
-export type SupportThreadListItem = {
-  id: string;
-  userId: string;
-  userRole: "client" | "accountant";
-  userLabel: string;
-  status: "open" | "resolved";
-  lastMessageAt: string | null;
-  lastMessagePreview: string | null;
-  assignedAdminId: string | null;
-  createdAt: string;
-};
 
 export async function listSupportThreadsAction(
   status: "open" | "resolved" | "all" = "open",
@@ -249,13 +242,14 @@ export async function listSupportThreadsAction(
     const admin = createAdminClient();
     let q = admin
       .from("support_threads")
-      .select("id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
+      .select("id, case_id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
       .order("last_message_at", { ascending: false, nullsFirst: false });
     if (status !== "all") q = q.eq("status", status);
     const { data: rows, error } = await q;
     if (error) return { ok: false, error: error.message };
     const list = (rows ?? []) as Array<{
-      id: string; user_id: string; user_role: "client" | "accountant";
+      id: string; case_id: string; user_id: string;
+      user_role: "client" | "accountant";
       status: "open" | "resolved"; assigned_admin_id: string | null;
       last_message_at: string | null; created_at: string;
     }>;
@@ -270,7 +264,6 @@ export async function listSupportThreadsAction(
       (users ?? []).map((u) => [u.id as string, u.email as string]),
     );
 
-    // Latest message body preview per thread, for the inbox row.
     const { data: previews } = await admin
       .from("support_messages")
       .select("thread_id, body, created_at")
@@ -288,6 +281,8 @@ export async function listSupportThreadsAction(
       ok: true,
       threads: list.map((t) => ({
         id: t.id,
+        caseId: t.case_id,
+        caseShortId: t.case_id.slice(0, 8),
         userId: t.user_id,
         userRole: t.user_role,
         userLabel: labelById.get(t.user_id) ?? t.user_id.slice(0, 8),
@@ -305,13 +300,13 @@ export async function listSupportThreadsAction(
 
 export async function getSupportThreadAction(
   threadId: string,
-): Promise<ActionResult<{ thread: SupportThreadView; userLabel: string }>> {
+): Promise<ActionResult<{ thread: SupportThreadView; userLabel: string; caseShortId: string }>> {
   try {
     await requireRole("admin");
     const admin = createAdminClient();
     const { data: thread } = await admin
       .from("support_threads")
-      .select("id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
+      .select("id, case_id, user_id, user_role, status, assigned_admin_id, last_message_at, created_at")
       .eq("id", threadId)
       .maybeSingle();
     if (!thread) return { ok: false, error: "Thread not found." };
@@ -322,7 +317,12 @@ export async function getSupportThreadAction(
       .eq("id", thread.user_id)
       .maybeSingle();
     const label = user?.email ?? thread.user_id.slice(0, 8);
-    return { ok: true, thread: shapeThread(thread, messages), userLabel: label };
+    return {
+      ok: true,
+      thread: shapeThread(thread, messages),
+      userLabel: label,
+      caseShortId: thread.case_id.slice(0, 8),
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not load thread." };
   }
@@ -361,7 +361,7 @@ export async function sendAdminSupportReplyAction(
   const admin = createAdminClient();
   const { data: thread } = await admin
     .from("support_threads")
-    .select("id, user_id")
+    .select("id, case_id, user_id")
     .eq("id", threadId)
     .maybeSingle();
   if (!thread) return { ok: false, error: "Thread not found." };
@@ -412,21 +412,18 @@ export async function sendAdminSupportReplyAction(
     .update({
       last_message_at: nowIso,
       updated_at: nowIso,
-      // Auto-assign the responder on first admin reply so the inbox
-      // shows "ongoing with Alice" without a separate claim step.
       assigned_admin_id: me.id,
     })
     .eq("id", thread.id);
 
-  // Notify the thread owner that admin has replied.
   await admin.from("notifications").insert({
     recipient_id: thread.user_id,
     type: "new_support_message",
     message: "Support replied to your message.",
   });
 
-  revalidatePath("/client/help");
-  revalidatePath("/accountant/help");
+  revalidatePath(`/client/cases/${thread.case_id}/pch`);
+  revalidatePath(`/accountant/cases/${thread.case_id}/pch`);
   revalidatePath("/admin/support");
   revalidatePath(`/admin/support/${thread.id}`);
   return { ok: true };
@@ -438,6 +435,11 @@ export async function markSupportThreadResolvedAction(
   try {
     await requireRole("admin");
     const admin = createAdminClient();
+    const { data: thread } = await admin
+      .from("support_threads")
+      .select("case_id")
+      .eq("id", threadId)
+      .maybeSingle();
     const { error } = await admin
       .from("support_threads")
       .update({ status: "resolved", updated_at: new Date().toISOString() })
@@ -445,6 +447,10 @@ export async function markSupportThreadResolvedAction(
     if (error) return { ok: false, error: error.message };
     revalidatePath("/admin/support");
     revalidatePath(`/admin/support/${threadId}`);
+    if (thread?.case_id) {
+      revalidatePath(`/client/cases/${thread.case_id}/pch`);
+      revalidatePath(`/accountant/cases/${thread.case_id}/pch`);
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not mark resolved." };
@@ -457,6 +463,11 @@ export async function reopenSupportThreadAction(
   try {
     await requireRole("admin");
     const admin = createAdminClient();
+    const { data: thread } = await admin
+      .from("support_threads")
+      .select("case_id")
+      .eq("id", threadId)
+      .maybeSingle();
     const { error } = await admin
       .from("support_threads")
       .update({ status: "open", updated_at: new Date().toISOString() })
@@ -464,6 +475,10 @@ export async function reopenSupportThreadAction(
     if (error) return { ok: false, error: error.message };
     revalidatePath("/admin/support");
     revalidatePath(`/admin/support/${threadId}`);
+    if (thread?.case_id) {
+      revalidatePath(`/client/cases/${thread.case_id}/pch`);
+      revalidatePath(`/accountant/cases/${thread.case_id}/pch`);
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not reopen thread." };
@@ -484,7 +499,6 @@ export async function getSupportMessageAttachmentUrlAction(
     .maybeSingle();
   if (!msg) return { ok: false, error: "Message not found." };
 
-  // Access: admin always; the thread owner only.
   if (me.role !== "admin") {
     const { data: thread } = await admin
       .from("support_threads")
@@ -510,64 +524,8 @@ export async function getSupportMessageAttachmentUrlAction(
 }
 
 // -------------------------------------------------------------------
-// Helpers
+// Internal helpers
 // -------------------------------------------------------------------
-
-async function loadThreadMessages(
-  admin: ReturnType<typeof createAdminClient>,
-  threadId: string,
-): Promise<SupportMessageView[]> {
-  const { data: rows } = await admin
-    .from("support_messages")
-    .select("id, author_id, author_role, body, created_at, attachments")
-    .eq("thread_id", threadId)
-    .order("created_at", { ascending: true });
-  const list = (rows ?? []) as Array<{
-    id: string; author_id: string;
-    author_role: "client" | "accountant" | "admin";
-    body: string; created_at: string;
-    attachments: unknown;
-  }>;
-  if (list.length === 0) return [];
-  const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
-  const { data: users } = await admin
-    .from("users")
-    .select("id, email")
-    .in("id", authorIds);
-  const labelById = new Map(
-    (users ?? []).map((u) => [u.id as string, u.email as string]),
-  );
-  return list.map((m) => ({
-    id: m.id,
-    authorRole: m.author_role,
-    authorLabel: labelById.get(m.author_id) ?? m.author_id.slice(0, 8),
-    body: m.body,
-    createdAt: m.created_at,
-    attachments: Array.isArray(m.attachments)
-      ? (m.attachments as AttachmentRecord[])
-      : null,
-  }));
-}
-
-function shapeThread(
-  row: {
-    id: string; user_id: string; user_role: "client" | "accountant";
-    status: "open" | "resolved"; assigned_admin_id: string | null;
-    last_message_at: string | null; created_at: string;
-  },
-  messages: SupportMessageView[],
-): SupportThreadView {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    userRole: row.user_role,
-    status: row.status,
-    assignedAdminId: row.assigned_admin_id,
-    lastMessageAt: row.last_message_at,
-    createdAt: row.created_at,
-    messages,
-  };
-}
 
 async function notifyAdmins(
   admin: ReturnType<typeof createAdminClient>,
@@ -578,10 +536,6 @@ async function notifyAdmins(
     bodyPreview: string;
   },
 ) {
-  // Deliver the notification to every admin so an unassigned thread
-  // gets seen; once an admin replies they get auto-assigned, but the
-  // inbox badge for other admins also goes up until they view the
-  // thread, which is the correct "team inbox" behaviour.
   const { data: admins } = await admin
     .from("users")
     .select("id")

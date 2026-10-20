@@ -33,7 +33,6 @@ const GROUPS: ReadonlyArray<PortalNavGroup<ClientCountKey>> = [
         activeExcludeExact: true,
       },
       { href: "/client/payments", label: "Payments", activePrefix: "/client/payments" },
-      { href: "/client/help", label: "Help", activePrefix: "/client/help" },
       { href: "/client/profile", label: "Account", activePrefix: "/client/profile" },
     ],
   },

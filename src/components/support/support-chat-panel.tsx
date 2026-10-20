@@ -20,8 +20,8 @@ import {
   sendSupportMessageAction,
   sendAdminSupportReplyAction,
   getSupportMessageAttachmentUrlAction,
-  type SupportMessageView,
 } from "@/app/support/actions";
+import type { SupportMessageView } from "@/lib/support/types";
 import { createClient } from "@/lib/supabase/client";
 
 const MAX_BODY_CHARS = 4000;
@@ -30,12 +30,17 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const ATTACHMENT_ACCEPT = ".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.csv,.xlsx,.xls,application/pdf,image/*,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
 
 export function SupportChatPanel({
+  caseId,
   threadId,
   messages,
   viewerRole,
   viewerUserId,
   threadStatus,
 }: {
+  // Phase 7 Slice 7.3b: caseId required so the user-side send action
+  // can resolve (or lazy-create) the per-(case,user) thread server-side.
+  // Admin reply ignores caseId; it writes against threadId directly.
+  caseId: string;
   threadId: string;
   messages: SupportMessageView[];
   viewerRole: "client" | "accountant" | "admin";
@@ -112,7 +117,7 @@ export function SupportChatPanel({
       for (const f of attachments) fd.append("file", f);
       const r = viewerRole === "admin"
         ? await sendAdminSupportReplyAction(threadId, fd)
-        : await sendSupportMessageAction(fd);
+        : await sendSupportMessageAction(caseId, fd);
       if (!r.ok) { setErr(r.error); return; }
       setDraft("");
       setAttachments([]);
@@ -163,9 +168,8 @@ export function SupportChatPanel({
       <div className="border-t border-slate-100 px-5 py-4">
         {resolvedLock ? (
           <p className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            This thread is marked resolved. If something else comes up, a
-            new message will reopen it, use the composer above to send
-            when it is reopened by an admin.
+            This thread is marked resolved. If something else comes up,
+            an admin can reopen it and you&apos;ll be able to send again.
           </p>
         ) : (
           <>

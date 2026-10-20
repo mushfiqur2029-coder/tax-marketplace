@@ -13,9 +13,10 @@ import {
   type UkTaxYear,
 } from "@/lib/tax-engine";
 import {
-  CaseMessagesPanel,
   type CaseMessageView,
 } from "@/components/case/case-messages-panel";
+import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
+import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
 
 // Dynamic so a brand new extraction row (populated in a Next after()
 // callback after an upload) is visible on the very next page load,
@@ -141,6 +142,7 @@ export default async function PchClientPage({
     caseRow.status === "complete";
 
   const messages = await loadCaseMessages(admin, id);
+  const supportThread = await loadSupportThreadForCaseAndUser(id, me.id);
 
   // Slice 3: shape pch_bank_transactions rows for the ledger view.
   const bankTransactions = (bankTxns.data ?? []).map((r) => ({
@@ -183,7 +185,15 @@ export default async function PchClientPage({
       engineSnapshotAt={showFigures ? (snapshot.data?.engine_snapshot_at ?? null) : null}
       approvalAt={snapshot.data?.client_approval_at ?? null}
       approvalName={snapshot.data?.client_approval_name ?? null}
-      messagesPanel={<CaseMessagesPanel caseId={id} messages={messages} viewerRole="client" viewerUserId={me.id} />}
+      messagesPanel={
+        <CaseConversationsPanel
+          caseId={id}
+          caseMessages={messages}
+          supportThread={supportThread}
+          viewerRole="client"
+          viewerUserId={me.id}
+        />
+      }
     />
   );
 }
