@@ -104,9 +104,31 @@ export function PchAccountantView(props: {
 
   const statusByItem = new Map(props.checkStatus.map((s) => [s.item_number, s]));
   const prefillByItem = new Map(props.checkPrefills.map((p) => [p.item, p]));
-  const resolvedCount = props.checkStatus.filter(
-    (s) => s.status === "Done" || s.status === "N/A"
-  ).length;
+
+  // "Effective" status folds in the AI prefill: an auto item with
+  // verdict=pass counts as resolved even if the accountant hasn't
+  // clicked Confirm, so the readiness band and the collapsed-row
+  // treatment both read from one source. No DB write; this derivation
+  // is pure. An override by the accountant (manual Done / N/A / Reset)
+  // still wins because statusByItem is checked first.
+  function effectiveStatus(itemNumber: number): "Done" | "N/A" | "Not started" {
+    const stored = statusByItem.get(itemNumber);
+    if (stored && stored.status !== "Not started") return stored.status;
+    const prefill = prefillByItem.get(itemNumber);
+    const classification = classifyChecklistItem(itemNumber);
+    if (
+      classification.kind === "auto" &&
+      prefill?.verdict === "pass"
+    ) {
+      return "Done";
+    }
+    return stored?.status ?? "Not started";
+  }
+
+  const resolvedCount = props.checksMeta.filter((item) => {
+    const s = effectiveStatus(item.item_number);
+    return s === "Done" || s === "N/A";
+  }).length;
   const total = props.checksMeta.length;
   const allResolved = resolvedCount >= total;
 
@@ -280,18 +302,15 @@ export function PchAccountantView(props: {
         </>
       )}
 
-      <h2 className="text-lg font-bold mt-10 mb-3">33-point review checklist</h2>
-      <div className="space-y-2">
-        {props.checksMeta.map((item) => (
-          <CheckRow
-            key={item.item_number}
-            caseId={props.caseId}
-            item={item}
-            status={statusByItem.get(item.item_number)}
-            prefill={prefillByItem.get(item.item_number) ?? null}
-          />
-        ))}
-      </div>
+      <ChecklistSection
+        caseId={props.caseId}
+        checksMeta={props.checksMeta}
+        statusByItem={statusByItem}
+        prefillByItem={prefillByItem}
+        effectiveStatus={effectiveStatus}
+        resolvedCount={resolvedCount}
+        total={total}
+      />
 
       <div className="mt-10">
         <FinalSignoffPanel
@@ -894,6 +913,169 @@ function GroupRows({
         );
       })}
     </>
+  );
+}
+
+// -------------------- 33-check section --------------------
+//
+// Default view hides noise: items that are resolved (status Done or
+// N/A, including the "auto + verdict=pass" promotion done client-side
+// in effectiveStatus) render as a quiet one-liner. Items that need
+// attention (warn verdicts, interview-waiting, manual-not-started)
+// render as the full card. Each resolved one-liner has a tiny caret
+// to expand into the full card if the accountant wants to override.
+//
+// Zero server writes on page load; the one-liner derivation uses the
+// same effectiveStatus the readiness band uses, so the two never
+// drift.
+
+function ChecklistSection({
+  caseId, checksMeta, statusByItem, prefillByItem, effectiveStatus,
+  resolvedCount, total,
+}: {
+  caseId: string;
+  checksMeta: CheckItem[];
+  statusByItem: Map<number, CheckStatus>;
+  prefillByItem: Map<number, ChecklistPrefill>;
+  effectiveStatus: (n: number) => "Done" | "N/A" | "Not started";
+  resolvedCount: number;
+  total: number;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggleExpanded = (n: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(n)) next.delete(n); else next.add(n);
+      return next;
+    });
+  };
+
+  const needsAttention = (item: CheckItem): boolean => {
+    const s = effectiveStatus(item.item_number);
+    if (s === "Done" || s === "N/A") return false;
+    const prefill = prefillByItem.get(item.item_number);
+    // Auto + warn is the primary "look at me" case.
+    if (prefill && prefill.verdict === "warn") return true;
+    // Auto + nothing_to_show on a Not started row counts as resolved
+    // (nothing to flag). Treat as low-noise unless the accountant
+    // explicitly expands.
+    if (prefill && prefill.verdict === "nothing_to_show") return false;
+    // Interview Not started + manual Not started both need attention.
+    return true;
+  };
+
+  const attentionRows = checksMeta.filter(needsAttention);
+  const quietRows = checksMeta.filter((item) => !needsAttention(item));
+
+  const renderRow = (item: CheckItem) => {
+    const eff = effectiveStatus(item.item_number);
+    const isResolved = eff === "Done" || eff === "N/A";
+    const prefill = prefillByItem.get(item.item_number) ?? null;
+    const status = statusByItem.get(item.item_number);
+    const open = expanded.has(item.item_number);
+    if (isResolved && !open) {
+      return (
+        <CheckRowCollapsed
+          key={item.item_number}
+          item={item}
+          effectiveStatus={eff}
+          prefill={prefill}
+          stored={status}
+          onExpand={() => toggleExpanded(item.item_number)}
+        />
+      );
+    }
+    return (
+      <CheckRow
+        key={item.item_number}
+        caseId={caseId}
+        item={item}
+        status={status}
+        prefill={prefill}
+      />
+    );
+  };
+
+  return (
+    <>
+      <div className="mt-10 mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-bold">
+          33-point review checklist{" "}
+          <span className="text-sm font-normal text-slate-500">
+            ({resolvedCount} of {total} resolved)
+          </span>
+        </h2>
+        <button
+          type="button"
+          onClick={() => setShowAll((s) => !s)}
+          className="text-xs text-slate-500 underline underline-offset-2 hover:text-slate-700"
+        >
+          {showAll
+            ? `Hide ${quietRows.length} resolved`
+            : `Show all ${total}`}
+        </button>
+      </div>
+      {attentionRows.length === 0 && !showAll ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+          Nothing on the checklist needs your attention right now. All {total}{" "}
+          items are resolved. Click Show all to review or override anything.
+        </div>
+      ) : null}
+      {attentionRows.length > 0 ? (
+        <div className="space-y-2">{attentionRows.map(renderRow)}</div>
+      ) : null}
+      {showAll && quietRows.length > 0 ? (
+        <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Already resolved
+          </p>
+          {quietRows.map(renderRow)}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// Collapsed one-liner for resolved checklist rows. Shows the item
+// number + area + status chip + first bit of the evidence or note so
+// the accountant can scan down the resolved list for anything that
+// looks suspicious. Click anywhere on the row to expand into the full
+// CheckRow for editing.
+function CheckRowCollapsed({
+  item, effectiveStatus, prefill, stored, onExpand,
+}: {
+  item: CheckItem;
+  effectiveStatus: "Done" | "N/A" | "Not started";
+  prefill: ChecklistPrefill | null;
+  stored: CheckStatus | undefined;
+  onExpand: () => void;
+}) {
+  const chip = effectiveStatus === "Done"
+    ? "bg-emerald-100 text-emerald-800"
+    : "bg-slate-100 text-slate-600";
+  const evidence = stored?.note || prefill?.evidence || item.description;
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      className="flex w-full items-center gap-3 rounded border border-slate-200 bg-white px-3 py-1.5 text-left hover:border-slate-300 hover:bg-slate-50"
+    >
+      <span className={"shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold " + chip}>
+        {effectiveStatus === "Done" ? "Done" : "N/A"}
+      </span>
+      <span className="shrink-0 font-mono text-[11px] text-slate-500">
+        #{item.item_number}
+      </span>
+      <span className="shrink-0 text-[11px] uppercase tracking-wide text-slate-500">
+        {item.area}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+        {evidence}
+      </span>
+      <span className="shrink-0 text-xs text-slate-400">Edit</span>
+    </button>
   );
 }
 
