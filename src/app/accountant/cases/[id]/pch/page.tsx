@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser, requireApprovedAccountant } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -104,10 +105,33 @@ export default async function PchAccountantPage({
     );
   }
 
-  // Case assigned to another accountant. Keep the 404 for simplicity;
-  // the queue filter stops cases from leaking to the wrong accountant
-  // in the normal path, so this only trips on direct URL access.
-  if (caseRow.accountant_id !== me.id) notFound();
+  // Case assigned to another accountant. Normally the queue filter
+  // prevents us from showing it in a different accountant's queue, so
+  // this branch only trips on direct URL access (bookmark, chat link
+  // sent from admin, back button after someone else took the case).
+  // Rendering a friendly card beats a bare 404 and gives the
+  // accountant a one-click path back to the queue.
+  if (caseRow.accountant_id !== me.id) {
+    return (
+      <>
+        <PortalPageHeader
+          eyebrow="PCH automated"
+          title="This case isn't available"
+          description="Another accountant has already picked this one up."
+        />
+        <div className="card-sl max-w-xl space-y-3 p-6 sm:p-8">
+          <p className="text-sm text-slate">
+            This case was in the queue when you last looked, but another
+            accountant claimed it before you got here. Head back to the
+            queue for the next one.
+          </p>
+          <Link href="/accountant?view=queue" className="btn-sl btn-sl-primary">
+            Back to the queue
+          </Link>
+        </div>
+      </>
+    );
+  }
 
   const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta, addonRows, incomeLines, expenseLines, caseDocs] = await Promise.all([
     admin.from("pch_check_items").select("*").order("sort_order"),
