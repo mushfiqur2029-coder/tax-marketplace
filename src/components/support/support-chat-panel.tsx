@@ -266,8 +266,8 @@ function EmptyState({ viewerRole }: { viewerRole: "client" | "accountant" | "adm
   const body = viewerRole === "admin"
     ? "No messages yet. The owner has opened a thread but hasn't posted."
     : viewerRole === "client"
-      ? "Ask us anything, billing, login, something odd on a case, or a question that doesn't fit a specific case thread. We'll reply here and email you when we do."
-      : "Ask us anything, payout questions, platform issues, policy questions. We'll reply here and email you when we do.";
+      ? "Ask us about anything on this case that your accountant can't help with, billing, account changes, or an escalation. We'll reply here."
+      : "Ask us anything on this case that doesn't belong in the client chat, payout questions, platform issues, policy questions. We'll reply here.";
   return (
     <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-6 py-10 text-center text-sm text-slate-600">
       {body}
