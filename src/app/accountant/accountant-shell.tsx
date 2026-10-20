@@ -43,6 +43,7 @@ const GROUPS: ReadonlyArray<PortalNavGroup<AccountantCountKey>> = [
         activeExcludeExact: true,
       },
       { href: "/accountant/wallet", label: "Wallet", activePrefix: "/accountant/wallet" },
+      { href: "/accountant/help", label: "Help", activePrefix: "/accountant/help" },
       { href: "/accountant/profile", label: "Account", activePrefix: "/accountant/profile" },
     ],
   },

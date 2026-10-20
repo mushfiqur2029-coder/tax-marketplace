@@ -91,6 +91,12 @@ const GROUPS: ReadonlyArray<PortalNavGroup<AdminCountKey>> = [
         activePrefix: "/admin/enquiries",
         countKey: "enquiries",
       },
+      {
+        href: "/admin/support",
+        label: "Support",
+        activePrefix: "/admin/support",
+        countKey: "openSupportThreads",
+      },
     ],
   },
   {
@@ -132,6 +138,7 @@ export function AdminShell({
     addonRequests: counts.addonRequests,
     enquiries: counts.enquiries,
     pchCases: counts.pchCases,
+    openSupportThreads: counts.openSupportThreads,
   };
   return (
     <PortalShell

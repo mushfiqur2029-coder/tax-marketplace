@@ -55,6 +55,7 @@ export default async function AdminLayout({
           { table: "pending_profile_changes" },
           { table: "case_addons" },
           { table: "service_enquiries" },
+          { table: "support_threads" },
         ]}
       />
       {children}

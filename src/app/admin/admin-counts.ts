@@ -13,6 +13,8 @@ export type AdminNavCounts = {
   addonRequests: number;
   enquiries: number;
   pchCases: number;
+  // Phase 7 Slice 7.3: open support threads for the sidebar badge.
+  openSupportThreads: number;
   unreadNotifications: number;
 };
 
@@ -32,6 +34,7 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
     { count: addonRequests },
     { count: enquiries },
     { count: pchCases },
+    { count: openSupportThreads },
     { count: unreadNotifications },
   ] = await Promise.all([
     admin
@@ -67,6 +70,10 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
       .from("cases")
       .select("id", { count: "exact", head: true })
       .eq("tier", "uber_phv_automated"),
+    admin
+      .from("support_threads")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "open"),
     user
       ? admin
           .from("notifications")
@@ -85,6 +92,7 @@ export async function getAdminNavCounts(): Promise<AdminNavCounts> {
     addonRequests: addonRequests ?? 0,
     enquiries: enquiries ?? 0,
     pchCases: pchCases ?? 0,
+    openSupportThreads: openSupportThreads ?? 0,
     unreadNotifications: unreadNotifications ?? 0,
   };
 }
