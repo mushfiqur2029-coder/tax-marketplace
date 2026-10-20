@@ -31,6 +31,9 @@ import {
   startPchFilingDetailsInterviewAction,
   advancePchFilingDetailsInterviewAction,
   commitPchFilingDetailsInterviewAction,
+  startPchIncomeInterviewAction,
+  advancePchIncomeInterviewAction,
+  commitPchIncomeInterviewAction,
   markPchChecklistNotApplicableAction,
 } from "@/app/client/pch/other-interview-actions";
 import {
@@ -247,6 +250,16 @@ export function PchClientWorkspace(props: {
                   />
                 </div>
               </>
+            ) : editable ? (
+              <>
+                <h2 className={h2}>3. Your income (from our chat)</h2>
+                <div className={card}>
+                  <IncomeInterviewSection
+                    caseId={props.caseId}
+                    interviewLine={findInterviewIncomeLine(props.incomeLines)}
+                  />
+                </div>
+              </>
             ) : null}
 
             <h2 className={h2}>4. Vehicle and capital allowances</h2>
@@ -440,6 +453,82 @@ function SingleAnswerSection({
             label: "Not applicable",
             action: () => markPchChecklistNotApplicableAction(caseId, checklistItems),
           }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Phase 8 Slice 8.5: INCOME_INTERVIEW section. Shown in place of the
+// bookkeeping ledger when the client has no bank statement uploaded.
+// Captured state shows a short "£X across platforms Y" summary; empty
+// state is a short invitation to walk through the chat.
+const INCOME_INTERVIEW_SOURCE_PREFIX = "Interview: ";
+
+function findInterviewIncomeLine(lines: IncomeRow[]): IncomeRow | null {
+  for (const l of lines) {
+    if (typeof l.source === "string" && l.source.startsWith(INCOME_INTERVIEW_SOURCE_PREFIX)) {
+      return l;
+    }
+  }
+  return null;
+}
+
+function IncomeInterviewSection({
+  caseId, interviewLine,
+}: {
+  caseId: string;
+  interviewLine: IncomeRow | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const captured = interviewLine && interviewLine.gross_takings_pence > 0;
+  const fmt = (p: number) =>
+    "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const platforms = captured
+    ? interviewLine.source.slice(INCOME_INTERVIEW_SOURCE_PREFIX.length)
+    : "";
+
+  return (
+    <div className="space-y-3">
+      <div className="text-sm font-medium text-slate-900">Capture your income by chat</div>
+      <p className="text-xs text-slate-600">
+        No bank statement to upload? We&apos;ll walk through your platforms, gross
+        income, fees, and on-trip miles together. Takes a few minutes.
+      </p>
+      {captured ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-0.5">
+          <div className="font-semibold mb-0.5">Captured so far</div>
+          <div>Platforms: <strong>{platforms || "Driver-reported"}</strong></div>
+          <div>Gross: <strong>{fmt(interviewLine.gross_takings_pence)}</strong></div>
+          <div>Platform fees: <strong>{fmt(interviewLine.platform_fee_pence)}</strong></div>
+          <div>On-trip miles: <strong>{interviewLine.on_trip_miles.toLocaleString("en-GB")}</strong></div>
+        </div>
+      ) : (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          No income captured yet. Upload a bank statement under Documents above,
+          or walk through the AI chat here.
+        </div>
+      )}
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+        >
+          {captured ? "Update my income" : "Walk through it with the AI"}
+        </button>
+      ) : (
+        <AiInterviewPanel
+          caseId={caseId}
+          onClose={() => setOpen(false)}
+          flowLabel="Capture your income by chat"
+          flowSubtitle="Platforms, gross, fees, on-trip miles"
+          finishedMessage="Thanks, saving your income now."
+          commitButtonLabel="Save my income"
+          commitPendingLabel="Saving your income..."
+          start={startPchIncomeInterviewAction}
+          advance={advancePchIncomeInterviewAction}
+          commit={commitPchIncomeInterviewAction}
         />
       )}
     </div>

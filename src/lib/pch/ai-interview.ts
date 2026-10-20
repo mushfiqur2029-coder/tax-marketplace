@@ -235,6 +235,48 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
   },
 
   // ------------------------------------------------------------------
+  // Phase 8 Slice 8.5: INCOME_INTERVIEW, chat-based income capture for
+  // drivers who don't have a bank statement to upload. Produces one
+  // aggregated pch_income_lines row (gross, platform fees, on-trip
+  // miles). Commit action lives in other-interview-actions.ts and uses
+  // an "Interview: " source prefix for idempotent re-run (parallels
+  // the "Bank: " prefix used by the bank-statement aggregator).
+  // ------------------------------------------------------------------
+  INCOME_INTERVIEW: {
+    slotCode: "INCOME_INTERVIEW",
+    title: "Capture your income by chat",
+    resultLabel: "AI interview: income reconstruction",
+    opener:
+      "No bank statement to upload? No problem, we'll walk through your income together. First, which platforms did you drive for this tax year? Uber, Bolt, Addison Lee, FreeNow, Uber Eats, Deliveroo, something else? List every one you drove for, even if it was only a handful of jobs.",
+    fields: [
+      {
+        key: "platforms_summary",
+        label: "Platforms used",
+        description:
+          "Short free text listing every platform the driver worked for this tax year. One or two sentences; the accountant reads this verbatim and can split per-platform later. If only one platform, say so (e.g. 'Only Uber').",
+      },
+      {
+        key: "total_gross_gbp",
+        label: "Total gross income (GBP)",
+        description:
+          "Numeric GBP. Total gross income across every platform BEFORE any platform fees are deducted (the figure HMRC calls turnover). If the driver only remembers a weekly or monthly average, help them multiply out (e.g. '£650 a week x 48 weeks worked = £31,200') and ask them to confirm the annual figure before recording. Confidence 'medium' is correct for a calculation the client confirmed step by step. Mark missing if they genuinely cannot land on a figure.",
+      },
+      {
+        key: "total_fees_gbp",
+        label: "Total platform fees (GBP)",
+        description:
+          "Numeric GBP. Total service / commission fees charged by platforms across the tax year (the deduction before the net payout hits the bank). Mark missing if the driver doesn't track fees separately or doesn't know; the accountant will estimate or chase statements.",
+      },
+      {
+        key: "total_on_trip_miles",
+        label: "Total on-trip miles",
+        description:
+          "Integer miles. Total business miles driven ON TRIP (passenger in the car) across all platforms this tax year. Not dead miles. If the driver gives a weekly average, multiply out and confirm. Mark missing if they genuinely do not know; the accountant can estimate from gross earnings once they know the typical fare per mile.",
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------------
   // Phase 7 Slice 7.6: FILING_DETAILS, repayment account name. Single
   // question. Writes to pch_cases.repayment_account_name.
   // ------------------------------------------------------------------

@@ -407,6 +407,116 @@ export async function commitPchExpensesProbeInterviewAction(
 }
 
 // -------------------------------------------------------------------
+// (E) INCOME_INTERVIEW, Phase 8 Slice 8.5
+//
+// Chat-based income capture when the driver has no bank statement to
+// upload. Writes ONE aggregated pch_income_lines row (gross, fees,
+// on-trip miles) tagged with an "Interview: " source prefix so re-runs
+// are idempotent and the row never collides with bank-origin rows
+// (which use the "Bank: " prefix).
+// -------------------------------------------------------------------
+
+const INTERVIEW_SOURCE_PREFIX = "Interview: ";
+
+async function buildIncomeInterviewOpener(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+): Promise<string | undefined> {
+  // If a prior run already captured a line, open with a short summary
+  // and offer to amend rather than restarting cold.
+  const { data } = await admin
+    .from("pch_income_lines")
+    .select("source, gross_takings_pence, platform_fee_pence, on_trip_miles")
+    .eq("case_id", caseId)
+    .like("source", INTERVIEW_SOURCE_PREFIX + "%")
+    .maybeSingle();
+  if (!data) return undefined;
+  const grossGbp = Number(data.gross_takings_pence ?? 0) / 100;
+  const feesGbp = Number(data.platform_fee_pence ?? 0) / 100;
+  const miles = Number(data.on_trip_miles ?? 0);
+  const fmt = (n: number) =>
+    "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const platforms = (data.source as string).slice(INTERVIEW_SOURCE_PREFIX.length);
+  return (
+    `Last time you told us: platforms ${platforms}, gross ${fmt(grossGbp)}, fees ${fmt(feesGbp)}, on-trip miles ${miles.toLocaleString("en-GB")}. ` +
+    "Anything to change, or should we leave it as is?"
+  );
+}
+
+export async function startPchIncomeInterviewAction(caseId: string) {
+  const { admin } = await requireClientPchCase(caseId);
+  const override = await buildIncomeInterviewOpener(admin, caseId);
+  return startFlow(caseId, "INCOME_INTERVIEW", override);
+}
+
+export async function advancePchIncomeInterviewAction(
+  caseId: string,
+  transcript: InterviewMessage[],
+) {
+  return advanceFlow(caseId, "INCOME_INTERVIEW", transcript);
+}
+
+export async function commitPchIncomeInterviewAction(
+  caseId: string,
+  transcript: InterviewMessage[],
+): Promise<ActionResult> {
+  try {
+    const { caseRow, admin } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+    const final = await runInterviewTurn("INCOME_INTERVIEW", trimForFinalize(transcript));
+    if (final.kind !== "done") {
+      return { ok: false, error: "The AI isn't finished yet, keep going in the chat." };
+    }
+    const platforms = pickString(final, "platforms_summary") ?? "";
+    const grossGbp = pickNumber(final, "total_gross_gbp");
+    const feesGbp = pickNumber(final, "total_fees_gbp");
+    const miles = pickNumber(final, "total_on_trip_miles");
+
+    // Readiness depends on at least one row with positive gross; refuse
+    // to write a zero-only row because the engine couldn't run anyway
+    // and we'd leave the client with a false "ready" state.
+    if (grossGbp == null || grossGbp <= 0) {
+      return {
+        ok: false,
+        error:
+          "We couldn't record income without a confirmed total gross figure. Please answer the gross question in the chat.",
+      };
+    }
+
+    // Replace any previous interview-origin row(s) so re-running is
+    // idempotent. The LIKE pattern mirrors the bank-aggregator's own
+    // delete-by-prefix approach so manual/bank rows stay untouched.
+    await admin
+      .from("pch_income_lines")
+      .delete()
+      .eq("case_id", caseId)
+      .like("source", INTERVIEW_SOURCE_PREFIX + "%");
+
+    const sourceLabel = platforms.length > 0
+      ? INTERVIEW_SOURCE_PREFIX + platforms.slice(0, 240)
+      : INTERVIEW_SOURCE_PREFIX + "Driver-reported income";
+
+    const { error } = await admin.from("pch_income_lines").insert({
+      case_id: caseId,
+      source: sourceLabel,
+      line_type: "Fares",
+      sort_order: 0,
+      gross_takings_pence: Math.round(grossGbp * 100),
+      platform_fee_pence: feesGbp != null && feesGbp >= 0 ? Math.round(feesGbp * 100) : 0,
+      on_trip_miles: miles != null && miles >= 0 ? Math.round(miles) : 0,
+      dead_miles: 0,
+    });
+    if (error) return { ok: false, error: error.message };
+
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not save your income." };
+  }
+}
+
+// -------------------------------------------------------------------
 // (D) FILING_DETAILS, item 31
 // -------------------------------------------------------------------
 
