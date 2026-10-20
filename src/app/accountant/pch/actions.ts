@@ -2,7 +2,6 @@
 
 // Accountant surface for PCH automated cases.
 //
-// Phase 2a: 33-check marker + dual sign-off gate (both still here).
 // Phase 2b (this file): applyPchOverrideAction + revertPchOverrideAction
 // let the accountant edit any engine-calculated figure listed in
 // src/lib/pch/overrides.ts. The pch_overrides table is strictly
@@ -10,10 +9,13 @@
 // reason = 'Revert'. Current state is derived by taking the newest
 // row per field_path.
 //
-// Dual sign-off gate for "ready to file":
-//   - all 33 checks must be Done or N/A
-//   - client approval record must exist (pch_cases.client_approval_at)
-// enforced by the status-transition action below.
+// The 33-point review checklist that used to gate this transition has
+// been removed from the accountant workflow: accountants no longer work
+// a checklist, so "ready to file" now rests on the evidence gate below
+// plus the client's own approval signature. The pch_check_status /
+// pch_check_items tables and the client-facing interview flows that
+// still write into pch_check_status are untouched; this file simply
+// stops requiring them to be resolved.
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -57,65 +59,17 @@ async function requireAccountantPchCase(caseId: string) {
   return { me, caseRow: data };
 }
 
-export async function setPchCheckStatusAction(
-  caseId: string,
-  itemNumber: number,
-  status: "Done" | "N/A" | "Not started",
-  note?: string,
-): Promise<ActionResult> {
-  const { me } = await requireAccountantPchCase(caseId);
-  const admin = createAdminClient();
-  const { error } = await admin.from("pch_check_status").upsert(
-    {
-      case_id: caseId, item_number: itemNumber, status,
-      note: note ?? null,
-      updated_at: new Date().toISOString(), updated_by: me.id,
-    },
-    { onConflict: "case_id,item_number" },
-  );
-  if (error) return { ok: false, error: error.message };
-  revalidatePath(`/accountant/cases/${caseId}/pch`);
-  return { ok: true };
-}
-
 // -------------------------------------------------------------------
-// Dual sign-off gate: advance a PCH case to "client_approval" (which
-// is the trigger for the client-side "Approve and file" step). Server-
-// side guard: all 33 checks Done/N/A AND the client has already typed
-// their name against the current snapshot.
-//
-// We check the client approval BEFORE this transition only when the
-// accountant is pushing the case forward manually; in normal flow the
-// client approval is recorded first (phase 2a design), then the
-// accountant marks all checks, then this action runs.
+// Advance a PCH case to "client_approval" (which is the trigger for
+// the client-side "Approve and file" step). Server-side guard: every
+// positive-amount expense line has an evidence method recorded, and
+// the case is at a status this transition is valid from.
 // -------------------------------------------------------------------
 export async function requestClientFilingAction(
   caseId: string,
 ): Promise<ActionResult> {
   const { caseRow } = await requireAccountantPchCase(caseId);
   const admin = createAdminClient();
-
-  // Gate 1: all 33 checks resolved.
-  const { count: notDone } = await admin
-    .from("pch_check_status")
-    .select("item_number", { count: "exact", head: true })
-    .eq("case_id", caseId)
-    .not("status", "in", "(Done,N/A)");
-  const { count: totalItems } = await admin
-    .from("pch_check_items")
-    .select("item_number", { count: "exact", head: true });
-  // notDone counts rows explicitly inserted but not resolved. Items the
-  // accountant hasn't touched at all aren't in pch_check_status, so the
-  // true "unresolved" count is (totalItems - resolved).
-  const { count: resolved } = await admin
-    .from("pch_check_status")
-    .select("item_number", { count: "exact", head: true })
-    .eq("case_id", caseId)
-    .in("status", ["Done", "N/A"]);
-  if ((resolved ?? 0) < (totalItems ?? 33)) {
-    return { ok: false, error:
-      `Checklist incomplete: ${resolved ?? 0} of ${totalItems ?? 33} items resolved. Mark every item Done or N/A first.` };
-  }
 
   // Evidence gate: every positive-amount expense must have a method
   // code (receipts, bank statement, estimate E2, etc.) before filing.
@@ -136,12 +90,9 @@ export async function requestClientFilingAction(
   if (!evidenceCheck.ok) {
     return { ok: false, error: evidenceCheck.blockers.join(" ") };
   }
-  // Silence the lint for the unused "notDone" count, kept for future
-  // reporting on which rows the client objected to.
-  void notDone;
 
-  // Gate 2: the current status must be in_review or prepared. We can't
-  // request filing from draft/submitted.
+  // Status gate: the current status must be in_review or prepared. We
+  // can't request filing from draft/submitted.
   if (caseRow.status !== "in_review" && caseRow.status !== "prepared") {
     return { ok: false, error:
       `Case status is ${caseRow.status}; must be in_review or prepared to request filing.` };

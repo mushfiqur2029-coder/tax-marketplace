@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
-  setPchCheckStatusAction,
   requestClientFilingAction,
   applyPchOverrideAction,
   revertPchOverrideAction,
@@ -26,7 +25,6 @@ import {
 } from "@/lib/pch/sa302";
 import type { Anomaly } from "@/lib/pch/prior-year-anomalies";
 import type { ChecklistPrefill } from "@/lib/pch/checklist-prefills";
-import { classifyChecklistItem, type ChecklistKind } from "@/lib/pch/checklist-classification";
 import {
   SA103S_UI,
   SA103S_SUBGROUP_ORDER,
@@ -102,45 +100,17 @@ export function PchAccountantView(props: {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
 
-  const statusByItem = new Map(props.checkStatus.map((s) => [s.item_number, s]));
-  const prefillByItem = new Map(props.checkPrefills.map((p) => [p.item, p]));
-
-  // "Effective" status folds in the AI prefill: an auto item with
-  // verdict=pass counts as resolved even if the accountant hasn't
-  // clicked Confirm, so the readiness band and the collapsed-row
-  // treatment both read from one source. No DB write; this derivation
-  // is pure. An override by the accountant (manual Done / N/A / Reset)
-  // still wins because statusByItem is checked first.
-  function effectiveStatus(itemNumber: number): "Done" | "N/A" | "Not started" {
-    const stored = statusByItem.get(itemNumber);
-    if (stored && stored.status !== "Not started") return stored.status;
-    const prefill = prefillByItem.get(itemNumber);
-    const classification = classifyChecklistItem(itemNumber);
-    if (
-      classification.kind === "auto" &&
-      prefill?.verdict === "pass"
-    ) {
-      return "Done";
-    }
-    return stored?.status ?? "Not started";
-  }
-
-  const resolvedCount = props.checksMeta.filter((item) => {
-    const s = effectiveStatus(item.item_number);
-    return s === "Done" || s === "N/A";
-  }).length;
-  const total = props.checksMeta.length;
-  const allResolved = resolvedCount >= total;
-
-  // Second advance-to-approval gate: every positive-amount expense line
-  // must carry an evidence method. Mirrors the server-side canRequestFiling
+  // Advance-to-approval gate: every positive-amount expense line must
+  // carry an evidence method. Mirrors the server-side canRequestFiling
   // check so the accountant sees the blocker count up-front, not just as
-  // an error after clicking the big button.
+  // an error after clicking the big button. The 33-point checklist used
+  // to be a second gate here; accountants no longer work a checklist, so
+  // this is the only gate left.
   const missingEvidenceCount = props.expenseLines.filter(
     (l) => l.amount_paid_pence > 0 && !(l.evidence && l.evidence.trim().length > 0),
   ).length;
   const allEvidenced = missingEvidenceCount === 0;
-  const canAdvance = allResolved && allEvidenced;
+  const canAdvance = allEvidenced;
 
   const requestFiling = () => start(async () => {
     const r = await requestClientFilingAction(props.caseId);
@@ -217,12 +187,6 @@ export function PchAccountantView(props: {
       <div className="rounded-lg border border-slate-200 bg-white p-4 mb-6">
         <h2 className="text-sm font-bold mb-3">Ready to hand back to client?</h2>
         <ul className="text-sm space-y-1">
-          <li>
-            <span className={allResolved ? "text-emerald-700" : "text-amber-700"}>
-              {allResolved ? "✓" : "•"}
-            </span>{" "}
-            Accountant checks: <strong>{resolvedCount} of {total}</strong> resolved
-          </li>
           <li>
             <span className={allEvidenced ? "text-emerald-700" : "text-amber-700"}>
               {allEvidenced ? "✓" : "•"}
@@ -301,16 +265,6 @@ export function PchAccountantView(props: {
           />
         </>
       )}
-
-      <ChecklistSection
-        caseId={props.caseId}
-        checksMeta={props.checksMeta}
-        statusByItem={statusByItem}
-        prefillByItem={prefillByItem}
-        effectiveStatus={effectiveStatus}
-        resolvedCount={resolvedCount}
-        total={total}
-      />
 
       <div className="mt-10">
         <FinalSignoffPanel
@@ -913,414 +867,5 @@ function GroupRows({
         );
       })}
     </>
-  );
-}
-
-// -------------------- 33-check section --------------------
-//
-// Default view hides noise: items that are resolved (status Done or
-// N/A, including the "auto + verdict=pass" promotion done client-side
-// in effectiveStatus) render as a quiet one-liner. Items that need
-// attention (warn verdicts, interview-waiting, manual-not-started)
-// render as the full card. Each resolved one-liner has a tiny caret
-// to expand into the full card if the accountant wants to override.
-//
-// Zero server writes on page load; the one-liner derivation uses the
-// same effectiveStatus the readiness band uses, so the two never
-// drift.
-
-function ChecklistSection({
-  caseId, checksMeta, statusByItem, prefillByItem, effectiveStatus,
-  resolvedCount, total,
-}: {
-  caseId: string;
-  checksMeta: CheckItem[];
-  statusByItem: Map<number, CheckStatus>;
-  prefillByItem: Map<number, ChecklistPrefill>;
-  effectiveStatus: (n: number) => "Done" | "N/A" | "Not started";
-  resolvedCount: number;
-  total: number;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-
-  const toggleExpanded = (n: number) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(n)) next.delete(n); else next.add(n);
-      return next;
-    });
-  };
-
-  const needsAttention = (item: CheckItem): boolean => {
-    const s = effectiveStatus(item.item_number);
-    if (s === "Done" || s === "N/A") return false;
-    const prefill = prefillByItem.get(item.item_number);
-    // Auto + warn is the primary "look at me" case.
-    if (prefill && prefill.verdict === "warn") return true;
-    // Auto + nothing_to_show on a Not started row counts as resolved
-    // (nothing to flag). Treat as low-noise unless the accountant
-    // explicitly expands.
-    if (prefill && prefill.verdict === "nothing_to_show") return false;
-    // Interview Not started + manual Not started both need attention.
-    return true;
-  };
-
-  const attentionRows = checksMeta.filter(needsAttention);
-  const quietRows = checksMeta.filter((item) => !needsAttention(item));
-
-  const renderRow = (item: CheckItem) => {
-    const eff = effectiveStatus(item.item_number);
-    const isResolved = eff === "Done" || eff === "N/A";
-    const prefill = prefillByItem.get(item.item_number) ?? null;
-    const status = statusByItem.get(item.item_number);
-    const open = expanded.has(item.item_number);
-    if (isResolved && !open) {
-      return (
-        <CheckRowCollapsed
-          key={item.item_number}
-          item={item}
-          effectiveStatus={eff}
-          prefill={prefill}
-          stored={status}
-          onExpand={() => toggleExpanded(item.item_number)}
-        />
-      );
-    }
-    return (
-      <CheckRow
-        key={item.item_number}
-        caseId={caseId}
-        item={item}
-        status={status}
-        prefill={prefill}
-      />
-    );
-  };
-
-  return (
-    <>
-      <div className="mt-10 mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-bold">
-          33-point review checklist{" "}
-          <span className="text-sm font-normal text-slate-500">
-            ({resolvedCount} of {total} resolved)
-          </span>
-        </h2>
-        <button
-          type="button"
-          onClick={() => setShowAll((s) => !s)}
-          className="text-xs text-slate-500 underline underline-offset-2 hover:text-slate-700"
-        >
-          {showAll
-            ? `Hide ${quietRows.length} resolved`
-            : `Show all ${total}`}
-        </button>
-      </div>
-      {attentionRows.length === 0 && !showAll ? (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-          Nothing on the checklist needs your attention right now. All {total}{" "}
-          items are resolved. Click Show all to review or override anything.
-        </div>
-      ) : null}
-      {attentionRows.length > 0 ? (
-        <div className="space-y-2">{attentionRows.map(renderRow)}</div>
-      ) : null}
-      {showAll && quietRows.length > 0 ? (
-        <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Already resolved
-          </p>
-          {quietRows.map(renderRow)}
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-// Collapsed one-liner for resolved checklist rows. Shows the item
-// number + area + status chip + first bit of the evidence or note so
-// the accountant can scan down the resolved list for anything that
-// looks suspicious. Click anywhere on the row to expand into the full
-// CheckRow for editing.
-function CheckRowCollapsed({
-  item, effectiveStatus, prefill, stored, onExpand,
-}: {
-  item: CheckItem;
-  effectiveStatus: "Done" | "N/A" | "Not started";
-  prefill: ChecklistPrefill | null;
-  stored: CheckStatus | undefined;
-  onExpand: () => void;
-}) {
-  const chip = effectiveStatus === "Done"
-    ? "bg-emerald-100 text-emerald-800"
-    : "bg-slate-100 text-slate-600";
-  const evidence = stored?.note || prefill?.evidence || item.description;
-  return (
-    <button
-      type="button"
-      onClick={onExpand}
-      className="flex w-full items-center gap-3 rounded border border-slate-200 bg-white px-3 py-1.5 text-left hover:border-slate-300 hover:bg-slate-50"
-    >
-      <span className={"shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold " + chip}>
-        {effectiveStatus === "Done" ? "Done" : "N/A"}
-      </span>
-      <span className="shrink-0 font-mono text-[11px] text-slate-500">
-        #{item.item_number}
-      </span>
-      <span className="shrink-0 text-[11px] uppercase tracking-wide text-slate-500">
-        {item.area}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
-        {evidence}
-      </span>
-      <span className="shrink-0 text-xs text-slate-400">Edit</span>
-    </button>
-  );
-}
-
-// -------------------- 33-check row (Phase 7 Slice 7.4 kind-aware) --------------------
-//
-// Row shape depends on the item's classification kind (auto / interview
-// / manual). Original Done/N/A/Reset buttons stay on every row as an
-// escape hatch so an accountant is never blocked by a bad prefill or a
-// missing interview answer.
-
-function CheckRow({
-  caseId, item, status, prefill,
-}: {
-  caseId: string;
-  item: CheckItem;
-  status: CheckStatus | undefined;
-  prefill: ChecklistPrefill | null;
-}) {
-  const router = useRouter();
-  const [currentStatus, setCurrentStatus] = useState<"Done" | "N/A" | "Not started">(
-    status?.status ?? "Not started"
-  );
-  const [note, setNote] = useState(status?.note ?? "");
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const classification = classifyChecklistItem(item.item_number);
-  const kind: ChecklistKind = classification.kind;
-
-  // Shared status write. Optional noteOverride lets:
-  //   - auto-row Confirm button stamp the AI's evidence string into
-  //     pch_check_status.note so the audit trail carries what the AI
-  //     said at confirm time
-  //   - interview-row Re-open button wipe the client's stored answer by
-  //     passing "" (empty string), so the "Waiting on client" strip
-  //     renders cleanly on the next load
-  const save = (
-    nextStatus?: "Done" | "N/A" | "Not started",
-    noteOverride?: string,
-  ) => start(async () => {
-    const s = nextStatus ?? currentStatus;
-    setCurrentStatus(s);
-    // Empty-string override means "wipe the note"; undefined means
-    // "keep whatever's in the local note field".
-    const effectiveNote = noteOverride !== undefined
-      ? (noteOverride.length === 0 ? undefined : noteOverride)
-      : (note || undefined);
-    if (noteOverride !== undefined) setNote(noteOverride);
-    const r = await setPchCheckStatusAction(caseId, item.item_number, s, effectiveNote);
-    if (!r.ok) setMsg(r.error);
-    else { setMsg(null); router.refresh(); }
-  });
-
-  const badge = currentStatus === "Done"
-    ? "bg-emerald-100 text-emerald-800"
-    : currentStatus === "N/A"
-      ? "bg-slate-100 text-slate-600"
-      : "bg-amber-100 text-amber-800";
-
-  return (
-    <div className="rounded border border-slate-200 bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="font-mono">#{item.item_number}</span>
-            <span className="uppercase tracking-wide">{item.area}</span>
-            <KindBadge kind={kind} />
-          </div>
-          <div className="text-sm mt-1">{item.description}</div>
-        </div>
-        <span className={"text-xs font-semibold rounded px-2 py-0.5 shrink-0 " + badge}>
-          {currentStatus}
-        </span>
-      </div>
-
-      {kind === "auto" ? (
-        <AutoCheckSurface
-          prefill={prefill}
-          pending={pending}
-          currentStatus={currentStatus}
-          onConfirm={(evidence) => save("Done", evidence)}
-        />
-      ) : null}
-
-      {kind === "interview" ? (
-        <InterviewCheckSurface
-          pending={pending}
-          currentStatus={currentStatus}
-          clientAnswer={status?.note ?? null}
-          onReopen={() => save("Not started", "")}
-        />
-      ) : null}
-
-      <div className="mt-2 flex items-center gap-2 text-xs">
-        <button type="button" onClick={() => save("Done")} disabled={pending}
-          className="rounded border border-slate-300 bg-white px-2 py-1 hover:bg-emerald-50 disabled:opacity-50">
-          Done
-        </button>
-        <button type="button" onClick={() => save("N/A")} disabled={pending}
-          className="rounded border border-slate-300 bg-white px-2 py-1 hover:bg-slate-100 disabled:opacity-50">
-          N/A
-        </button>
-        <button type="button" onClick={() => save("Not started")} disabled={pending}
-          className="rounded border border-slate-300 bg-white px-2 py-1 hover:bg-amber-50 disabled:opacity-50">
-          Reset
-        </button>
-        <input className="flex-1 rounded border border-slate-300 px-2 py-1"
-          placeholder="Note (optional)" value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onBlur={() => save()} />
-        {msg && <span className="text-red-600">{msg}</span>}
-      </div>
-    </div>
-  );
-}
-
-// Small chip rendered inside the row header so the accountant can see
-// at a glance whether a row is AI-prefilled, waiting on a client
-// interview, or genuine manual judgement.
-function KindBadge({ kind }: { kind: ChecklistKind }) {
-  if (kind === "auto") {
-    return (
-      <span className="inline-block rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-800">
-        AI prefilled
-      </span>
-    );
-  }
-  if (kind === "interview") {
-    return (
-      <span className="inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-800">
-        From client
-      </span>
-    );
-  }
-  return (
-    <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-      Manual review
-    </span>
-  );
-}
-
-// Auto-row surface. Three visual states driven by the prefill:
-//   - prefill present with verdict pass or warn:
-//       emerald/amber chip + evidence line + one-click Confirm
-//   - prefill verdict nothing_to_show:
-//       muted "AI had nothing to flag" line + Confirm still available
-//   - prefill null (derivation returned no entry):
-//       amber "AI could not derive this, review manually" fallback;
-//       the manual Done/N/A buttons below handle it
-function AutoCheckSurface({
-  prefill, pending, currentStatus, onConfirm,
-}: {
-  prefill: ChecklistPrefill | null;
-  pending: boolean;
-  currentStatus: "Done" | "N/A" | "Not started";
-  onConfirm: (evidence: string) => void;
-}) {
-  if (!prefill) {
-    return (
-      <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-        AI could not derive this one, review manually using the buttons below.
-      </div>
-    );
-  }
-  const toneClass =
-    prefill.verdict === "pass" ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-    : prefill.verdict === "warn" ? "border-amber-200 bg-amber-50 text-amber-900"
-    : "border-slate-200 bg-slate-50 text-slate-700";
-  const verdictLabel =
-    prefill.verdict === "pass" ? "Pass"
-    : prefill.verdict === "warn" ? "Review"
-    : "Nothing to flag";
-  const alreadyDone = currentStatus === "Done";
-  return (
-    <div className={"mt-2 rounded border px-2 py-1.5 text-xs " + toneClass}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <span className="font-semibold mr-1">AI: {verdictLabel}.</span>
-          <span>{prefill.evidence}</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => onConfirm(prefill.evidence)}
-          disabled={pending || alreadyDone}
-          className="shrink-0 rounded bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white disabled:opacity-50"
-        >
-          {alreadyDone ? "Confirmed" : "Confirm"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Interview-row surface. Two states driven by (status, note):
-//
-//   status=Done + note present  -> client has answered via the AI
-//     interview. Shows "Client answered: {note}" + a Re-open button
-//     that resets to Not started AND wipes the note (so a re-run of
-//     the interview starts fresh rather than seeing stale text).
-//
-//   status=Done + no note       -> accountant marked Done manually
-//     without a client interview answer. Render nothing; the manual
-//     Done chip in the header already conveys state.
-//
-//   status=Not started          -> standard "waiting on client" strip.
-//
-//   status=N/A                  -> render nothing.
-//
-// 7.6b wires the actual interview flows into the client workspace; this
-// surface only shows the accountant side of the handoff.
-function InterviewCheckSurface({
-  pending, currentStatus, clientAnswer, onReopen,
-}: {
-  pending: boolean;
-  currentStatus: "Done" | "N/A" | "Not started";
-  clientAnswer: string | null;
-  onReopen: () => void;
-}) {
-  if (currentStatus === "Done") {
-    if (!clientAnswer || clientAnswer.trim().length === 0) return null;
-    return (
-      <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs text-indigo-900">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <span className="font-semibold mr-1">Client answered:</span>
-            <span className="whitespace-pre-wrap">{clientAnswer}</span>
-          </div>
-          <button
-            type="button"
-            onClick={onReopen}
-            disabled={pending}
-            className="shrink-0 rounded border border-indigo-300 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
-          >
-            Re-open
-          </button>
-        </div>
-      </div>
-    );
-  }
-  if (currentStatus === "N/A") return null;
-  return (
-    <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs text-indigo-900">
-      Waiting on the client to answer. The matching AI interview is on
-      the client workspace; once they commit, this row flips to Done
-      with their answer below.
-    </div>
   );
 }
