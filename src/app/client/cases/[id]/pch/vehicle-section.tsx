@@ -18,8 +18,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { VehicleInterviewPanel } from "./vehicle-interview-panel";
 import { AiInterviewPanel } from "@/components/case/ai-interview-panel";
+import { isCaEligibleStatus } from "@/lib/pch/ai-interview-slots";
 import {
-  isCaEligibleStatus,
   markNoVehicleDisposalAction,
   startPchDisposalInterviewAction,
   advancePchDisposalInterviewAction,

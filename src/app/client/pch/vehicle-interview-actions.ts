@@ -310,8 +310,6 @@ export async function commitPchVehicleInterviewAction(
 // case.
 // -------------------------------------------------------------------
 
-const CA_ELIGIBLE_STATUSES = new Set(["Owned outright", "Hire purchase", "PCP", "Loan"]);
-
 function buildDisposalOpener(current: VehicleRow & { disposed?: boolean | null; disposal_proceeds_pence?: number | null; disposal_date?: string | null } | null): string | undefined {
   if (!current) return undefined;
   if (!current.disposed) return undefined;
@@ -473,12 +471,6 @@ export async function commitPchDisposalInterviewAction(
       error: e instanceof Error ? e.message : "Could not save the disposal answer.",
     };
   }
-}
-
-// Exported so the UI can gate the disposal entry point on exactly the
-// same statuses the engine treats as CA-eligible.
-export function isCaEligibleStatus(status: string | null | undefined): boolean {
-  return status != null && CA_ELIGIBLE_STATUSES.has(status.trim());
 }
 
 // One-tap "No, I kept the car" path. Semantically identical to running
