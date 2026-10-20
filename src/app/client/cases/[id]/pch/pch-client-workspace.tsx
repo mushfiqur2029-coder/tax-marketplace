@@ -888,8 +888,18 @@ function DocRow({
           <div className="font-medium text-sm">
             <span className="font-mono text-xs text-slate-500 mr-2">{slot.code}</span>
             {slot.display_name}
-            {isRequired && <span className="ml-2 text-xs text-red-600">(required)</span>}
-            {!isRequired && <span className="ml-2 text-xs text-slate-500">({slot.required_rule})</span>}
+            {/* Phase 8 Slice 8.4: PCH-14 is required-in-outcome (we must
+                have income lines before Submit) but the AI chat below is
+                an equally valid capture path, so the badge softens from
+                red "(required)" to amber "(or capture by chat)". The
+                canRunDraft gate is unchanged; this is UX copy only. */}
+            {isRequired && slot.code === "PCH-14" ? (
+              <span className="ml-2 text-xs text-amber-700">(required, or capture by chat)</span>
+            ) : isRequired ? (
+              <span className="ml-2 text-xs text-red-600">(required)</span>
+            ) : (
+              <span className="ml-2 text-xs text-slate-500">({slot.required_rule})</span>
+            )}
           </div>
           {slot.why_we_need_it && (
             <div className="text-xs text-slate-500 mt-1">{slot.why_we_need_it}</div>
@@ -899,6 +909,13 @@ function DocRow({
             {slot.allow_multiple ? " · multiple files OK" : null}
             {canEdit ? " · drag and drop here too" : null}
           </div>
+          {slot.code === "PCH-14" && uploaded.length === 0 && canEdit ? (
+            <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 p-2 text-xs text-indigo-900">
+              No bank statement to hand? Scroll down to section 3 and
+              capture your income by chat instead. The chat and the upload
+              both end up in the same place; use whichever is easier.
+            </div>
+          ) : null}
         </div>
         <div className="text-right text-xs">
           <span className={
