@@ -143,7 +143,7 @@ export default async function AdminProfileChangesPage() {
                   <div className="text-xs text-slate">
                     {c.role} · reviewed{" "}
                     {c.reviewed_at ? formatDateTime(c.reviewed_at) : "."}
-                    {c.review_note ? <> · "{c.review_note}"</> : null}
+                    {c.review_note ? <> · &ldquo;{c.review_note}&rdquo;</> : null}
                   </div>
                 </div>
                 <span

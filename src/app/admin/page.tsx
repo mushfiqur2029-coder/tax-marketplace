@@ -69,6 +69,7 @@ export default async function AdminDashboard({
     { count: clientCount },
     { count: accountantCount },
     { data: accountantProfiles },
+    { data: assignedCaseLoad },
   ] = await Promise.all([
     admin
       .from("cases")
@@ -82,6 +83,15 @@ export default async function AdminDashboard({
     admin
       .from("accountant_profiles")
       .select("user_id, name, avatar_path, approval_status"),
+    // Narrow, uncapped query for the per-accountant workload stat below.
+    // The dashboard's case list is capped at DASHBOARD_CASE_LIMIT, so
+    // deriving workload counts from it undercounts accountants with more
+    // open cases than fit on the first page. This selects only the two
+    // columns needed and covers every assigned case.
+    admin
+      .from("cases")
+      .select("accountant_id, status")
+      .not("accountant_id", "is", null),
   ]);
 
   const allCases = cases ?? [];
@@ -214,9 +224,10 @@ export default async function AdminDashboard({
     (accountantProfiles ?? []).map((p) => [p.user_id, p.avatar_path]),
   );
 
-  // Case count per accountant.
+  // Case count per accountant, across every assigned case (not just the
+  // capped dashboard list - see assignedCaseLoad query above).
   const perAccountant = new Map<string, { total: number; open: number }>();
-  for (const c of cases ?? []) {
+  for (const c of assignedCaseLoad ?? []) {
     if (!c.accountant_id) continue;
     const entry = perAccountant.get(c.accountant_id) ?? { total: 0, open: 0 };
     entry.total += 1;

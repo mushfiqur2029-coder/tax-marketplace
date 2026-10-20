@@ -77,7 +77,7 @@ export default async function ClientPaymentsPage() {
                       >
                         {seg?.title ?? c.segment}
                       </Link>
-                      <span className="text-xs text-slate">.</span>
+                      <span className="text-xs text-slate">&middot;</span>
                       <span className="text-xs text-slate">
                         {tier?.title ?? c.tier}
                       </span>
@@ -100,14 +100,14 @@ export default async function ClientPaymentsPage() {
                     {c.is_urgent && (c.urgent_fee_pence ?? 0) > 0 ? (
                       <>
                         <div className="text-[11px] text-slate">
-                          Plan £{effectiveFeePence(c, tier ?? null) / 100} + Urgent £
-                          {(c.urgent_fee_pence ?? 0) / 100}
+                          Plan £{(effectiveFeePence(c, tier ?? null) / 100).toFixed(2)} + Urgent £
+                          {((c.urgent_fee_pence ?? 0) / 100).toFixed(2)}
                         </div>
                         <div
                           className="text-xl font-bold text-ink"
                           style={{ fontFamily: "var(--font-heading)" }}
                         >
-                          £{(effectiveFeePence(c, tier ?? null) + (c.urgent_fee_pence ?? 0)) / 100}
+                          £{((effectiveFeePence(c, tier ?? null) + (c.urgent_fee_pence ?? 0)) / 100).toFixed(2)}
                         </div>
                       </>
                     ) : (
@@ -115,7 +115,7 @@ export default async function ClientPaymentsPage() {
                         className="text-xl font-bold text-ink"
                         style={{ fontFamily: "var(--font-heading)" }}
                       >
-                        £{effectiveFeePence(c, tier ?? null) / 100}
+                        £{(effectiveFeePence(c, tier ?? null) / 100).toFixed(2)}
                       </div>
                     )}
                   </div>

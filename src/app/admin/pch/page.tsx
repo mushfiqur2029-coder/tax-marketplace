@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { StatusPill } from "@/components/case/status-pill";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 
 // Admin index of every PCH automated case. One row per case with the
@@ -140,9 +141,7 @@ export default async function AdminPchListPage() {
                     </Link>
                   </td>
                   <td className="py-2 px-3">
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-mono">
-                      {r.status}
-                    </span>
+                    <StatusPill status={r.status} />
                   </td>
                   <td className="py-2 px-3 text-right text-slate-700 tabular-nums">
                     {daysBetween(r.status_since, today)}d
