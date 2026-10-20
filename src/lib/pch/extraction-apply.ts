@@ -4,9 +4,10 @@
 // right pch_cases / pch_income_lines / pch_expense_lines / pch_vehicle
 // row. New slot? Add an entry here; no UI code change required.
 //
-// NEVER WRITES AUTOMATICALLY. applyPchExtractionAction runs only when
-// the client clicks "Apply confirmed fields" in the review UI, and
-// only writes fields whose per-field status is 'accepted' or 'edited'.
+// applyPchExtractionAction runs on every Confirm/Edit click in the
+// review UI (and is idempotent, so re-running is safe). It only writes
+// fields whose per-field status is 'accepted' or 'edited'; rejected or
+// still-proposed fields are skipped.
 
 export type ApplyTarget =
   | { table: "pch_cases"; column: string; transform?: ValueTransform }

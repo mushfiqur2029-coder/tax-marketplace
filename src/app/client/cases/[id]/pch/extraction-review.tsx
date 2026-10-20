@@ -6,15 +6,14 @@ import {
   acceptPchExtractionFieldAction,
   editPchExtractionFieldAction,
   rejectPchExtractionFieldAction,
-  applyPchExtractionAction,
 } from "@/app/client/pch/extraction-actions";
 
 // Per-document review panel. Lives next to the Upload button in the
 // client workspace. Renders every field the AI extracted, with its
 // confidence badge, its explanation note, and three buttons (Confirm,
-// Edit, Skip). Nothing is written to the intake tables until the
-// client clicks "Apply confirmed fields" at the bottom; even then
-// only accepted + edited fields flow through.
+// Edit, Skip). Each Confirm/Edit auto-writes the value through to the
+// intake tables, so the identity + totals sections update immediately.
+// Skip leaves the field for manual entry or re-upload.
 
 export type ExtractionFieldPayload = {
   value: string | number | null;
@@ -51,11 +50,6 @@ export function ExtractionReview({ ext, canEdit }: {
   ext: ExtractionReviewPayload;
   canEdit: boolean;
 }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [err, setErr] = useState<string | null>(null);
-  const [applied, setApplied] = useState(false);
-
   if (ext.status === "pending") {
     return (
       <div className="mt-3 rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800">
@@ -75,10 +69,12 @@ export function ExtractionReview({ ext, canEdit }: {
 
   const low = ext.overallConfidence === "low" || ext.overallConfidence === "missing";
   const fieldKeys = Object.keys(ext.fields);
-  const toApplyCount = fieldKeys.filter((k) => {
+  const targetableKeys = fieldKeys.filter((k) => ext.targetable[k]);
+  const savedCount = targetableKeys.filter((k) => {
     const s = ext.fieldStates[k];
-    return (s?.status === "accepted" || s?.status === "edited") && ext.targetable[k];
+    return s?.status === "accepted" || s?.status === "edited";
   }).length;
+  const pendingCount = targetableKeys.length - savedCount;
 
   const fromInterview = ext.source === "ai_interview";
   const headline = fromInterview
@@ -125,23 +121,13 @@ export function ExtractionReview({ ext, canEdit }: {
         ))}
       </ul>
 
-      {canEdit ? (
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            type="button"
-            disabled={pending || toApplyCount === 0}
-            onClick={() => start(async () => {
-              setErr(null); setApplied(false);
-              const r = await applyPchExtractionAction(ext.id);
-              if (!r.ok) setErr(r.error);
-              else { setApplied(true); router.refresh(); }
-            })}
-            className="rounded bg-slate-900 px-3 py-1.5 text-white text-xs font-medium disabled:opacity-50"
-          >
-            {pending ? "Applying..." : `Apply ${toApplyCount} confirmed field${toApplyCount === 1 ? "" : "s"} to your intake`}
-          </button>
-          {applied ? <span className="text-emerald-700">Applied.</span> : null}
-          {err ? <span className="text-rose-700">{err}</span> : null}
+      {canEdit && targetableKeys.length > 0 ? (
+        <div className="mt-3 text-slate-600">
+          {savedCount === 0
+            ? `Confirm each field above to save it to your intake. ${pendingCount} field${pendingCount === 1 ? "" : "s"} to review.`
+            : pendingCount === 0
+              ? `All ${savedCount} field${savedCount === 1 ? "" : "s"} saved to your intake.`
+              : `${savedCount} of ${targetableKeys.length} fields saved. ${pendingCount} still to review.`}
         </div>
       ) : null}
     </div>

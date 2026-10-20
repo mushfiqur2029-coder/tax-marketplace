@@ -4,13 +4,15 @@
 //
 // Each uploaded PCH doc gets a pch_doc_extractions row (populated by
 // slice D). The client reviews each extracted field and marks it
-// 'accepted', 'edited' (with an override value), or 'rejected'. When
-// they click Apply, only accepted + edited fields are written to the
-// intake tables, via the mapping registry in extraction-apply.ts.
+// 'accepted', 'edited' (with an override value), or 'rejected'. The
+// mapping registry in extraction-apply.ts turns accepted + edited
+// fields into writes against the intake tables.
 //
-// NEVER AUTO-APPLIED. Every write is driven by an explicit client
-// click. Rejected fields are left as a signal that the doc should be
-// re-uploaded or the value entered manually.
+// Each click of Confirm/Edit auto-applies: it patches the field state
+// then re-runs the apply pass, so the identity + intake tables stay in
+// lockstep with what the client just confirmed. Rejected fields are
+// left as a signal that the doc should be re-uploaded or the value
+// entered manually; nothing is written for them.
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
@@ -84,7 +86,13 @@ export async function acceptPchExtractionFieldAction(
   extractionId: string,
   fieldKey: string,
 ): Promise<ActionResult> {
-  return patchFieldState(extractionId, fieldKey, { status: "accepted", overrideValue: undefined });
+  const r = await patchFieldState(extractionId, fieldKey, { status: "accepted", overrideValue: undefined });
+  if (!r.ok) return r;
+  // Auto-apply so the identity/intake tables reflect the confirmed
+  // value immediately. The apply pass is idempotent (patch head, upsert
+  // vehicle, delete+insert income/expense by source/label) so re-running
+  // it on each confirm is safe.
+  return applyPchExtractionAction(extractionId);
 }
 
 export async function editPchExtractionFieldAction(
@@ -92,7 +100,9 @@ export async function editPchExtractionFieldAction(
   fieldKey: string,
   newValue: string | number | null,
 ): Promise<ActionResult> {
-  return patchFieldState(extractionId, fieldKey, { status: "edited", overrideValue: newValue });
+  const r = await patchFieldState(extractionId, fieldKey, { status: "edited", overrideValue: newValue });
+  if (!r.ok) return r;
+  return applyPchExtractionAction(extractionId);
 }
 
 export async function rejectPchExtractionFieldAction(
