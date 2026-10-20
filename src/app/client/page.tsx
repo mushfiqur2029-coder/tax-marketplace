@@ -33,13 +33,18 @@ export const dynamic = "force-dynamic";
 
 type View = "in_progress" | "completed" | "pending";
 
+// 'filed' is terminal from the client's HMRC perspective (return is
+// in with HMRC, nothing more for them to do), so it sits under the
+// Completed tab here. The accountant portal keeps 'filed' under Live
+// because they still have post-filing admin (mark complete, close
+// out), see src/app/accountant/page.tsx:46.
 const IN_PROGRESS = new Set([
   "submitted",
   "in_review",
   "prepared",
   "client_approval",
-  "filed",
 ]);
+const COMPLETED = new Set(["filed", "complete"]);
 
 export default async function ClientDashboard({
   searchParams,
@@ -144,14 +149,14 @@ export default async function ClientDashboard({
   }
 
   const filtered = all.filter((c) => {
-    if (view === "completed") return c.status === "complete";
+    if (view === "completed") return COMPLETED.has(c.status);
     if (view === "pending") return c.status === "draft";
     return IN_PROGRESS.has(c.status);
   });
 
   const counts: ClientCaseCounts = {
     in_progress: all.filter((c) => IN_PROGRESS.has(c.status)).length,
-    completed: all.filter((c) => c.status === "complete").length,
+    completed: all.filter((c) => COMPLETED.has(c.status)).length,
     pending: all.filter((c) => c.status === "draft").length,
   };
 
