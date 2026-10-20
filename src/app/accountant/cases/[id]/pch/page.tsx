@@ -10,7 +10,7 @@ import {
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
 import { deriveChecklistPrefills, type ChecklistPrefill } from "@/lib/pch/checklist-prefills";
-import { takeCaseAction } from "@/app/accountant/actions";
+import { takeCaseAction, getDocSignedUrlForAccountant } from "@/app/accountant/actions";
 import { TakeCaseForm } from "../take-case-form";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { formatDateTime } from "@/lib/format";
@@ -109,7 +109,7 @@ export default async function PchAccountantPage({
   // in the normal path, so this only trips on direct URL access.
   if (caseRow.accountant_id !== me.id) notFound();
 
-  const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta, addonRows, incomeLines, expenseLines] = await Promise.all([
+  const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta, addonRows, incomeLines, expenseLines, caseDocs] = await Promise.all([
     admin.from("pch_check_items").select("*").order("sort_order"),
     admin.from("pch_check_status").select("*").eq("case_id", id),
     admin.from("pch_cases").select("*").eq("case_id", id).single(),
@@ -140,6 +140,14 @@ export default async function PchAccountantPage({
       .select("id, label, amount_paid_pence, category, sa103s_box, evidence, ai_proposed_json, edited_by, edited_at")
       .eq("case_id", id)
       .order("sort_order", { ascending: true }),
+    // Documents panel: every file the client has uploaded on this case,
+    // regardless of whether its slot is in the mandatory set. Grouped
+    // client-side by slot section (Identity / Earnings / Expenses /
+    // Other) via the slotMeta join above.
+    admin.from("case_documents")
+      .select("id, file_name, file_url, uploaded_at, requirement_key")
+      .eq("case_id", id)
+      .order("uploaded_at", { ascending: false }),
   ]);
 
   const snapshot = (head.data?.engine_snapshot ?? null) as TaxEngineOutput | null;
@@ -192,6 +200,35 @@ export default async function PchAccountantPage({
     updatedAt: (r.updated_at as string | null) ?? null,
   }));
 
+  // Client identity: the four fields the Photo ID extraction confirmed,
+  // plus the HMRC references the client typed, plus contact. Signed-up
+  // user email is the authoritative email (cl_email mirrors it on
+  // first sync). Phone comes from pch_cases.cl_phone which is populated
+  // by syncPchProfileFromUserAction.
+  const { data: clientRow } = await admin
+    .from("users").select("email").eq("id", caseRow.client_id).maybeSingle();
+
+  // Signed URL action for the Documents panel. 10-min TTL via the
+  // getDocSignedUrlForAccountant action which already enforces that
+  // the caller is the assigned accountant.
+  const signDocUrl = async (path: string) => {
+    "use server";
+    return getDocSignedUrlForAccountant(id, path);
+  };
+
+  const documents = (caseDocs.data ?? []).map((d) => ({
+    id: d.id as string,
+    file_name: d.file_name as string,
+    file_url: d.file_url as string,
+    uploaded_at: d.uploaded_at as string,
+    requirement_key: (d.requirement_key as string | null) ?? null,
+  }));
+  const documentSlotMeta = (slotMeta.data ?? []).map((s) => ({
+    code: s.code as string,
+    section: s.section as string,
+    displayName: s.display_name as string,
+  }));
+
   return (
     <PchAccountantView
       caseId={id}
@@ -210,6 +247,19 @@ export default async function PchAccountantPage({
       priorYearAnomalies={anomalies}
       priorYearLabel={priorYearLabel}
       awaitingAccountantSlots={blocked}
+      identity={{
+        name: (head.data?.cl_name as string | null) ?? null,
+        dob: (head.data?.cl_dob as string | null) ?? null,
+        address: (head.data?.cl_address as string | null) ?? null,
+        postcode: (head.data?.cl_postcode as string | null) ?? null,
+        utr: (head.data?.cl_utr as string | null) ?? null,
+        nino: (head.data?.cl_nino as string | null) ?? null,
+        phone: (head.data?.cl_phone as string | null) ?? null,
+        email: (head.data?.cl_email as string | null) ?? clientRow?.email ?? null,
+      }}
+      documents={documents}
+      documentSlotMeta={documentSlotMeta}
+      signDocUrl={signDocUrl}
       addons={(addonRows.data ?? []).map((a) => ({
         id: a.id as string,
         description: a.description as string,

@@ -47,6 +47,13 @@ import {
   type ExpenseLineRow,
 } from "./pl-edit-grid";
 import { FinalSignoffPanel } from "./final-signoff-panel";
+import { IdentityPanel, type IdentityPanelProps } from "./identity-panel";
+import {
+  DocumentsPanel,
+  type DocumentRow,
+  type SlotMeta,
+} from "./documents-panel";
+import type { ActionResult } from "@/lib/action-result";
 
 type CheckItem = { item_number: number; area: string; description: string };
 type CheckStatus = {
@@ -86,6 +93,10 @@ export function PchAccountantView(props: {
   finalPackConfirmedAt: string | null;
   finalPackConfirmedName: string | null;
   messagesPanel: React.ReactNode;
+  identity: IdentityPanelProps;
+  documents: DocumentRow[];
+  documentSlotMeta: SlotMeta[];
+  signDocUrl: (path: string) => Promise<ActionResult<string>>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -150,6 +161,14 @@ export function PchAccountantView(props: {
           </div>
         ) : null}
       </div>
+
+      <IdentityPanel {...props.identity} />
+
+      <DocumentsPanel
+        docs={props.documents}
+        slotMeta={props.documentSlotMeta}
+        signUrl={props.signDocUrl}
+      />
 
       <AwaitingAccountantPanel
         caseId={props.caseId}
