@@ -1,12 +1,25 @@
 import Link from "next/link";
 import { listSupportThreadsAction } from "@/app/support/actions";
-import { PortalPageHeader } from "@/components/portal-page-header";
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 // Phase 7 Slice 7.3: admin support inbox. Lists open threads first
 // (sorted by last_message_at desc), with a tab-like toggle to see
 // resolved threads too via ?status=resolved or ?status=all.
+//
+// Brought into the standard admin chrome (AdminPageHeader + the
+// layout's own main-area frame, card-sl row styling, shared AdminPill)
+// - this page used to be the one admin surface still wrapping itself in
+// a centered <main max-w-4xl> with PortalPageHeader, which made it look
+// like a different app next to the rest of /admin.
 
 export const dynamic = "force-dynamic";
+
+const TABS = [
+  ["open", "Open"],
+  ["resolved", "Resolved"],
+  ["all", "All"],
+] as const;
 
 export default async function AdminSupportPage({
   searchParams,
@@ -22,36 +35,42 @@ export default async function AdminSupportPage({
   const err = result.ok ? null : result.error;
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-8">
-      <PortalPageHeader eyebrow="Admin" title="Support inbox" />
+    <>
+      <AdminPageHeader
+        eyebrow="Admin console"
+        title="Support inbox"
+        description="Direct support threads opened by clients and accountants."
+      />
 
-      <nav className="mb-5 flex flex-wrap gap-2 text-sm">
-        {([
-          ["open", "Open"],
-          ["resolved", "Resolved"],
-          ["all", "All"],
-        ] as const).map(([value, label]) => (
-          <Link
-            key={value}
-            href={value === "open" ? "/admin/support" : `/admin/support?status=${value}`}
-            className={
-              "rounded border px-3 py-1 "
-              + (filter === value
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50")
-            }
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
+      <div className="mb-6 inline-flex rounded-full border border-line bg-paper p-1">
+        {TABS.map(([value, label]) => {
+          const isActive = filter === value;
+          return (
+            <Link
+              key={value}
+              href={value === "open" ? "/admin/support" : `/admin/support?status=${value}`}
+              aria-pressed={isActive}
+              className={
+                "inline-flex items-center rounded-full px-4 py-1.5 text-xs font-semibold transition " +
+                (isActive
+                  ? "bg-navy-deep text-white"
+                  : "text-slate hover:text-navy-deep")
+              }
+            >
+              {label}
+            </Link>
+          );
+        })}
+      </div>
 
       {err ? (
-        <p className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{err}</p>
+        <p className="card-sl border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+          {err}
+        </p>
       ) : null}
 
       {!err && threads.length === 0 ? (
-        <p className="rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-600">
+        <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
           {filter === "open"
             ? "Inbox clear. No open support threads."
             : filter === "resolved"
@@ -61,49 +80,41 @@ export default async function AdminSupportPage({
       ) : null}
 
       {threads.length > 0 ? (
-        <ul className="space-y-2">
+        <ul className="grid gap-3">
           {threads.map((t) => (
             <li key={t.id}>
               <Link
                 href={`/admin/support/${t.id}`}
-                className="block rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400 hover:bg-slate-50"
+                className="card-sl block p-5 transition hover:border-sky/40"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-900">
+                      <span className="text-sm font-semibold text-ink">
                         {t.userLabel}
                       </span>
-                      <span
-                        className={
-                          "rounded-full border px-1.5 py-0.5 text-[11px] font-medium "
-                          + (t.userRole === "accountant"
-                            ? "bg-sky-100 text-sky-800 border-sky-300"
-                            : "bg-slate-100 text-slate-700 border-slate-300")
-                        }
-                      >
-                        {t.userRole}
-                      </span>
-                      <span className="text-[11px] text-slate-500">
+                      <AdminPill
+                        tone={t.userRole === "accountant" ? "blue" : "grey"}
+                        label={t.userRole}
+                      />
+                      <span className="text-[11px] text-slate">
                         on Case <span className="font-mono">{t.caseShortId}</span>
                       </span>
                       {t.status === "resolved" ? (
-                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
-                          Resolved
-                        </span>
+                        <AdminPill tone="green" label="Resolved" />
                       ) : null}
                     </div>
                     {t.lastMessagePreview ? (
-                      <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                      <p className="mt-1 line-clamp-2 text-xs text-slate">
                         {t.lastMessagePreview}
                       </p>
                     ) : (
-                      <p className="mt-1 text-xs italic text-slate-400">
+                      <p className="mt-1 text-xs italic text-slate">
                         No messages yet.
                       </p>
                     )}
                   </div>
-                  <time className="shrink-0 text-[11px] text-slate-500">
+                  <time className="shrink-0 text-[11px] text-slate">
                     {t.lastMessageAt
                       ? new Date(t.lastMessageAt).toLocaleString("en-GB", {
                           month: "short",
@@ -119,6 +130,6 @@ export default async function AdminSupportPage({
           ))}
         </ul>
       ) : null}
-    </main>
+    </>
   );
 }
