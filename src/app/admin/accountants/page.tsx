@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { setAccountantApprovalAction } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminListSection } from "@/components/admin/admin-list-section";
 import { Avatar } from "@/components/avatar";
 import { ApprovalActions } from "./approval-actions";
 
@@ -70,7 +71,7 @@ export default async function AccountantsPage() {
         title="Accountants"
         description="Approve new accountants and drill into any of them for full details."
       />
-      <Section
+      <AdminListSection
         title={`Pending (${groups.pending.length})`}
         emptyLine="No accountants awaiting approval."
       >
@@ -83,9 +84,9 @@ export default async function AccountantsPage() {
             actions={<ApprovalActions accountantId={r.user_id} decide={decide} />}
           />
         ))}
-      </Section>
+      </AdminListSection>
 
-      <Section
+      <AdminListSection
         title={`Approved (${groups.approved.length})`}
         emptyLine="No approved accountants yet."
       >
@@ -97,10 +98,10 @@ export default async function AccountantsPage() {
             caseCount={casesByAcc.get(r.user_id) ?? 0}
           />
         ))}
-      </Section>
+      </AdminListSection>
 
       {groups.rejected.length > 0 ? (
-        <Section
+        <AdminListSection
           title={`Rejected (${groups.rejected.length})`}
           emptyLine=""
         >
@@ -112,39 +113,9 @@ export default async function AccountantsPage() {
               caseCount={casesByAcc.get(r.user_id) ?? 0}
             />
           ))}
-        </Section>
+        </AdminListSection>
       ) : null}
     </>
-  );
-}
-
-function Section({
-  title,
-  emptyLine,
-  children,
-}: {
-  title: string;
-  emptyLine: string;
-  children: React.ReactNode;
-}) {
-  const childArr = Array.isArray(children) ? children : [children];
-  const hasAny = childArr.filter(Boolean).length > 0;
-  return (
-    <section className="mb-10">
-      <h2
-        className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-        style={{ fontFamily: "var(--font-mono)" }}
-      >
-        {title}
-      </h2>
-      {hasAny ? (
-        <ul className="grid gap-3">{childArr}</ul>
-      ) : emptyLine ? (
-        <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-          {emptyLine}
-        </p>
-      ) : null}
-    </section>
   );
 }
 

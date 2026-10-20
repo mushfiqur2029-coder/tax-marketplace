@@ -1,6 +1,8 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminListSection } from "@/components/admin/admin-list-section";
+import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 import { getTier } from "@/lib/service-catalog";
@@ -182,7 +184,7 @@ export default async function AdminEnquiriesPage() {
         title="Service enquiries"
         description="Pre-sales leads from the Limited Company bespoke tier. Follow up quickly. Real potential clients waiting on a human reply."
       />
-      <Section
+      <AdminListSection
         title={`New (${groups.new.length})`}
         emptyLine="No new enquiries. The badge next to Enquiries in the nav turns on when one lands."
       >
@@ -198,10 +200,10 @@ export default async function AdminEnquiriesPage() {
             createCase={createCase}
           />
         ))}
-      </Section>
+      </AdminListSection>
 
       {groups.contacted.length > 0 ? (
-        <Section title={`Contacted (${groups.contacted.length})`} emptyLine="">
+        <AdminListSection title={`Contacted (${groups.contacted.length})`} emptyLine="">
           {groups.contacted.map((r) => (
             <EnquiryCard
               key={r.id}
@@ -214,11 +216,11 @@ export default async function AdminEnquiriesPage() {
               createCase={createCase}
             />
           ))}
-        </Section>
+        </AdminListSection>
       ) : null}
 
       {groups.closed.length > 0 ? (
-        <Section title={`Closed (${groups.closed.length})`} emptyLine="">
+        <AdminListSection title={`Closed (${groups.closed.length})`} emptyLine="">
           {groups.closed.map((r) => (
             <EnquiryCard
               key={r.id}
@@ -231,39 +233,9 @@ export default async function AdminEnquiriesPage() {
               createCase={createCase}
             />
           ))}
-        </Section>
+        </AdminListSection>
       ) : null}
     </>
-  );
-}
-
-function Section({
-  title,
-  emptyLine,
-  children,
-}: {
-  title: string;
-  emptyLine: string;
-  children: React.ReactNode;
-}) {
-  const childArr = Array.isArray(children) ? children : [children];
-  const hasAny = childArr.filter(Boolean).length > 0;
-  return (
-    <section className="mb-10">
-      <h2
-        className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-        style={{ fontFamily: "var(--font-mono)" }}
-      >
-        {title}
-      </h2>
-      {hasAny ? (
-        <ul className="grid gap-3">{childArr}</ul>
-      ) : emptyLine ? (
-        <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-          {emptyLine}
-        </p>
-      ) : null}
-    </section>
   );
 }
 
@@ -411,31 +383,13 @@ async function EnquiryCard({
 }
 
 function StatusPill({ status }: { status: "new" | "contacted" | "closed" }) {
-  const map = {
-    new: { label: "New", bg: "rgba(25,156,217,0.14)", color: "#0A6B99" },
-    contacted: {
-      label: "Contacted",
-      bg: "rgba(217,159,25,0.14)",
-      color: "#8a5c05",
-    },
-    closed: {
-      label: "Closed",
-      bg: "rgba(15,30,77,0.08)",
-      color: "var(--navy-deep)",
-    },
-  }[status];
-  return (
-    <span
-      className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-      style={{
-        background: map.bg,
-        color: map.color,
-        fontFamily: "var(--font-mono)",
-      }}
-    >
-      {map.label}
-    </span>
-  );
+  const map: Record<string, { label: string; tone: AdminPillTone }> = {
+    new: { label: "New", tone: "blue" },
+    contacted: { label: "Contacted", tone: "amber" },
+    closed: { label: "Closed", tone: "grey" },
+  };
+  const cfg = map[status];
+  return <AdminPill tone={cfg.tone} label={cfg.label} />;
 }
 
 function CompanyStatusPill({ status }: { status: string }) {
@@ -443,16 +397,6 @@ function CompanyStatusPill({ status }: { status: string }) {
     .replace(/-/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
   return (
-    <span
-      className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-      style={{
-        background: "rgba(220,38,38,0.10)",
-        color: "#B91C1C",
-        fontFamily: "var(--font-mono)",
-      }}
-      title="Companies House status"
-    >
-      Co · {label}
-    </span>
+    <AdminPill tone="red" label={`Co · ${label}`} title="Companies House status" />
   );
 }

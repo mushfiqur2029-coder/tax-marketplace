@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminListSection } from "@/components/admin/admin-list-section";
 import { getAllTiers } from "@/lib/service-catalog";
 import { updateServiceCatalogAction } from "@/app/admin/actions";
 import { ServiceCatalogRow } from "./service-catalog-row";
@@ -31,42 +32,18 @@ export default async function AdminServiceCatalogPage() {
       />
 
       <div className="space-y-10">
-        <Section title={`Personal (${personal.length})`}>
+        <AdminListSection title={`Personal (${personal.length})`} wrapInLi>
           {personal.map((t) => (
             <ServiceCatalogRow key={t.id} tier={t} update={update} />
           ))}
-        </Section>
+        </AdminListSection>
 
-        <Section title={`Limited Company (${company.length})`}>
+        <AdminListSection title={`Limited Company (${company.length})`} wrapInLi>
           {company.map((t) => (
             <ServiceCatalogRow key={t.id} tier={t} update={update} />
           ))}
-        </Section>
+        </AdminListSection>
       </div>
     </>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h2
-        className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-        style={{ fontFamily: "var(--font-mono)" }}
-      >
-        {title}
-      </h2>
-      <ul className="grid gap-3">
-        {Array.isArray(children)
-          ? children.map((child, i) => <li key={i}>{child}</li>)
-          : <li>{children}</li>}
-      </ul>
-    </section>
   );
 }

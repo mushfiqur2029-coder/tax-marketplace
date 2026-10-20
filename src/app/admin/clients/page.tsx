@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminListSection } from "@/components/admin/admin-list-section";
 import { Avatar } from "@/components/avatar";
 
 export const dynamic = "force-dynamic";
@@ -142,7 +143,7 @@ export default async function AdminClientsPage({
           : `Showing ${from + 1}, ${Math.min(to + 1, total)} of ${total}${q ? ` for "${q}"` : ""}.`}
       </p>
 
-      <Section
+      <AdminListSection
         title={`Active (${groups.active.length})`}
         emptyLine="No active clients on this page."
       >
@@ -154,10 +155,10 @@ export default async function AdminClientsPage({
             caseCount={caseCountByClient.get(r.id) ?? 0}
           />
         ))}
-      </Section>
+      </AdminListSection>
 
       {groups.suspended.length > 0 ? (
-        <Section
+        <AdminListSection
           title={`Suspended (${groups.suspended.length})`}
           emptyLine=""
         >
@@ -169,7 +170,7 @@ export default async function AdminClientsPage({
               caseCount={caseCountByClient.get(r.id) ?? 0}
             />
           ))}
-        </Section>
+        </AdminListSection>
       ) : null}
 
       {pageCount > 1 ? (
@@ -203,36 +204,6 @@ export default async function AdminClientsPage({
         </nav>
       ) : null}
     </>
-  );
-}
-
-function Section({
-  title,
-  emptyLine,
-  children,
-}: {
-  title: string;
-  emptyLine: string;
-  children: React.ReactNode;
-}) {
-  const childArr = Array.isArray(children) ? children : [children];
-  const hasAny = childArr.filter(Boolean).length > 0;
-  return (
-    <section className="mb-10">
-      <h2
-        className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-        style={{ fontFamily: "var(--font-mono)" }}
-      >
-        {title}
-      </h2>
-      {hasAny ? (
-        <ul className="grid gap-3">{childArr}</ul>
-      ) : emptyLine ? (
-        <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-          {emptyLine}
-        </p>
-      ) : null}
-    </section>
   );
 }
 

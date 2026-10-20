@@ -6,6 +6,7 @@ import {
   rejectAddonAction,
 } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 import { ReviewActions } from "@/app/admin/profile-changes/review-actions";
@@ -152,34 +153,11 @@ export default async function AdminAddonRequestsPage() {
 }
 
 function StatusPill({ status }: { status: string }) {
-  const map: Record<string, { label: string; bg: string; color: string }> = {
-    pending_payment: {
-      label: "Approved",
-      bg: "rgba(19,217,160,0.14)",
-      color: "#0E9E77",
-    },
-    paid: {
-      label: "Paid",
-      bg: "rgba(25,156,217,0.14)",
-      color: "var(--sky)",
-    },
-    rejected: {
-      label: "Rejected",
-      bg: "rgba(220,38,38,0.12)",
-      color: "#B91C1C",
-    },
+  const map: Record<string, { label: string; tone: AdminPillTone }> = {
+    pending_payment: { label: "Approved", tone: "green" },
+    paid: { label: "Paid", tone: "blue" },
+    rejected: { label: "Rejected", tone: "red" },
   };
-  const cfg = map[status] ?? {
-    label: status,
-    bg: "rgba(15,30,77,0.08)",
-    color: "var(--navy-deep)",
-  };
-  return (
-    <span
-      className="shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-      style={{ background: cfg.bg, color: cfg.color, fontFamily: "var(--font-mono)" }}
-    >
-      {cfg.label}
-    </span>
-  );
+  const cfg = map[status] ?? { label: status, tone: "grey" as const };
+  return <AdminPill tone={cfg.tone} label={cfg.label} />;
 }

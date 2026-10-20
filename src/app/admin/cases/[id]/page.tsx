@@ -45,6 +45,7 @@ import {
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { StatusPill } from "@/components/case/status-pill";
+import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
 import { ProgressBar } from "@/components/case/progress-bar";
@@ -1038,39 +1039,12 @@ async function loadPchCaseMessages(
 }
 
 function AddonStatusPill({ status }: { status: string }) {
-  const map: Record<string, { label: string; bg: string; color: string }> = {
-    pending_admin: {
-      label: "Pending admin",
-      bg: "rgba(217,159,25,0.14)",
-      color: "#B57E12",
-    },
-    pending_payment: {
-      label: "Pending payment",
-      bg: "rgba(25,156,217,0.14)",
-      color: "var(--sky)",
-    },
-    paid: {
-      label: "Paid",
-      bg: "rgba(19,217,160,0.14)",
-      color: "#0E9E77",
-    },
-    rejected: {
-      label: "Rejected",
-      bg: "rgba(220,38,38,0.12)",
-      color: "#B91C1C",
-    },
+  const map: Record<string, { label: string; tone: AdminPillTone }> = {
+    pending_admin: { label: "Pending admin", tone: "amber" },
+    pending_payment: { label: "Pending payment", tone: "blue" },
+    paid: { label: "Paid", tone: "green" },
+    rejected: { label: "Rejected", tone: "red" },
   };
-  const cfg = map[status] ?? {
-    label: status,
-    bg: "rgba(15,30,77,0.08)",
-    color: "var(--navy-deep)",
-  };
-  return (
-    <span
-      className="shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-      style={{ background: cfg.bg, color: cfg.color, fontFamily: "var(--font-mono)" }}
-    >
-      {cfg.label}
-    </span>
-  );
+  const cfg = map[status] ?? { label: status, tone: "grey" as const };
+  return <AdminPill tone={cfg.tone} label={cfg.label} />;
 }

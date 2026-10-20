@@ -6,6 +6,7 @@ import { getSegment } from "@/lib/segments";
 import { getAllTiers } from "@/lib/service-catalog";
 import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { Avatar } from "@/components/avatar";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -382,32 +383,14 @@ function ApprovalBadge({
   status: "pending" | "approved" | "rejected";
 }) {
   const map = {
-    approved: { label: "Approved", bg: "rgba(19,217,160,0.14)", color: "#0E9E77" },
-    pending: { label: "Pending", bg: "rgba(217,159,25,0.14)", color: "#B57E12" },
-    rejected: { label: "Rejected", bg: "rgba(220,38,38,0.12)", color: "#B91C1C" },
+    approved: { label: "Approved", tone: "green" as const },
+    pending: { label: "Pending", tone: "amber" as const },
+    rejected: { label: "Rejected", tone: "red" as const },
   }[status];
-  return (
-    <span
-      className="mt-2 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-      style={{ background: map.bg, color: map.color, fontFamily: "var(--font-mono)" }}
-    >
-      {map.label}
-    </span>
-  );
+  return <AdminPill tone={map.tone} label={map.label} className="mt-2" />;
 }
 
 function StatusPillLite({ status }: { status: string }) {
   const isPaid = status === "paid";
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-      style={{
-        background: isPaid ? "rgba(25,156,217,0.14)" : "rgba(217,159,25,0.14)",
-        color: isPaid ? "var(--sky)" : "#B57E12",
-        fontFamily: "var(--font-mono)",
-      }}
-    >
-      {status}
-    </span>
-  );
+  return <AdminPill tone={isPaid ? "blue" : "amber"} label={status} />;
 }

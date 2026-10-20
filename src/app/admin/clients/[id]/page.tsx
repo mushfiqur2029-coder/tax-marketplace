@@ -12,6 +12,7 @@ import {
   deleteClientAccountAction,
 } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { Avatar } from "@/components/avatar";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -349,16 +350,9 @@ function StatusBadge({
   status: "active" | "warned" | "suspended";
 }) {
   const map = {
-    active: { label: "Active", bg: "rgba(19,217,160,0.14)", color: "#0E9E77" },
-    warned: { label: "Warned", bg: "rgba(217,159,25,0.14)", color: "#B57E12" },
-    suspended: { label: "Suspended", bg: "rgba(220,38,38,0.12)", color: "#B91C1C" },
+    active: { label: "Active", tone: "green" as const },
+    warned: { label: "Warned", tone: "amber" as const },
+    suspended: { label: "Suspended", tone: "red" as const },
   }[status];
-  return (
-    <span
-      className="mt-2 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-      style={{ background: map.bg, color: map.color, fontFamily: "var(--font-mono)" }}
-    >
-      {map.label}
-    </span>
-  );
+  return <AdminPill tone={map.tone} label={map.label} className="mt-2" />;
 }
