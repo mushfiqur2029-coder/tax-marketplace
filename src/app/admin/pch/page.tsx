@@ -8,9 +8,10 @@ import type { TaxEngineOutput } from "@/lib/tax-engine";
 
 // Admin index of every PCH automated case. One row per case with the
 // operational columns that let an admin spot stuck cases at a glance:
-// which stage they're in, whether the checklist is progressing, whether
-// the client has approved yet, and how many accountant overrides sit
-// on the engine's figures.
+// which stage they're in, whether the client has approved yet, and how
+// many accountant overrides sit on the engine's figures. The 33-point
+// checklist no longer gates the accountant workflow, so it has no
+// column here either.
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,6 @@ type Row = {
   client_email: string;
   status: string;
   status_since: string;             // created_at or updated_at proxy
-  checks_resolved: number;
-  checks_total: number;
   approval_at: string | null;
   approval_name: string | null;
   override_count: number;
@@ -39,9 +38,9 @@ export default async function AdminPchListPage() {
   const admin = createAdminClient();
 
   // Pull every PCH automated case + the head row + user info + override
-  // counts + check counts in parallel. Volume is low enough that joining
-  // in app code is simpler than a view.
-  const [{ data: cases }, { data: heads }, { data: users }, { data: overrideRows }, { data: checkRows }] =
+  // counts in parallel. Volume is low enough that joining in app code is
+  // simpler than a view.
+  const [{ data: cases }, { data: heads }, { data: users }, { data: overrideRows }] =
     await Promise.all([
       admin.from("cases")
         .select("id, client_id, status, created_at, updated_at")
@@ -50,7 +49,6 @@ export default async function AdminPchListPage() {
       admin.from("pch_cases").select("case_id, cl_name, cl_email, client_approval_at, client_approval_name, engine_snapshot, engine_snapshot_at"),
       admin.from("users").select("id, email"),
       admin.from("pch_overrides").select("case_id"),
-      admin.from("pch_check_status").select("case_id, status"),
     ]);
 
   const headByCase = new Map((heads ?? []).map((h) => [h.case_id, h]));
@@ -59,13 +57,6 @@ export default async function AdminPchListPage() {
   const overrideCountByCase = new Map<string, number>();
   for (const r of overrideRows ?? []) {
     overrideCountByCase.set(r.case_id, (overrideCountByCase.get(r.case_id) ?? 0) + 1);
-  }
-  // resolved-check counts
-  const resolvedByCase = new Map<string, number>();
-  for (const r of checkRows ?? []) {
-    if (r.status === "Done" || r.status === "N/A") {
-      resolvedByCase.set(r.case_id, (resolvedByCase.get(r.case_id) ?? 0) + 1);
-    }
   }
 
   const rows: Row[] = (cases ?? []).map((c) => {
@@ -79,8 +70,6 @@ export default async function AdminPchListPage() {
       client_email: head?.cl_email ?? user?.email ?? "",
       status: c.status,
       status_since: c.updated_at ?? c.created_at,
-      checks_resolved: resolvedByCase.get(c.id) ?? 0,
-      checks_total: 33,
       approval_at: head?.client_approval_at ?? null,
       approval_name: head?.client_approval_name ?? null,
       override_count: overrideCountByCase.get(c.id) ?? 0,
@@ -111,14 +100,13 @@ export default async function AdminPchListPage() {
         placeholder="Search by client name or email"
         ariaLabel="Search PCH cases"
         emptyLine="No PCH cases yet."
-        colSpan={8}
+        colSpan={7}
         thead={
           <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wide">
             <tr>
               <th className="text-left py-2 px-3">Client</th>
               <th className="text-left py-2 px-3">Status</th>
               <th className="text-right py-2 px-3 w-24">Days in</th>
-              <th className="text-right py-2 px-3 w-24">Checks</th>
               <th className="text-left py-2 px-3 w-32">Approval</th>
               <th className="text-right py-2 px-3 w-24">Overrides</th>
               <th className="text-left py-2 px-3 w-36">Snapshot</th>
@@ -145,14 +133,6 @@ export default async function AdminPchListPage() {
               </td>
               <td className="py-2 px-3 text-right text-slate-700 tabular-nums">
                 {daysBetween(r.status_since, today)}d
-              </td>
-              <td className="py-2 px-3 text-right tabular-nums">
-                <span className={
-                  r.checks_resolved >= r.checks_total ? "text-emerald-700 font-semibold"
-                  : r.checks_resolved > 0 ? "text-amber-700" : "text-slate-500"
-                }>
-                  {r.checks_resolved}/{r.checks_total}
-                </span>
               </td>
               <td className="py-2 px-3 text-xs">
                 {r.approval_at ? (

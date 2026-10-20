@@ -32,7 +32,6 @@ export async function GET() {
     { data: heads },
     { data: users },
     { data: overrideRows },
-    { data: checkRows },
   ] = await Promise.all([
     admin
       .from("cases")
@@ -49,7 +48,6 @@ export async function GET() {
       .from("pch_overrides")
       .select("case_id, field_path, old_value, new_value, reason, overridden_by, overridden_at")
       .order("overridden_at", { ascending: false }),
-    admin.from("pch_check_status").select("case_id, status"),
   ]);
 
   const headByCase = new Map((heads ?? []).map((h) => [h.case_id, h]));
@@ -62,14 +60,6 @@ export async function GET() {
     const list = overridesByCase.get(r.case_id) ?? [];
     list.push(r as unknown as OverrideRow);
     overridesByCase.set(r.case_id, list);
-  }
-
-  // Resolved-check tallies per case.
-  const resolvedByCase = new Map<string, number>();
-  for (const r of checkRows ?? []) {
-    if (r.status === "Done" || r.status === "N/A") {
-      resolvedByCase.set(r.case_id, (resolvedByCase.get(r.case_id) ?? 0) + 1);
-    }
   }
 
   // Header row: static columns + one column per overridable field.
@@ -86,8 +76,6 @@ export async function GET() {
     "utr",
     "ni_number",
     "override_count",
-    "checks_resolved",
-    "checks_total",
   ];
   const engineHeaders = PCH_OVERRIDE_FIELDS.map((f) => f.path);
   const headers = [...staticHeaders, ...engineHeaders];
@@ -114,8 +102,6 @@ export async function GET() {
       head?.cl_utr ?? "",
       head?.cl_nino ?? "",
       history.length,
-      resolvedByCase.get(c.id) ?? 0,
-      33,
     ];
 
     for (const f of PCH_OVERRIDE_FIELDS) {

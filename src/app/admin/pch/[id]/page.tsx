@@ -18,7 +18,6 @@ import type { TaxEngineOutput } from "@/lib/tax-engine";
 // What this page needs to answer at a glance:
 //   - who the client is + the headline figures from the current snapshot
 //   - what the engine said and what the accountant changed on top
-//   - which items on the 33-check list are resolved + by whom
 //   - whether the client approved and against which snapshot version
 
 export const dynamic = "force-dynamic";
@@ -53,8 +52,6 @@ export default async function AdminPchInspectPage({
     { data: docStatus },
     { data: slots },
     { data: overrides },
-    { data: checkItems },
-    { data: checkStatus },
     { data: client },
     { data: accountant },
   ] = await Promise.all([
@@ -77,22 +74,16 @@ export default async function AdminPchInspectPage({
       .select("id, field_path, old_value, new_value, reason, overridden_by, overridden_at")
       .eq("case_id", caseId)
       .order("overridden_at", { ascending: false }),
-    admin.from("pch_check_items").select("item_number, area, description, sort_order").order("sort_order"),
-    admin
-      .from("pch_check_status")
-      .select("item_number, status, note, updated_at, updated_by")
-      .eq("case_id", caseId),
     admin.from("users").select("id, email").eq("id", caseRow.client_id).maybeSingle(),
     caseRow.accountant_id
       ? admin.from("users").select("id, email").eq("id", caseRow.accountant_id).maybeSingle()
       : Promise.resolve({ data: null } as { data: { id: string; email: string } | null }),
   ]);
 
-  // Resolve display names for every user_id that appears in override/
-  // check-status rows so we can show "Jane Smith" instead of a uuid.
+  // Resolve display names for every user_id that appears in override
+  // rows so we can show "Jane Smith" instead of a uuid.
   const touchedBy = new Set<string>();
   for (const r of overrides ?? []) if (r.overridden_by) touchedBy.add(r.overridden_by);
-  for (const r of checkStatus ?? []) if (r.updated_by) touchedBy.add(r.updated_by);
   const otherIds = Array.from(touchedBy).filter(
     (id) => id !== caseRow.client_id && id !== caseRow.accountant_id,
   );
@@ -115,10 +106,6 @@ export default async function AdminPchInspectPage({
   const docStatusByCode = new Map((docStatus ?? []).map((d) => [d.slot_code, d]));
   const docsUploaded = (docStatus ?? []).filter((d) => d.status === "Uploaded").length;
   const docsNA = (docStatus ?? []).filter((d) => d.status === "Not applicable").length;
-
-  const checkStatusByNumber = new Map((checkStatus ?? []).map((c) => [c.item_number, c]));
-  const resolved = (checkStatus ?? []).filter((c) => c.status === "Done" || c.status === "N/A").length;
-  const total = (checkItems ?? []).length || 33;
 
   return (
     <>
@@ -310,62 +297,6 @@ export default async function AdminPchInspectPage({
             </table>
           </div>
         )}
-      </Section>
-
-      {/* 33-check timeline */}
-      <Section title={`Checklist (${resolved}/${total})`}>
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wide">
-              <tr>
-                <th className="text-left py-2 px-3 w-12">#</th>
-                <th className="text-left py-2 px-3 w-28">Area</th>
-                <th className="text-left py-2 px-3">Item</th>
-                <th className="text-left py-2 px-3 w-24">Status</th>
-                <th className="text-left py-2 px-3 w-40">Updated</th>
-                <th className="text-left py-2 px-3 w-40">By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(checkItems ?? []).map((item) => {
-                const st = checkStatusByNumber.get(item.item_number);
-                const status = st?.status ?? "Not started";
-                return (
-                  <tr key={item.item_number} className="border-t border-slate-100 align-top">
-                    <td className="py-2 px-3 tabular-nums text-slate-500">{item.item_number}</td>
-                    <td className="py-2 px-3 text-xs text-slate-600">{item.area}</td>
-                    <td className="py-2 px-3">
-                      <div className="text-slate-800">{item.description}</div>
-                      {st?.note ? (
-                        <div className="mt-0.5 text-xs text-slate-500">{st.note}</div>
-                      ) : null}
-                    </td>
-                    <td className="py-2 px-3">
-                      <span
-                        className={
-                          "rounded px-1.5 py-0.5 text-xs font-mono " +
-                          (status === "Done"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : status === "N/A"
-                              ? "bg-slate-100 text-slate-700"
-                              : "bg-amber-100 text-amber-800")
-                        }
-                      >
-                        {status}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-xs text-slate-500">
-                      {st?.updated_at ? new Date(st.updated_at).toLocaleString() : "-"}
-                    </td>
-                    <td className="py-2 px-3 text-xs text-slate-500">
-                      {nameOf(st?.updated_by ?? null)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
       </Section>
 
       {/* Intake summary: head */}
