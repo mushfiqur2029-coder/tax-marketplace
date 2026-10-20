@@ -8,6 +8,7 @@ import {
   uploadPchDocumentAction,
   submitForReviewAction,
   recordClientApprovalAction,
+  setPchPhotoIdKindAction,
 } from "@/app/client/pch/actions";
 import { startAddonCheckoutAction } from "@/app/client/actions";
 import { AddonPayBanner } from "../addon-pay-banner";
@@ -71,7 +72,13 @@ type Slot = {
   allow_multiple: boolean;
 };
 type DocStatus = { case_id: string; slot_code: string; status: string; note: string | null };
-type UploadedDoc = { id: string; file_name: string; uploaded_at: string; requirement_key: string | null };
+type UploadedDoc = {
+  id: string; file_name: string; uploaded_at: string;
+  requirement_key: string | null;
+  // Phase 8 Slice 8.3: licence Front / Back tag for PCH-24 uploads.
+  // Null for passports and every non-PCH-24 slot.
+  photo_id_side?: "front" | "back" | null;
+};
 type IncomeRow = {
   id?: string; source: string; gross_takings_pence: number; platform_fee_pence: number;
   on_trip_miles: number; dead_miles: number; evidence?: string | null; notes?: string | null;
@@ -217,6 +224,7 @@ export function PchClientWorkspace(props: {
               uploaded={props.uploadedDocs}
               extractions={props.extractions}
               editable={editable}
+              photoIdKind={(props.head?.photo_id_kind as "passport" | "licence" | null | undefined) ?? null}
             />
 
             <h2 className={h2}>2. Your identity</h2>
@@ -613,11 +621,14 @@ function SubmitForReviewSection({
 // -------------------- Documents --------------------
 
 function DocSection({
-  caseId, slots, status, uploaded, extractions, editable = true,
+  caseId, slots, status, uploaded, extractions, editable = true, photoIdKind,
 }: {
   caseId: string; slots: Slot[]; status: DocStatus[]; uploaded: UploadedDoc[];
   extractions: ExtractionReviewPayload[];
   editable?: boolean;
+  // Phase 8 Slice 8.3: lets the Photo ID row swap in the custom passport
+  // vs licence UI; null means "client hasn't picked yet".
+  photoIdKind: "passport" | "licence" | null;
 }) {
   const router = useRouter();
   const statusByCode = new Map(status.map((s) => [s.slot_code, s]));
@@ -641,16 +652,30 @@ function DocSection({
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-600 mb-2">{section}</h3>
           <div className="space-y-2">
             {slots.filter((s) => s.section === section).map((s) => (
-              <DocRow
-                key={s.code}
-                caseId={caseId}
-                slot={s}
-                status={statusByCode.get(s.code)}
-                uploaded={uploadedByKey.get(s.code) ?? []}
-                extractions={extractionsBySlot.get(s.code) ?? []}
-                canEdit={editable}
-                onChanged={() => router.refresh()}
-              />
+              s.code === "PCH-24" ? (
+                <PhotoIdSection
+                  key={s.code}
+                  caseId={caseId}
+                  slot={s}
+                  status={statusByCode.get(s.code)}
+                  uploaded={uploadedByKey.get(s.code) ?? []}
+                  extractions={extractionsBySlot.get(s.code) ?? []}
+                  canEdit={editable}
+                  photoIdKind={photoIdKind}
+                  onChanged={() => router.refresh()}
+                />
+              ) : (
+                <DocRow
+                  key={s.code}
+                  caseId={caseId}
+                  slot={s}
+                  status={statusByCode.get(s.code)}
+                  uploaded={uploadedByKey.get(s.code) ?? []}
+                  extractions={extractionsBySlot.get(s.code) ?? []}
+                  canEdit={editable}
+                  onChanged={() => router.refresh()}
+                />
+              )
             ))}
           </div>
         </div>
@@ -882,6 +907,266 @@ function DocRow({
           {extractions.map((ext) => (
             <ExtractionReview key={ext.id} ext={ext} canEdit={canEdit} />
           ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// -------------------- Photo ID (PCH-24, Slice 8.3) --------------------
+// Replaces the generic DocRow for the Photo ID slot. The client picks
+// passport or driving licence up-front; passport gets one upload, licence
+// gets two labelled sub-slots (Front, Back). Each upload posts
+// `photo_id_side` to the server so the vision prompt knows what to
+// expect (DOB on licence back, address on licence front, both on
+// passport data page).
+function PhotoIdSection({
+  caseId, slot, status, uploaded, extractions, canEdit, photoIdKind, onChanged,
+}: {
+  caseId: string; slot: Slot; status: DocStatus | undefined;
+  uploaded: UploadedDoc[]; extractions: ExtractionReviewPayload[];
+  canEdit: boolean;
+  photoIdKind: "passport" | "licence" | null;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const isRequired = /^Required/i.test(slot.required_rule);
+  const effectiveStatus =
+    status?.status ?? (uploaded.length ? "Uploaded" : "Awaiting");
+
+  const pickKind = async (next: "passport" | "licence") => {
+    if (!canEdit || busy) return;
+    setBusy(true); setErr(null);
+    const r = await setPchPhotoIdKindAction(caseId, next);
+    setBusy(false);
+    if (!r.ok) setErr(r.error);
+    onChanged();
+  };
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-sm">
+            <span className="font-mono text-xs text-slate-500 mr-2">{slot.code}</span>
+            {slot.display_name}
+            {isRequired && <span className="ml-2 text-xs text-red-600">(required)</span>}
+          </div>
+          {slot.why_we_need_it && (
+            <div className="text-xs text-slate-500 mt-1">{slot.why_we_need_it}</div>
+          )}
+        </div>
+        <div className="text-right text-xs">
+          <span className={
+            effectiveStatus === "Uploaded" ? "font-semibold text-emerald-700"
+            : effectiveStatus === "Not applicable" ? "text-slate-500"
+            : "text-amber-700"
+          }>
+            {effectiveStatus}
+          </span>
+        </div>
+      </div>
+
+      {photoIdKind === null ? (
+        <div className="mt-3">
+          <div className="text-xs font-semibold text-slate-700">Which type of ID do you have?</div>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => pickKind("passport")}
+              disabled={!canEdit || busy}
+              className="rounded border border-slate-300 bg-white px-3 py-3 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
+            >
+              <div className="font-semibold text-slate-900">Passport</div>
+              <div className="text-xs text-slate-500 mt-0.5">One photo of the data page.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => pickKind("licence")}
+              disabled={!canEdit || busy}
+              className="rounded border border-slate-300 bg-white px-3 py-3 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
+            >
+              <div className="font-semibold text-slate-900">UK driving licence</div>
+              <div className="text-xs text-slate-500 mt-0.5">Two photos: front and back.</div>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <PhotoIdSlots
+          caseId={caseId}
+          kind={photoIdKind}
+          uploaded={uploaded}
+          extractions={extractions}
+          canEdit={canEdit}
+          onChanged={onChanged}
+          onSwitch={() => pickKind(photoIdKind === "passport" ? "licence" : "passport")}
+          switching={busy}
+        />
+      )}
+
+      {err && <div className="mt-2 text-xs text-red-600">{err}</div>}
+    </div>
+  );
+}
+
+function PhotoIdSlots({
+  caseId, kind, uploaded, extractions, canEdit, onChanged, onSwitch, switching,
+}: {
+  caseId: string;
+  kind: "passport" | "licence";
+  uploaded: UploadedDoc[];
+  extractions: ExtractionReviewPayload[];
+  canEdit: boolean;
+  onChanged: () => void;
+  onSwitch: () => void;
+  switching: boolean;
+}) {
+  const switchLabel = kind === "passport"
+    ? "I have a driving licence instead"
+    : "I have a passport instead";
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-slate-700">
+          {kind === "passport"
+            ? "Upload a clear photo of the data page (the one with your photo and personal details)."
+            : "Upload both sides of your licence. The front has your name and DOB; the back has your address."}
+        </div>
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={onSwitch}
+            disabled={switching}
+            className="text-xs text-sky-700 underline disabled:opacity-50"
+          >
+            {switchLabel}
+          </button>
+        ) : null}
+      </div>
+
+      {kind === "passport" ? (
+        <PhotoIdUploadTile
+          caseId={caseId}
+          label="Passport data page"
+          side={null}
+          uploaded={uploaded.find((u) => (u.photo_id_side ?? null) === null) ?? null}
+          extraction={extractions.find((e) => e.photoIdSide === null) ?? null}
+          canEdit={canEdit}
+          onChanged={onChanged}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <PhotoIdUploadTile
+            caseId={caseId}
+            label="Front of licence"
+            side="front"
+            uploaded={uploaded.find((u) => u.photo_id_side === "front") ?? null}
+            extraction={extractions.find((e) => e.photoIdSide === "front") ?? null}
+            canEdit={canEdit}
+            onChanged={onChanged}
+          />
+          <PhotoIdUploadTile
+            caseId={caseId}
+            label="Back of licence"
+            side="back"
+            uploaded={uploaded.find((u) => u.photo_id_side === "back") ?? null}
+            extraction={extractions.find((e) => e.photoIdSide === "back") ?? null}
+            canEdit={canEdit}
+            onChanged={onChanged}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhotoIdUploadTile({
+  caseId, label, side, uploaded, extraction, canEdit, onChanged,
+}: {
+  caseId: string;
+  label: string;
+  side: "front" | "back" | null;
+  uploaded: UploadedDoc | null;
+  extraction: ExtractionReviewPayload | null;
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const inputId = `up-pch24-${side ?? "passport"}`;
+
+  const upload = async (file: File) => {
+    setBusy(true); setErr(null);
+    const fd = new FormData();
+    fd.set("file", file);
+    if (side) fd.set("photo_id_side", side);
+    try {
+      const r = await uploadPchDocumentAction(caseId, "PCH-24", fd);
+      if (!r.ok) setErr(r.error);
+    } catch (e) {
+      setErr(e instanceof Error ? "Upload failed: " + e.message : "Upload failed. Try again.");
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  };
+
+  return (
+    <div className="rounded border border-slate-200 bg-slate-50/40 p-3">
+      <div className="text-xs font-semibold text-slate-800">{label}</div>
+      {uploaded ? (
+        <div className="mt-1 text-xs text-slate-600">
+          <span className="text-emerald-700 font-medium">Uploaded:</span> {uploaded.file_name}
+          {" "}
+          <span className="text-slate-400">({new Date(uploaded.uploaded_at).toLocaleDateString()})</span>
+        </div>
+      ) : (
+        <div className="mt-1 text-xs text-amber-700">Not uploaded yet.</div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        <input
+          id={inputId}
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*"
+          className="hidden"
+          disabled={!canEdit || busy}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload(f);
+            e.target.value = "";
+          }}
+        />
+        <label
+          htmlFor={inputId}
+          className={
+            "inline-block cursor-pointer rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 "
+            + (busy || !canEdit ? "opacity-50 cursor-not-allowed" : "")
+          }
+        >
+          {busy ? "Uploading..." : uploaded ? "Replace" : "Upload"}
+        </label>
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={() => setCameraOpen(true)}
+            disabled={busy}
+            className="rounded border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Take photo
+          </button>
+        ) : null}
+      </div>
+      {err ? <div className="mt-2 text-xs text-rose-700">{err}</div> : null}
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(file) => { setCameraOpen(false); upload(file); }}
+      />
+      {extraction ? (
+        <div className="mt-2">
+          <ExtractionReview ext={extraction} canEdit={canEdit} />
         </div>
       ) : null}
     </div>

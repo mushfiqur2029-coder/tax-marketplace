@@ -108,6 +108,35 @@ export async function uploadPchDocumentAction(
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: "Pick a file first." };
   }
+
+  // Phase 8 Slice 8.3: Photo ID uploads for a licence are split into
+  // Front and Back, declared via a `photo_id_side` form field. Passport
+  // uploads must not carry a side; non-PCH-24 slots never carry one.
+  const rawSide = formData.get("photo_id_side");
+  const photoIdSide =
+    rawSide === "front" || rawSide === "back" ? (rawSide as "front" | "back") : null;
+  if (slotCode === "PCH-24") {
+    const { data: head } = await admin
+      .from("pch_cases")
+      .select("photo_id_kind")
+      .eq("case_id", caseId)
+      .maybeSingle();
+    const kind = head?.photo_id_kind as "passport" | "licence" | null | undefined;
+    if (!kind) {
+      return {
+        ok: false,
+        error: "Please pick passport or driving licence first, then upload your photo.",
+      };
+    }
+    if (kind === "passport" && photoIdSide) {
+      return { ok: false, error: "Passport uploads should not have a side." };
+    }
+    if (kind === "licence" && !photoIdSide) {
+      return { ok: false, error: "For a licence, upload the front and back separately." };
+    }
+  } else if (photoIdSide) {
+    return { ok: false, error: "photo_id_side is only valid for the Photo ID slot." };
+  }
   const MAX = 50 * 1024 * 1024;
   if (file.size > MAX) return { ok: false, error: "File is over 50 MB." };
 
@@ -165,6 +194,19 @@ export async function uploadPchDocumentAction(
     });
   if (upErr) return { ok: false, error: upErr.message };
 
+  // For a licence, replace any previous upload of the same side so
+  // the two "Front" slots and two "Back" slots can't drift. We delete
+  // the pch_doc_extractions rows via document_id on the FK side later;
+  // the storage object stays as audit trail (admin can clean later).
+  if (slotCode === "PCH-24" && photoIdSide) {
+    await admin
+      .from("case_documents")
+      .delete()
+      .eq("case_id", caseId)
+      .eq("requirement_key", slotCode)
+      .eq("photo_id_side", photoIdSide);
+  }
+
   const { data: inserted, error: insErr } = await admin
     .from("case_documents")
     .insert({
@@ -173,6 +215,7 @@ export async function uploadPchDocumentAction(
       file_name: file.name,
       uploaded_by: me.id,
       requirement_key: slotCode,
+      photo_id_side: photoIdSide,
     })
     .select("id, file_name, uploaded_at")
     .single();
@@ -202,6 +245,7 @@ export async function uploadPchDocumentAction(
       caseId,
       slotCode,
       documentId: inserted.id,
+      photoIdSide,
     });
     if (!scheduled.skipped) {
       const extractionId = scheduled.extractionId;
@@ -241,6 +285,59 @@ export async function ensurePchHeadRow(caseId: string): Promise<ActionResult> {
   if (!sync.ok) {
     console.warn("[ensurePchHeadRow] profile sync failed:", sync.error);
   }
+  return { ok: true };
+}
+
+// -------------------------------------------------------------------
+// Phase 8 Slice 8.3: client picks Photo ID type up-front (passport or
+// licence). Persisted on pch_cases so the UI remembers the choice; the
+// vision prompt reads it to tell the model what to expect.
+//
+// Switching kind clears the previous choice's uploads so the two paths
+// never mix in one case (a licence back is meaningless if the client
+// has since declared they only have a passport).
+// -------------------------------------------------------------------
+export async function setPchPhotoIdKindAction(
+  caseId: string,
+  kind: "passport" | "licence" | null,
+): Promise<ActionResult> {
+  const { caseRow } = await requirePchCase(caseId);
+  const lock = assertEditableByClient(caseRow.status);
+  if (lock) return lock;
+  if (kind !== null && kind !== "passport" && kind !== "licence") {
+    return { ok: false, error: "Pick passport or licence." };
+  }
+  const admin = createAdminClient();
+
+  // Load the current kind so we only clear uploads when it's actually
+  // changing. Keeps a no-op re-pick (double tap on the same chip) from
+  // deleting the files the client just uploaded.
+  const { data: current } = await admin
+    .from("pch_cases")
+    .select("photo_id_kind")
+    .eq("case_id", caseId)
+    .maybeSingle();
+  const previous = current?.photo_id_kind as "passport" | "licence" | null | undefined;
+
+  if (previous && previous !== kind) {
+    await admin
+      .from("case_documents")
+      .delete()
+      .eq("case_id", caseId)
+      .eq("requirement_key", "PCH-24");
+    await admin
+      .from("pch_doc_status")
+      .delete()
+      .eq("case_id", caseId)
+      .eq("slot_code", "PCH-24");
+  }
+
+  const { error } = await admin
+    .from("pch_cases")
+    .update({ photo_id_kind: kind })
+    .eq("case_id", caseId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/client/cases/${caseId}/pch`);
   return { ok: true };
 }
 

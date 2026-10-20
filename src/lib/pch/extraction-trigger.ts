@@ -1,6 +1,11 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { extractForSlot, SLOT_DEFINITIONS, type DocumentInput } from "./ai-extract";
+import {
+  extractForSlot,
+  SLOT_DEFINITIONS,
+  type DocumentInput,
+  type ExtractionContext,
+} from "./ai-extract";
 
 // Trigger wired into uploadPchDocumentAction. For every uploaded doc:
 //   1. If the slot is skip-mode, do nothing.
@@ -29,6 +34,7 @@ export async function schedulePchExtraction(opts: {
   caseId: string;
   slotCode: string;
   documentId: string;
+  photoIdSide?: "front" | "back" | null;
 }): Promise<ScheduledExtraction> {
   const def = SLOT_DEFINITIONS[opts.slotCode];
   if (!def || def.mode === "skip") {
@@ -63,6 +69,7 @@ export async function schedulePchExtraction(opts: {
       document_id: opts.documentId,
       status: "pending",
       source: "document",
+      photo_id_side: opts.photoIdSide ?? null,
     })
     .select("id")
     .single();
@@ -85,7 +92,7 @@ export async function runPchExtractionJob(extractionId: string): Promise<void> {
     // need the storage path).
     const { data: ext } = await admin
       .from("pch_doc_extractions")
-      .select("id, slot_code, document_id")
+      .select("id, case_id, slot_code, document_id, photo_id_side")
       .eq("id", extractionId)
       .single();
     if (!ext) return;
@@ -105,9 +112,18 @@ export async function runPchExtractionJob(extractionId: string): Promise<void> {
     const bytes = new Uint8Array(await dl.data.arrayBuffer());
     const mimeType = inferMimeType(doc.file_name);
 
+    // Build the extraction context. For PCH-24 we pull the up-front
+    // passport-vs-licence choice off pch_cases so the vision prompt
+    // knows which side it's looking at.
+    const ctx = await buildContext(admin, ext.case_id, ext.slot_code, ext.photo_id_side);
+
     // Run the extraction.
     const started = Date.now();
-    const result = await extractForSlot(ext.slot_code, { bytes, mimeType } as DocumentInput);
+    const result = await extractForSlot(
+      ext.slot_code,
+      { bytes, mimeType } as DocumentInput,
+      ctx,
+    );
     if (!result) {
       // Should not happen because schedulePchExtraction already filters
       // skip-mode slots, but belt and braces.
@@ -151,4 +167,24 @@ function inferMimeType(filename: string): DocumentInput["mimeType"] {
   if (lower.endsWith(".webp")) return "image/webp";
   // Default to jpeg (covers .jpg + .jpeg + anything odd).
   return "image/jpeg";
+}
+
+async function buildContext(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+  slotCode: string,
+  photoIdSide: string | null,
+): Promise<ExtractionContext> {
+  if (slotCode !== "PCH-24") return {};
+  const { data: head } = await admin
+    .from("pch_cases")
+    .select("photo_id_kind")
+    .eq("case_id", caseId)
+    .maybeSingle();
+  const kind = head?.photo_id_kind as "passport" | "licence" | null | undefined;
+  const side = (photoIdSide === "front" || photoIdSide === "back") ? photoIdSide : undefined;
+  return {
+    idKind: kind === "passport" || kind === "licence" ? kind : undefined,
+    idSide: side,
+  };
 }

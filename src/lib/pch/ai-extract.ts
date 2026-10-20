@@ -110,10 +110,23 @@ function docLevelFields() {
 // predictable across slots.
 // -------------------------------------------------------------------
 
+// Caller-supplied context for the extraction run. Lets per-case
+// metadata (e.g. the client's up-front "passport vs licence" choice and
+// which side of a licence we're currently reading) flow into the slot
+// prompt without baking the branching into the generic SlotDefinition
+// shape.
+export type ExtractionContext = {
+  idKind?: "passport" | "licence";
+  idSide?: "front" | "back";
+};
+
 type SlotDefinition = {
   mode: SlotExtractionMode;
   title: string;
-  prompt: string;
+  // Either a static prompt string, or a factory that builds a prompt
+  // from the per-case context. Slots that don't need context stay on
+  // the static form.
+  prompt: string | ((ctx: ExtractionContext) => string);
   model?: string;
   toolName?: string;
   toolDescription?: string;
@@ -135,17 +148,16 @@ export const SLOT_DEFINITIONS: Record<string, SlotDefinition> = {
   // --- Income ------------------------------------------------------
   "PCH-23": { mode: "skip", title: "Signed approval of draft accounts", prompt: "" },
 
-  // Phase 6 Slice 1: PCH-24 moves from skip to a full vision pass.
-  // We read the printed name, DOB, and address off the ID and write
-  // them straight into pch_cases head columns via SLOT_APPLY_MAPS. The
-  // client confirms or edits each extracted value in the review UI;
-  // UTR and NI are collected separately on the identity card (they are
-  // not on either document).
+  // Phase 6 Slice 1 / Phase 8 Slice 8.3: PCH-24 is a full vision pass.
+  // The client declares up-front whether they have a passport or a UK
+  // driving licence, and licence uploads are split into Front and Back.
+  // The prompt is generated per-image from that context so the model
+  // knows exactly which fields to expect (DOB on licence back, address
+  // on licence front, both on passport data page).
   "PCH-24": {
     mode: "extract",
     title: "Photo ID (passport or driving licence)",
-    prompt:
-      "This is a UK Photo ID uploaded for anti-money-laundering + personal-data capture. Extract the holder's printed name, date of birth, residential address, and postcode. For a UK driving licence the address is on the front; for a passport there is no address, mark it missing. Return the document type exactly as 'UK passport' or 'UK driving licence'; anything else sets overallConfidence='low' so the client is prompted to re-upload.",
+    prompt: (ctx) => photoIdPrompt(ctx),
     toolName: "extract_photo_id",
     toolDescription: "Extract name, DOB, address, postcode from a UK Photo ID.",
     model: MODEL_SONNET,
@@ -186,6 +198,7 @@ export const SLOT_DEFINITIONS: Record<string, SlotDefinition> = {
 export async function extractForSlot(
   slotCode: string,
   doc: DocumentInput,
+  ctx: ExtractionContext = {},
 ): Promise<ExtractionResult | null> {
   const def = SLOT_DEFINITIONS[slotCode];
   if (!def) throw new Error("Unknown slot code: " + slotCode);
@@ -193,10 +206,14 @@ export async function extractForSlot(
   if (!def.schema || !def.toolName) {
     throw new Error("Slot " + slotCode + " is not configured for AI extraction.");
   }
-  return runExtraction(def, doc);
+  return runExtraction(def, doc, ctx);
 }
 
-async function runExtraction(def: SlotDefinition, doc: DocumentInput): Promise<ExtractionResult> {
+async function runExtraction(
+  def: SlotDefinition,
+  doc: DocumentInput,
+  ctx: ExtractionContext,
+): Promise<ExtractionResult> {
   const anthropic = client();
   const base64 = Buffer.from(doc.bytes).toString("base64");
 
@@ -205,6 +222,7 @@ async function runExtraction(def: SlotDefinition, doc: DocumentInput): Promise<E
       ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
       : { type: "image", source: { type: "base64", media_type: doc.mimeType, data: base64 } };
 
+  const prompt = typeof def.prompt === "function" ? def.prompt(ctx) : def.prompt;
   const response = await anthropic.messages.create({
     model: def.model ?? MODEL_SONNET,
     max_tokens: 3072,
@@ -221,7 +239,7 @@ async function runExtraction(def: SlotDefinition, doc: DocumentInput): Promise<E
     messages: [
       {
         role: "user",
-        content: [docContent, { type: "text", text: def.prompt }],
+        content: [docContent, { type: "text", text: prompt }],
       },
     ],
   });
@@ -236,4 +254,59 @@ async function runExtraction(def: SlotDefinition, doc: DocumentInput): Promise<E
   const { overallConfidence: _oc, documentType: _dt, ...fields } = input;
   void _oc; void _dt;
   return { fields, overallConfidence, documentType, rawJson: input };
+}
+
+// -------------------------------------------------------------------
+// PCH-24 prompt factory. The client picks passport vs licence up-front
+// on the identity card, and licence uploads are split into Front/Back,
+// so we always know what the model is looking at. Tell it exactly which
+// fields to expect and which must be reported missing (DOB on licence
+// front, address on licence back and passport, etc.) so a legitimate
+// absent field isn't downgraded as "low confidence".
+// -------------------------------------------------------------------
+function photoIdPrompt(ctx: ExtractionContext): string {
+  const base =
+    "This is a UK Photo ID uploaded for anti-money-laundering + personal-data capture. " +
+    "Return the document type exactly as 'UK passport' or 'UK driving licence' (front or back as applicable); " +
+    "anything else sets overallConfidence='low' so the client is prompted to re-upload. " +
+    "Dates must be returned as yyyy-mm-dd; UK driving licences print DOB as DD-MM-YYYY, convert. " +
+    "UK postcodes must be returned uppercase with one space between the outward and inward parts (e.g. 'SW1A 2AA').";
+
+  if (ctx.idKind === "passport") {
+    return (
+      base +
+      " This image should be the passport data (photo) page. Extract the printed full name " +
+      "(preserving middle names and suffixes), date of birth, and the passport number as documentNumber. " +
+      "Passports do not carry a residential address: set address and postcode to null with confidence='missing' " +
+      "and a short note explaining they aren't printed on passports."
+    );
+  }
+  if (ctx.idKind === "licence" && ctx.idSide === "front") {
+    return (
+      base +
+      " This image should be the FRONT of a UK driving licence. The front shows the holder's full name, " +
+      "date of birth, and the driver number printed under field 5 (return it as documentNumber). " +
+      "The residential address is on the BACK of the licence, not here: set address and postcode to null with " +
+      "confidence='missing' and a note explaining they live on the back of the card."
+    );
+  }
+  if (ctx.idKind === "licence" && ctx.idSide === "back") {
+    return (
+      base +
+      " This image should be the BACK of a UK driving licence. The back shows the residential address " +
+      "(extract the address lines joined by commas, excluding the postcode which goes in its own field, " +
+      "and the postcode itself). The driver's printed name and date of birth are on the FRONT of the licence, " +
+      "not here: set fullName and dateOfBirth to null with confidence='missing' and a note explaining they " +
+      "live on the front of the card. The driver number printed as documentNumber is on the front; mark it missing too."
+    );
+  }
+
+  // No kind declared yet (legacy upload path before the 8.3 split).
+  // Fall back to the pre-8.3 generic prompt so single-document uploads
+  // still work.
+  return (
+    base +
+    " Extract the holder's printed name, date of birth, residential address, and postcode. " +
+    "For a UK driving licence the address is on the front; for a passport there is no address, mark it missing."
+  );
 }

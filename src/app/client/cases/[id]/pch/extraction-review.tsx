@@ -42,6 +42,11 @@ export type ExtractionReviewPayload = {
   // document. The confirm/edit/skip UI is identical either way; only
   // the banner at the top of the panel changes.
   source: ExtractionSource;
+  // Phase 8 Slice 8.3: for PCH-24 licence uploads, which side of the
+  // card this extraction read. Null for passports and non-PCH-24.
+  // Lets the review card show "From the front of your licence" so the
+  // client can tell the two sub-extractions apart.
+  photoIdSide: "front" | "back" | null;
   labels: Partial<Record<string, string>>;
   targetable: Record<string, boolean>;
 };
@@ -77,11 +82,17 @@ export function ExtractionReview({ ext, canEdit }: {
   const pendingCount = targetableKeys.length - savedCount;
 
   const fromInterview = ext.source === "ai_interview";
+  const sideLabel =
+    ext.photoIdSide === "front"
+      ? " (front of licence)"
+      : ext.photoIdSide === "back"
+        ? " (back of licence)"
+        : "";
   const headline = fromInterview
     ? "Confirmed through AI conversation"
     : low
-      ? "We had trouble reading this"
-      : "Extracted from your document";
+      ? "We had trouble reading this" + sideLabel
+      : "Extracted from your document" + sideLabel;
   return (
     <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
