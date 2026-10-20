@@ -51,10 +51,16 @@ async function requireClientForExtraction(extractionId: string) {
     .single();
   if (!caseRow || caseRow.client_id !== me.id) throw new Error("Not your case.");
   if (caseRow.tier !== "uber_phv_automated") throw new Error("Not a PCH case.");
-  // Match the same edit lock as the main intake actions. Once the
-  // case is in review, extractions become read-only to the client.
-  if (caseRow.status !== "submitted") {
-    throw new Error("Your return is with your accountant; review is frozen.");
+  // Match the same edit lock as the main intake actions: stays open
+  // through submitted / in_review / prepared so the client can keep
+  // confirming or correcting extracted fields even after an accountant
+  // has taken the case, locked only from client_approval onward.
+  if (
+    caseRow.status !== "submitted" &&
+    caseRow.status !== "in_review" &&
+    caseRow.status !== "prepared"
+  ) {
+    throw new Error("This return has already moved to the approval stage. Message your accountant if something needs to change.");
   }
   return { me, ext, caseRow };
 }

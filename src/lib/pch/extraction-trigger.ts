@@ -141,7 +141,7 @@ export async function runPchExtractionJob(extractionId: string): Promise<void> {
     // one; the summary panel still counts them as resolved. The server
     // marker (actedBy='system:auto-skip') is what the review filter
     // keys on.
-    const autoSkipStates = buildAutoSkipFieldStates(ext.slot_code, ext.photo_id_side);
+    const autoSkipStates = buildAutoSkipFieldStates(ext.slot_code, ext.photo_id_side, result.fields);
 
     await admin
       .from("pch_doc_extractions")
@@ -193,6 +193,7 @@ const LICENCE_OFF_SIDE_FIELDS: Record<"front" | "back", readonly string[]> = {
 function buildAutoSkipFieldStates(
   slotCode: string,
   photoIdSide: string | null,
+  fields: Record<string, unknown>,
 ): Record<string, { status: "rejected"; actedAt: string; actedBy: string }> {
   if (slotCode !== "PCH-24") return {};
   if (photoIdSide !== "front" && photoIdSide !== "back") return {};
@@ -200,6 +201,20 @@ function buildAutoSkipFieldStates(
   const states: Record<string, { status: "rejected"; actedAt: string; actedBy: string }> = {};
   for (const key of LICENCE_OFF_SIDE_FIELDS[photoIdSide]) {
     states[key] = { status: "rejected", actedAt: now, actedBy: "system:auto-skip" };
+  }
+  // Belt and braces: a field this side is expected to carry (e.g.
+  // address on the back) sometimes just isn't legible on the photo a
+  // client actually took, old/damaged card, poor lighting, a cropped
+  // shot. When the AI genuinely found nothing there, don't make the
+  // client tap Skip on a field with nothing in it; auto-resolve it the
+  // same way as the known off-side fields. A field the AI did read, at
+  // any confidence, still goes to the client for Confirm/Edit as usual.
+  for (const [key, raw] of Object.entries(fields)) {
+    if (states[key]) continue;
+    const field = raw as { value?: unknown } | null | undefined;
+    if (field && typeof field === "object" && "value" in field && field.value == null) {
+      states[key] = { status: "rejected", actedAt: now, actedBy: "system:auto-skip" };
+    }
   }
   return states;
 }
