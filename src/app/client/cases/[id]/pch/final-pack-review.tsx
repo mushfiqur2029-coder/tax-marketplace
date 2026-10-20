@@ -16,7 +16,6 @@
 // button.
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { confirmFinalPackAction } from "@/app/client/pch/actions";
 
 type Props = {
@@ -34,7 +33,6 @@ export function FinalPackReview({
   confirmedName,
   prefillName,
 }: Props) {
-  const router = useRouter();
   const [name, setName] = useState(prefillName);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -46,7 +44,7 @@ export function FinalPackReview({
       setErr(r.error);
       return;
     }
-    router.refresh();
+    window.location.reload();
   });
 
   if (confirmedAt) {

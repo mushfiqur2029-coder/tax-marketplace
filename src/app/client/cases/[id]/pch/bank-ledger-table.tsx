@@ -17,7 +17,6 @@
 // more than 8 rows so the page is scannable at a glance.
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { setBankTransactionCategoryAction } from "@/app/client/pch/bank-actions";
 
 export type BankTransactionView = {
@@ -230,7 +229,6 @@ function TransactionRow({
   txn: BankTransactionView;
   editable: boolean;
 }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -249,7 +247,7 @@ function TransactionRow({
         return;
       }
       setEditing(false);
-      router.refresh();
+      window.location.reload();
     });
   };
 

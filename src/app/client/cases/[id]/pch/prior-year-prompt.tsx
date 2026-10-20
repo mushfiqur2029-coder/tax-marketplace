@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { spawnPriorYearCasesAction } from "@/app/client/pch/prior-year-actions";
 
 export type PriorYearOption = {
@@ -26,7 +25,6 @@ export function PriorYearPrompt({
   years: PriorYearOption[];
   editable: boolean;
 }) {
-  const router = useRouter();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -53,7 +51,7 @@ export function PriorYearPrompt({
       if (!r.ok) { setErr(r.error); return; }
       setSpawned(r.spawnedCaseIds.length);
       setPicked(new Set());
-      router.refresh();
+      window.location.reload();
     });
   };
 

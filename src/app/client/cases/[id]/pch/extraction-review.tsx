@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   acceptPchExtractionFieldAction,
   editPchExtractionFieldAction,
@@ -216,7 +215,6 @@ function FieldRow({ extractionId, fieldKey, label, field, state, targetable, can
   targetable: boolean;
   canEdit: boolean;
 }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [draft, setDraft] = useState<string>(
     state.overrideValue != null ? String(state.overrideValue) :
@@ -230,7 +228,7 @@ function FieldRow({ extractionId, fieldKey, label, field, state, targetable, can
   ) => {
     start(async () => {
       const r = await fn();
-      if (r.ok) { if (after) after(); router.refresh(); }
+      if (r.ok) { if (after) after(); window.location.reload(); }
       else alert(r.error ?? "Action failed");
     });
   };

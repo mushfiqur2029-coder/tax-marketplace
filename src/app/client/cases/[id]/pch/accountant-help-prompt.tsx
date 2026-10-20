@@ -9,7 +9,6 @@
 // handoff. Follow-up conversation happens in the case-messages panel.
 
 import { useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { requestPchAccountantHelpAction } from "@/app/client/pch/actions";
 
 type Props = {
@@ -25,7 +24,6 @@ export function AccountantHelpPrompt({
   slotLabel,
   onClose,
 }: Props) {
-  const router = useRouter();
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -41,7 +39,7 @@ export function AccountantHelpPrompt({
         return;
       }
       setDone(true);
-      router.refresh();
+      window.location.reload();
     });
   };
 

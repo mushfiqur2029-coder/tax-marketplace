@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
   setPchDocStatusAction,
@@ -446,7 +445,6 @@ function SingleAnswerSection({
   // skip button so the client sees the skip persist across refresh.
   skipped: boolean;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [skipping, startSkip] = useTransition();
   const [skipErr, setSkipErr] = useState<string | null>(null);
@@ -455,7 +453,7 @@ function SingleAnswerSection({
     setSkipErr(null);
     const r = await markPchChecklistNotApplicableAction(caseId, checklistItems);
     if (!r.ok) setSkipErr(r.error);
-    else router.refresh();
+    else window.location.reload();
   });
   return (
     <div className="space-y-3">
@@ -697,7 +695,6 @@ function ReliefsSection({
   // SingleAnswerSection's skipped state.
   skipped: boolean;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [skipping, startSkip] = useTransition();
   const [skipErr, setSkipErr] = useState<string | null>(null);
@@ -708,7 +705,7 @@ function ReliefsSection({
     setSkipErr(null);
     const r = await markPchChecklistNotApplicableAction(caseId, [19]);
     if (!r.ok) setSkipErr(r.error);
-    else router.refresh();
+    else window.location.reload();
   });
   return (
     <div className="space-y-3">
@@ -846,13 +843,12 @@ function SubmitForReviewSection({
   caseId: string;
   readiness: { ok: boolean; blockers: string[] };
 }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const submit = () => start(async () => {
     const r = await submitForReviewAction(caseId);
     if (!r.ok) setErr(r.error);
-    else { setErr(null); router.refresh(); }
+    else { setErr(null); window.location.reload(); }
   });
   return (
     <div className="mt-10 rounded-lg border border-slate-200 bg-white p-5">
@@ -899,7 +895,6 @@ function DocSection({
   // vs licence UI; null means "client hasn't picked yet".
   photoIdKind: "passport" | "licence" | null;
 }) {
-  const router = useRouter();
   const statusByCode = new Map(status.map((s) => [s.slot_code, s]));
   const uploadedByKey = new Map<string, UploadedDoc[]>();
   for (const d of uploaded) {
@@ -931,7 +926,7 @@ function DocSection({
                   extractions={extractionsBySlot.get(s.code) ?? []}
                   canEdit={editable}
                   photoIdKind={photoIdKind}
-                  onChanged={() => router.refresh()}
+                  onChanged={() => window.location.reload()}
                 />
               ) : (
                 <DocRow
@@ -942,7 +937,7 @@ function DocSection({
                   uploaded={uploadedByKey.get(s.code) ?? []}
                   extractions={extractionsBySlot.get(s.code) ?? []}
                   canEdit={editable}
-                  onChanged={() => router.refresh()}
+                  onChanged={() => window.location.reload()}
                 />
               )
             ))}
@@ -967,11 +962,16 @@ function DocRow({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // A direct `await someServerAction()` call from an event handler (not
-  // a <form action>) must be wrapped in a transition, otherwise Next
-  // mutates the data but doesn't apply the refreshed RSC payload to the
-  // page: the UI only catches up on a manual reload. onChanged() (which
-  // calls router.refresh()) is called inside the transition too, so the
-  // explicit refresh it triggers is itself coordinated through it.
+  // a <form action>) should be wrapped in a transition so React treats
+  // it as an action; kept for that, and because onChanged() runs inside
+  // it. onChanged() itself is a hard window.location.reload(), not
+  // router.refresh() 2026-10-20 testing on production showed the
+  // mutation and server-side revalidation both land correctly (a fresh
+  // manual RSC fetch, and a Link navigation away and back, both show
+  // the new data immediately) but router.refresh() alone on the same
+  // route reliably failed to apply that refreshed payload to the
+  // screen, which is exactly the "have to refresh after every click"
+  // bug. A full reload is heavier but guaranteed correct.
   const [, startActionTransition] = useTransition();
   const inputId = `up-${slot.code}`;
   const isRequired = /^Required/i.test(slot.required_rule);
@@ -1578,7 +1578,6 @@ function ApprovalSection({
   caseId: string; snapshotAt: string | null;
   approvalAt: string | null; approvalName: string | null;
 }) {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -1597,7 +1596,7 @@ function ApprovalSection({
   const submit = () => start(async () => {
     const r = await recordClientApprovalAction(caseId, name);
     if (!r.ok) setErr(r.error);
-    else { setErr(null); router.refresh(); }
+    else { setErr(null); window.location.reload(); }
   });
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">

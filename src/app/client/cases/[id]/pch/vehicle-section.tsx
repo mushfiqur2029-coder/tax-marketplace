@@ -15,7 +15,6 @@
 // in plain English before asking the first question.
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { VehicleInterviewPanel } from "./vehicle-interview-panel";
 import { AiInterviewPanel } from "@/components/case/ai-interview-panel";
 import { isCaEligibleStatus } from "@/lib/pch/ai-interview-slots";
@@ -52,7 +51,6 @@ type Props = {
 };
 
 export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [skipping, startSkip] = useTransition();
   const [skipErr, setSkipErr] = useState<string | null>(null);
@@ -62,7 +60,7 @@ export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
     setSkipErr(null);
     const r = await markNoVehicleAction(caseId);
     if (!r.ok) setSkipErr(r.error);
-    else router.refresh();
+    else window.location.reload();
   });
 
   return (
@@ -162,7 +160,6 @@ function DisposalSubpanel({
   date: string | null;
   canEdit: boolean;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -171,7 +168,7 @@ function DisposalSubpanel({
     setErr(null);
     const r = await markNoVehicleDisposalAction(caseId);
     if (!r.ok) setErr(r.error);
-    else router.refresh();
+    else window.location.reload();
   });
 
   return (

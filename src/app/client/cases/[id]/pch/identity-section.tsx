@@ -20,7 +20,6 @@
 // summary are gone with the Phase 6 bookkeeping redesign.
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { savePchIdentityFieldsAction } from "@/app/client/pch/actions";
 import { validateUtr, validateNino } from "@/lib/pch/validation";
 
@@ -40,7 +39,6 @@ type Props = {
 };
 
 export function IdentitySection({ caseId, head, editable = true }: Props) {
-  const router = useRouter();
   const [utr, setUtr] = useState(head.cl_utr ?? "");
   const [nino, setNino] = useState(head.cl_nino ?? "");
   const [pending, start] = useTransition();
@@ -62,7 +60,7 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
     });
     if (r.ok) {
       setMsg("Saved");
-      router.refresh();
+      window.location.reload();
     } else {
       setMsg(r.error);
     }

@@ -20,7 +20,6 @@
 // client can override from the ledger table below.
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   nextBankClarifyTargetAction,
   recordBankClarifyAnswerAction,
@@ -40,7 +39,6 @@ type Turn =
   | { role: "status"; text: string };
 
 export function BankClarifyChat({ caseId, initialPendingCount }: Props) {
-  const router = useRouter();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [current, setCurrent] = useState<ClarifyTarget | null>(null);
   const [draft, setDraft] = useState("");
@@ -117,7 +115,7 @@ export function BankClarifyChat({ caseId, initialPendingCount }: Props) {
         },
       ]);
       setRemaining((n) => Math.max(0, n - 1));
-      router.refresh();
+      window.location.reload();
       loadNext();
     });
   };
