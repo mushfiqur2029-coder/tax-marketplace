@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminSearchFilter } from "@/components/admin/admin-search-filter";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import {
   markWithdrawalPaidAction,
@@ -74,94 +75,98 @@ export default async function AdminWithdrawalsPage() {
           View reveal audit log →
         </Link>
       </div>
-      <section className="mb-10">
-        <h2
-          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          Pending ({pending.length})
-        </h2>
-        {pending.length === 0 ? (
-          <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-            No pending requests.
-          </p>
-        ) : (
-          <ul className="grid gap-3">
-            {pending.map((r) => (
-              <li key={r.id} className="card-sl p-5">
-                <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+      <AdminSearchFilter
+        placeholder="Search by email, account name or sort code"
+        ariaLabel="Search withdrawal requests"
+        groups={[
+          {
+            key: "pending",
+            title: "Pending",
+            emptyLine: "No pending requests.",
+            items: pending.map((r) => ({
+              searchText: [
+                emailById.get(r.accountant_id),
+                r.account_name,
+                r.sort_code,
+              ]
+                .filter(Boolean)
+                .join(" "),
+              node: (
+                <li key={r.id} className="card-sl p-5">
+                  <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+                    <div>
+                      <div className="text-base font-semibold text-ink">
+                        {formatMoney(r.amount_pence)} &middot; {emailById.get(r.accountant_id) ?? r.accountant_id}
+                      </div>
+                      <dl className="mt-2 text-xs text-slate">
+                        <div>
+                          <span className="font-semibold text-ink">
+                            {r.account_name}
+                          </span>
+                        </div>
+                        <RevealBankButton
+                          requestId={r.id}
+                          maskedAccountNumber={maskAccountNumber(r.account_number)}
+                          sortCode={r.sort_code}
+                          reveal={revealBank}
+                        />
+                        <div className="mt-1">
+                          Requested {formatDateTime(r.requested_at)}
+                        </div>
+                      </dl>
+                    </div>
+                    <PayoutForm requestId={r.id} markPaid={markPaid} />
+                  </div>
+                </li>
+              ),
+            })),
+          },
+          {
+            key: "paid",
+            title: "Paid",
+            emptyLine: "No completed payouts yet.",
+            items: paid.map((r) => ({
+              searchText: [
+                emailById.get(r.accountant_id),
+                r.account_name,
+                r.sort_code,
+              ]
+                .filter(Boolean)
+                .join(" "),
+              node: (
+                <li
+                  key={r.id}
+                  className="card-sl flex items-center justify-between p-5 text-sm"
+                >
                   <div>
-                    <div className="text-base font-semibold text-ink">
+                    <div className="font-semibold text-ink">
                       {formatMoney(r.amount_pence)} &middot; {emailById.get(r.accountant_id) ?? r.accountant_id}
                     </div>
-                    <dl className="mt-2 text-xs text-slate">
-                      <div>
-                        <span className="font-semibold text-ink">
-                          {r.account_name}
-                        </span>
-                      </div>
+                    <div className="text-xs text-slate">
+                      {r.account_name} &middot; {r.sort_code} &middot;{" "}
+                      <span className="font-mono">
+                        {maskAccountNumber(r.account_number)}
+                      </span>
+                      {r.paid_at ? <> &middot; Paid {formatDateTime(r.paid_at)}</> : null}
+                    </div>
+                    <div className="mt-1">
                       <RevealBankButton
                         requestId={r.id}
                         maskedAccountNumber={maskAccountNumber(r.account_number)}
                         sortCode={r.sort_code}
                         reveal={revealBank}
                       />
-                      <div className="mt-1">
-                        Requested {formatDateTime(r.requested_at)}
-                      </div>
-                    </dl>
+                    </div>
                   </div>
-                  <PayoutForm requestId={r.id} markPaid={markPaid} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2
-          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          Paid ({paid.length})
-        </h2>
-        {paid.length === 0 ? (
-          <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-            No completed payouts yet.
-          </p>
-        ) : (
-          <ul className="grid gap-3">
-            {paid.map((r) => (
-              <li key={r.id} className="card-sl flex items-center justify-between p-5 text-sm">
-                <div>
-                  <div className="font-semibold text-ink">
-                    {formatMoney(r.amount_pence)} &middot; {emailById.get(r.accountant_id) ?? r.accountant_id}
-                  </div>
-                  <div className="text-xs text-slate">
-                    {r.account_name} &middot; {r.sort_code} &middot;{" "}
-                    <span className="font-mono">
-                      {maskAccountNumber(r.account_number)}
-                    </span>
-                    {r.paid_at ? <> &middot; Paid {formatDateTime(r.paid_at)}</> : null}
-                  </div>
-                  <div className="mt-1">
-                    <RevealBankButton
-                      requestId={r.id}
-                      maskedAccountNumber={maskAccountNumber(r.account_number)}
-                      sortCode={r.sort_code}
-                      reveal={revealBank}
-                    />
-                  </div>
-                </div>
-                {r.receipt_path ? (
-                  <ReceiptLink path={r.receipt_path} sign={signReceipt} />
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                  {r.receipt_path ? (
+                    <ReceiptLink path={r.receipt_path} sign={signReceipt} />
+                  ) : null}
+                </li>
+              ),
+            })),
+          },
+        ]}
+      />
     </>
   );
 }

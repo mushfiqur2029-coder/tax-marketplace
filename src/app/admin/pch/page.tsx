@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminTableFilter } from "@/components/admin/admin-table-filter";
 import { StatusPill } from "@/components/case/status-pill";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 
@@ -106,8 +107,12 @@ export default async function AdminPchListPage() {
           </Link>
         }
       />
-      <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
-        <table className="w-full text-sm">
+      <AdminTableFilter
+        placeholder="Search by client name or email"
+        ariaLabel="Search PCH cases"
+        emptyLine="No PCH cases yet."
+        colSpan={8}
+        thead={
           <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wide">
             <tr>
               <th className="text-left py-2 px-3">Client</th>
@@ -120,73 +125,66 @@ export default async function AdminPchListPage() {
               <th className="text-right py-2 px-3 w-28">Taxable £</th>
             </tr>
           </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="py-8 px-3 text-center text-slate-500 text-sm">
-                  No PCH cases yet.
-                </td>
-              </tr>
-            ) : (
-              rows.map((r) => (
-                <tr key={r.case_id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="py-2 px-3">
-                    <Link href={`/admin/pch/${r.case_id}`} className="hover:underline">
-                      <div className="font-medium text-slate-800">
-                        {r.client_name ?? r.client_email}
-                      </div>
-                      {r.client_name && (
-                        <div className="text-xs text-slate-500">{r.client_email}</div>
-                      )}
-                    </Link>
-                  </td>
-                  <td className="py-2 px-3">
-                    <StatusPill status={r.status} />
-                  </td>
-                  <td className="py-2 px-3 text-right text-slate-700 tabular-nums">
-                    {daysBetween(r.status_since, today)}d
-                  </td>
-                  <td className="py-2 px-3 text-right tabular-nums">
-                    <span className={
-                      r.checks_resolved >= r.checks_total ? "text-emerald-700 font-semibold"
-                      : r.checks_resolved > 0 ? "text-amber-700" : "text-slate-500"
-                    }>
-                      {r.checks_resolved}/{r.checks_total}
+        }
+        rows={rows.map((r) => ({
+          searchText: [r.client_name, r.client_email].filter(Boolean).join(" "),
+          node: (
+            <tr key={r.case_id} className="border-t border-slate-100 hover:bg-slate-50">
+              <td className="py-2 px-3">
+                <Link href={`/admin/pch/${r.case_id}`} className="hover:underline">
+                  <div className="font-medium text-slate-800">
+                    {r.client_name ?? r.client_email}
+                  </div>
+                  {r.client_name && (
+                    <div className="text-xs text-slate-500">{r.client_email}</div>
+                  )}
+                </Link>
+              </td>
+              <td className="py-2 px-3">
+                <StatusPill status={r.status} />
+              </td>
+              <td className="py-2 px-3 text-right text-slate-700 tabular-nums">
+                {daysBetween(r.status_since, today)}d
+              </td>
+              <td className="py-2 px-3 text-right tabular-nums">
+                <span className={
+                  r.checks_resolved >= r.checks_total ? "text-emerald-700 font-semibold"
+                  : r.checks_resolved > 0 ? "text-amber-700" : "text-slate-500"
+                }>
+                  {r.checks_resolved}/{r.checks_total}
+                </span>
+              </td>
+              <td className="py-2 px-3 text-xs">
+                {r.approval_at ? (
+                  <span className="text-emerald-700">
+                    ✓ {r.approval_name} <br/>
+                    <span className="text-slate-500">
+                      {new Date(r.approval_at).toLocaleDateString()}
                     </span>
-                  </td>
-                  <td className="py-2 px-3 text-xs">
-                    {r.approval_at ? (
-                      <span className="text-emerald-700">
-                        ✓ {r.approval_name} <br/>
-                        <span className="text-slate-500">
-                          {new Date(r.approval_at).toLocaleDateString()}
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">-</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-3 text-right tabular-nums">
-                    {r.override_count > 0 ? (
-                      <span className="text-amber-700 font-semibold">{r.override_count}</span>
-                    ) : (
-                      <span className="text-slate-400">0</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-3 text-xs text-slate-600">
-                    {r.snapshot_at
-                      ? new Date(r.snapshot_at).toLocaleString()
-                      : <span className="text-slate-400">not run</span>}
-                  </td>
-                  <td className="py-2 px-3 text-right tabular-nums font-medium">
-                    {money(r.taxable_profit)}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                  </span>
+                ) : (
+                  <span className="text-slate-500">-</span>
+                )}
+              </td>
+              <td className="py-2 px-3 text-right tabular-nums">
+                {r.override_count > 0 ? (
+                  <span className="text-amber-700 font-semibold">{r.override_count}</span>
+                ) : (
+                  <span className="text-slate-400">0</span>
+                )}
+              </td>
+              <td className="py-2 px-3 text-xs text-slate-600">
+                {r.snapshot_at
+                  ? new Date(r.snapshot_at).toLocaleString()
+                  : <span className="text-slate-400">not run</span>}
+              </td>
+              <td className="py-2 px-3 text-right tabular-nums font-medium">
+                {money(r.taxable_profit)}
+              </td>
+            </tr>
+          ),
+        }))}
+      />
     </>
   );
 }

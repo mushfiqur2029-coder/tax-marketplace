@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { AdminListSection } from "@/components/admin/admin-list-section";
+import { AdminSearchFilter } from "@/components/admin/admin-search-filter";
 import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
@@ -184,59 +184,87 @@ export default async function AdminEnquiriesPage() {
         title="Service enquiries"
         description="Pre-sales leads from the Limited Company bespoke tier. Follow up quickly. Real potential clients waiting on a human reply."
       />
-      <AdminListSection
-        title={`New (${groups.new.length})`}
-        emptyLine="No new enquiries. The badge next to Enquiries in the nav turns on when one lands."
-      >
-        {groups.new.map((r) => (
-          <EnquiryCard
-            key={r.id}
-            row={r}
-            submittedByEmail={emailById.get(r.client_id) ?? null}
-            accountants={accountants}
-            existingCase={caseByEnquiryId.get(r.id) ?? null}
-            booking={bookingByEnquiryId.get(r.id) ?? null}
-            setStatus={setStatus}
-            createCase={createCase}
-          />
-        ))}
-      </AdminListSection>
-
-      {groups.contacted.length > 0 ? (
-        <AdminListSection title={`Contacted (${groups.contacted.length})`} emptyLine="">
-          {groups.contacted.map((r) => (
-            <EnquiryCard
-              key={r.id}
-              row={r}
-              submittedByEmail={emailById.get(r.client_id) ?? null}
-              accountants={accountants}
-              existingCase={caseByEnquiryId.get(r.id) ?? null}
-              booking={bookingByEnquiryId.get(r.id) ?? null}
-              setStatus={setStatus}
-              createCase={createCase}
-            />
-          ))}
-        </AdminListSection>
-      ) : null}
-
-      {groups.closed.length > 0 ? (
-        <AdminListSection title={`Closed (${groups.closed.length})`} emptyLine="">
-          {groups.closed.map((r) => (
-            <EnquiryCard
-              key={r.id}
-              row={r}
-              submittedByEmail={emailById.get(r.client_id) ?? null}
-              accountants={accountants}
-              existingCase={caseByEnquiryId.get(r.id) ?? null}
-              booking={bookingByEnquiryId.get(r.id) ?? null}
-              setStatus={setStatus}
-              createCase={createCase}
-            />
-          ))}
-        </AdminListSection>
-      ) : null}
+      <AdminSearchFilter
+        placeholder="Search by company, contact or email"
+        ariaLabel="Search enquiries"
+        groups={[
+          {
+            key: "new",
+            title: "New",
+            emptyLine:
+              "No new enquiries. The badge next to Enquiries in the nav turns on when one lands.",
+            items: groups.new.map((r) => ({
+              searchText: enquirySearchText(r, emailById),
+              node: (
+                <EnquiryCard
+                  key={r.id}
+                  row={r}
+                  submittedByEmail={emailById.get(r.client_id) ?? null}
+                  accountants={accountants}
+                  existingCase={caseByEnquiryId.get(r.id) ?? null}
+                  booking={bookingByEnquiryId.get(r.id) ?? null}
+                  setStatus={setStatus}
+                  createCase={createCase}
+                />
+              ),
+            })),
+          },
+          {
+            key: "contacted",
+            title: "Contacted",
+            hidden: groups.contacted.length === 0,
+            items: groups.contacted.map((r) => ({
+              searchText: enquirySearchText(r, emailById),
+              node: (
+                <EnquiryCard
+                  key={r.id}
+                  row={r}
+                  submittedByEmail={emailById.get(r.client_id) ?? null}
+                  accountants={accountants}
+                  existingCase={caseByEnquiryId.get(r.id) ?? null}
+                  booking={bookingByEnquiryId.get(r.id) ?? null}
+                  setStatus={setStatus}
+                  createCase={createCase}
+                />
+              ),
+            })),
+          },
+          {
+            key: "closed",
+            title: "Closed",
+            hidden: groups.closed.length === 0,
+            items: groups.closed.map((r) => ({
+              searchText: enquirySearchText(r, emailById),
+              node: (
+                <EnquiryCard
+                  key={r.id}
+                  row={r}
+                  submittedByEmail={emailById.get(r.client_id) ?? null}
+                  accountants={accountants}
+                  existingCase={caseByEnquiryId.get(r.id) ?? null}
+                  booking={bookingByEnquiryId.get(r.id) ?? null}
+                  setStatus={setStatus}
+                  createCase={createCase}
+                />
+              ),
+            })),
+          },
+        ]}
+      />
     </>
   );
+}
+
+function enquirySearchText(r: Row, emailById: Map<string, string>): string {
+  return [
+    r.company_name,
+    r.company_number,
+    r.contact_name,
+    r.contact_email,
+    emailById.get(r.client_id),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function EnquiryCard({

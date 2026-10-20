@@ -6,6 +6,7 @@ import {
   rejectAddonAction,
 } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminSearchFilter } from "@/components/admin/admin-search-filter";
 import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
@@ -63,91 +64,84 @@ export default async function AdminAddonRequestsPage() {
         title="Add-on requests"
         description="Custom add-ons that need approval before the client sees them. Preset add-ons skip review and go straight to the client."
       />
-      <section className="mb-10">
-        <h2
-          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          Pending ({pending.length})
-        </h2>
-        {pending.length === 0 ? (
-          <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-            No pending add-on requests.
-          </p>
-        ) : (
-          <ul className="grid gap-3">
-            {pending.map((r) => (
-              <li key={r.id} className="card-sl p-5">
-                <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-                  <span className="font-semibold text-ink">
-                    {accEmail.get(r.accountant_id) ?? r.accountant_id}
-                  </span>
-                  <span
-                    className="text-lg font-bold text-ink"
-                    style={{ fontFamily: "var(--font-heading)" }}
-                  >
-                    {money(r.amount_pence)}
-                  </span>
-                  <Link
-                    href={`/admin/cases/${r.case_id}`}
-                    className="text-xs font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
-                  >
-                    View case
-                  </Link>
-                  <span className="ml-auto text-xs text-slate">
-                    requested {formatDateTime(r.created_at)}
-                  </span>
-                </div>
-                <p className="rounded-lg border border-line bg-cloud/40 p-3 text-sm text-ink">
-                  {r.description}
-                </p>
-                <div className="mt-4">
-                  <ReviewActions id={r.id} approve={approve} reject={reject} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2
-          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          Reviewed ({reviewed.length})
-        </h2>
-        {reviewed.length === 0 ? (
-          <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-            Nothing reviewed yet.
-          </p>
-        ) : (
-          <ul className="grid gap-2">
-            {reviewed.slice(0, 30).map((r) => (
-              <li
-                key={r.id}
-                className="card-sl flex items-center justify-between gap-3 p-4 text-sm"
-              >
-                <div className="min-w-0">
-                  <div className="font-semibold text-ink">
-                    {money(r.amount_pence)} ·{" "}
-                    {accEmail.get(r.accountant_id) ?? r.accountant_id}
+      <AdminSearchFilter
+        placeholder="Search by accountant email or description"
+        ariaLabel="Search add-on requests"
+        groups={[
+          {
+            key: "pending",
+            title: "Pending",
+            emptyLine: "No pending add-on requests.",
+            items: pending.map((r) => ({
+              searchText: [accEmail.get(r.accountant_id), r.description]
+                .filter(Boolean)
+                .join(" "),
+              node: (
+                <li key={r.id} className="card-sl p-5">
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-semibold text-ink">
+                      {accEmail.get(r.accountant_id) ?? r.accountant_id}
+                    </span>
+                    <span
+                      className="text-lg font-bold text-ink"
+                      style={{ fontFamily: "var(--font-heading)" }}
+                    >
+                      {money(r.amount_pence)}
+                    </span>
+                    <Link
+                      href={`/admin/cases/${r.case_id}`}
+                      className="text-xs font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
+                    >
+                      View case
+                    </Link>
+                    <span className="ml-auto text-xs text-slate">
+                      requested {formatDateTime(r.created_at)}
+                    </span>
                   </div>
-                  <div className="truncate text-xs text-slate">
+                  <p className="rounded-lg border border-line bg-cloud/40 p-3 text-sm text-ink">
                     {r.description}
+                  </p>
+                  <div className="mt-4">
+                    <ReviewActions id={r.id} approve={approve} reject={reject} />
                   </div>
-                  <div className="text-[11px] text-slate">
-                    reviewed{" "}
-                    {r.reviewed_at ? formatDateTime(r.reviewed_at) : "."}
-                    {r.review_note ? <> · &ldquo;{r.review_note}&rdquo;</> : null}
+                </li>
+              ),
+            })),
+          },
+          {
+            key: "reviewed",
+            title: "Reviewed",
+            emptyLine: "Nothing reviewed yet.",
+            items: reviewed.slice(0, 30).map((r) => ({
+              searchText: [accEmail.get(r.accountant_id), r.description]
+                .filter(Boolean)
+                .join(" "),
+              node: (
+                <li
+                  key={r.id}
+                  className="card-sl flex items-center justify-between gap-3 p-4 text-sm"
+                >
+                  <div className="min-w-0">
+                    <div className="font-semibold text-ink">
+                      {money(r.amount_pence)} ·{" "}
+                      {accEmail.get(r.accountant_id) ?? r.accountant_id}
+                    </div>
+                    <div className="truncate text-xs text-slate">
+                      {r.description}
+                    </div>
+                    <div className="text-[11px] text-slate">
+                      reviewed{" "}
+                      {r.reviewed_at ? formatDateTime(r.reviewed_at) : "."}
+                      {r.review_note ? <> · &ldquo;{r.review_note}&rdquo;</> : null}
+                    </div>
                   </div>
-                </div>
-                <StatusPill status={r.status} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                  <StatusPill status={r.status} />
+                </li>
+              ),
+            })),
+          },
+        ]}
+      />
     </>
   );
 }

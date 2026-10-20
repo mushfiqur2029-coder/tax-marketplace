@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { setAccountantApprovalAction } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { AdminListSection } from "@/components/admin/admin-list-section";
+import { AdminSearchFilter } from "@/components/admin/admin-search-filter";
 import { Avatar } from "@/components/avatar";
 import { ApprovalActions } from "./approval-actions";
 
@@ -64,6 +64,9 @@ export default async function AccountantsPage() {
     rejected: rows.filter((r) => r.approval_status === "rejected"),
   };
 
+  const searchText = (r: Row) =>
+    [r.name, emailById.get(r.user_id), r.company_name].filter(Boolean).join(" ");
+
   return (
     <>
       <AdminPageHeader
@@ -71,50 +74,61 @@ export default async function AccountantsPage() {
         title="Accountants"
         description="Approve new accountants and drill into any of them for full details."
       />
-      <AdminListSection
-        title={`Pending (${groups.pending.length})`}
-        emptyLine="No accountants awaiting approval."
-      >
-        {groups.pending.map((r) => (
-          <RowCard
-            key={r.user_id}
-            row={r}
-            email={emailById.get(r.user_id) ?? ""}
-            caseCount={casesByAcc.get(r.user_id) ?? 0}
-            actions={<ApprovalActions accountantId={r.user_id} decide={decide} />}
-          />
-        ))}
-      </AdminListSection>
-
-      <AdminListSection
-        title={`Approved (${groups.approved.length})`}
-        emptyLine="No approved accountants yet."
-      >
-        {groups.approved.map((r) => (
-          <RowCard
-            key={r.user_id}
-            row={r}
-            email={emailById.get(r.user_id) ?? ""}
-            caseCount={casesByAcc.get(r.user_id) ?? 0}
-          />
-        ))}
-      </AdminListSection>
-
-      {groups.rejected.length > 0 ? (
-        <AdminListSection
-          title={`Rejected (${groups.rejected.length})`}
-          emptyLine=""
-        >
-          {groups.rejected.map((r) => (
-            <RowCard
-              key={r.user_id}
-              row={r}
-              email={emailById.get(r.user_id) ?? ""}
-              caseCount={casesByAcc.get(r.user_id) ?? 0}
-            />
-          ))}
-        </AdminListSection>
-      ) : null}
+      <AdminSearchFilter
+        placeholder="Search by name, email or company"
+        ariaLabel="Search accountants"
+        groups={[
+          {
+            key: "pending",
+            title: "Pending",
+            emptyLine: "No accountants awaiting approval.",
+            items: groups.pending.map((r) => ({
+              searchText: searchText(r),
+              node: (
+                <RowCard
+                  key={r.user_id}
+                  row={r}
+                  email={emailById.get(r.user_id) ?? ""}
+                  caseCount={casesByAcc.get(r.user_id) ?? 0}
+                  actions={<ApprovalActions accountantId={r.user_id} decide={decide} />}
+                />
+              ),
+            })),
+          },
+          {
+            key: "approved",
+            title: "Approved",
+            emptyLine: "No approved accountants yet.",
+            items: groups.approved.map((r) => ({
+              searchText: searchText(r),
+              node: (
+                <RowCard
+                  key={r.user_id}
+                  row={r}
+                  email={emailById.get(r.user_id) ?? ""}
+                  caseCount={casesByAcc.get(r.user_id) ?? 0}
+                />
+              ),
+            })),
+          },
+          {
+            key: "rejected",
+            title: "Rejected",
+            hidden: groups.rejected.length === 0,
+            items: groups.rejected.map((r) => ({
+              searchText: searchText(r),
+              node: (
+                <RowCard
+                  key={r.user_id}
+                  row={r}
+                  email={emailById.get(r.user_id) ?? ""}
+                  caseCount={casesByAcc.get(r.user_id) ?? 0}
+                />
+              ),
+            })),
+          },
+        ]}
+      />
     </>
   );
 }

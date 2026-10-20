@@ -5,6 +5,8 @@ import {
   rejectProfileChangeAction,
 } from "@/app/profile-actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminSearchFilter } from "@/components/admin/admin-search-filter";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 import { ReviewActions } from "./review-actions";
@@ -52,118 +54,93 @@ export default async function AdminProfileChangesPage() {
         title="Profile change requests"
         description="Client and accountant edits require review before they apply to live profiles."
       />
-      <section className="mb-10">
-        <h2
-          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          Pending ({pending.length})
-        </h2>
-        {pending.length === 0 ? (
-          <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-            No pending changes.
-          </p>
-        ) : (
-          <ul className="grid gap-3">
-            {pending.map((c) => {
+      <AdminSearchFilter
+        placeholder="Search by email or role"
+        ariaLabel="Search profile change requests"
+        groups={[
+          {
+            key: "pending",
+            title: "Pending",
+            emptyLine: "No pending changes.",
+            items: pending.map((c) => {
               const proposed = c.proposed as Record<string, string>;
-              return (
-                <li key={c.id} className="card-sl p-5">
-                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-semibold text-ink">
-                      {emailById.get(c.user_id) ?? c.user_id}
-                    </span>
-                    <span
-                      className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-                      style={{
-                        background: "rgba(15,30,77,0.08)",
-                        color: "var(--navy-deep)",
-                        fontFamily: "var(--font-mono)",
-                      }}
-                    >
-                      {c.role}
-                    </span>
-                    <span className="text-xs text-slate">
-                      requested {formatDateTime(c.requested_at)}
-                    </span>
-                  </div>
-                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
-                    {Object.entries(proposed).map(([k, v]) => (
-                      <div key={k} className="rounded-lg border border-line bg-cloud/40 p-3">
-                        <dt
-                          className="text-[10px] font-semibold uppercase tracking-wider text-slate"
-                          style={{ fontFamily: "var(--font-mono)" }}
-                        >
-                          {k.replace(/_/g, " ")}
-                        </dt>
-                        <dd className="mt-1 text-ink">
-                          {k === "avatar_path" && v ? (
-                            <Avatar path={String(v)} size={56} />
-                          ) : String(v) ? (
-                            String(v)
-                          ) : (
-                            <span className="italic text-slate">(empty)</span>
-                          )}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <div className="mt-4">
-                    <ReviewActions id={c.id} approve={approve} reject={reject} />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2
-          className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          Reviewed ({reviewed.length})
-        </h2>
-        {reviewed.length === 0 ? (
-          <p className="card-sl border-dashed p-6 text-center text-sm text-slate">
-            No reviewed changes yet.
-          </p>
-        ) : (
-          <ul className="grid gap-2">
-            {reviewed.slice(0, 20).map((c) => (
-              <li
-                key={c.id}
-                className="card-sl flex items-center justify-between p-4 text-sm"
-              >
-                <div>
-                  <div className="font-semibold text-ink">
-                    {emailById.get(c.user_id) ?? c.user_id}
-                  </div>
-                  <div className="text-xs text-slate">
-                    {c.role} · reviewed{" "}
-                    {c.reviewed_at ? formatDateTime(c.reviewed_at) : "."}
-                    {c.review_note ? <> · &ldquo;{c.review_note}&rdquo;</> : null}
-                  </div>
-                </div>
-                <span
-                  className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-                  style={{
-                    background:
-                      c.status === "approved"
-                        ? "rgba(19,217,160,0.14)"
-                        : "rgba(220,38,38,0.12)",
-                    color: c.status === "approved" ? "#0E9E77" : "#B91C1C",
-                    fontFamily: "var(--font-mono)",
-                  }}
+              return {
+                searchText: [emailById.get(c.user_id), c.role]
+                  .filter(Boolean)
+                  .join(" "),
+                node: (
+                  <li key={c.id} className="card-sl p-5">
+                    <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                      <span className="font-semibold text-ink">
+                        {emailById.get(c.user_id) ?? c.user_id}
+                      </span>
+                      <AdminPill tone="grey" label={c.role} />
+                      <span className="text-xs text-slate">
+                        requested {formatDateTime(c.requested_at)}
+                      </span>
+                    </div>
+                    <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                      {Object.entries(proposed).map(([k, v]) => (
+                        <div key={k} className="rounded-lg border border-line bg-cloud/40 p-3">
+                          <dt
+                            className="text-[10px] font-semibold uppercase tracking-wider text-slate"
+                            style={{ fontFamily: "var(--font-mono)" }}
+                          >
+                            {k.replace(/_/g, " ")}
+                          </dt>
+                          <dd className="mt-1 text-ink">
+                            {k === "avatar_path" && v ? (
+                              <Avatar path={String(v)} size={56} />
+                            ) : String(v) ? (
+                              String(v)
+                            ) : (
+                              <span className="italic text-slate">(empty)</span>
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <div className="mt-4">
+                      <ReviewActions id={c.id} approve={approve} reject={reject} />
+                    </div>
+                  </li>
+                ),
+              };
+            }),
+          },
+          {
+            key: "reviewed",
+            title: "Reviewed",
+            emptyLine: "No reviewed changes yet.",
+            items: reviewed.slice(0, 20).map((c) => ({
+              searchText: [emailById.get(c.user_id), c.role]
+                .filter(Boolean)
+                .join(" "),
+              node: (
+                <li
+                  key={c.id}
+                  className="card-sl flex items-center justify-between p-4 text-sm"
                 >
-                  {c.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                  <div>
+                    <div className="font-semibold text-ink">
+                      {emailById.get(c.user_id) ?? c.user_id}
+                    </div>
+                    <div className="text-xs text-slate">
+                      {c.role} · reviewed{" "}
+                      {c.reviewed_at ? formatDateTime(c.reviewed_at) : "."}
+                      {c.review_note ? <> · &ldquo;{c.review_note}&rdquo;</> : null}
+                    </div>
+                  </div>
+                  <AdminPill
+                    tone={c.status === "approved" ? "green" : "red"}
+                    label={c.status}
+                  />
+                </li>
+              ),
+            })),
+          },
+        ]}
+      />
     </>
   );
 }
