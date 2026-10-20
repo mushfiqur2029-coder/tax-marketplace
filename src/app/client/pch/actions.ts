@@ -621,9 +621,23 @@ export async function submitForReviewAction(
   const admin = createAdminClient();
   try {
     const inputs = await hydrateInputsFromDb(caseId, admin);
+    // Read the raw pch_vehicle.status for the readiness gate, not the
+    // hydrated input. hydrateInputsFromDb defaults status to
+    // "Owned outright" when no row exists (so the tax engine has
+    // something to work with), but for the gate we need to know whether
+    // the client has actually declared a CA-eligible status. A missing
+    // row = client hasn't touched the Vehicle section = skipped =
+    // no block. Only an explicit "Owned outright" / HP / PCP / Loan
+    // with missing data should block.
+    const { data: rawVeh } = await admin
+      .from("pch_vehicle")
+      .select("status")
+      .eq("case_id", caseId)
+      .maybeSingle();
     const readiness = canRunDraft(
       inputs.income.map((l) => ({ grossTakings: l.grossTakings, type: l.type })),
       {
+        status: (rawVeh?.status as string | null | undefined) ?? null,
         odo_start: inputs.vehicle.odoStart ?? null,
         odo_end: inputs.vehicle.odoEnd ?? null,
         method_choice: inputs.vehicle.methodChoice ?? null,

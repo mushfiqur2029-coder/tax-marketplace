@@ -30,11 +30,18 @@ function computeBreakdown(extractions: ExtractionReviewPayload[]): Breakdown {
       if (!ext.targetable[key]) continue;
       total += 1;
       const state = ext.fieldStates[key]?.status ?? "proposed";
-      if (state === "accepted" || state === "edited") {
+      // Any explicit client action (accepted, edited, OR skipped) counts
+      // as resolved: the client has made a call on this field, there is
+      // nothing more for them to do. Previously 'rejected' lived in the
+      // attention bucket, which meant the summary never fully turned
+      // green on a case where the client skipped a few fields.
+      if (state === "accepted" || state === "edited" || state === "rejected") {
         resolved += 1;
         continue;
       }
-      if (state === "rejected" || field.confidence === "low" || field.confidence === "missing") {
+      // Still proposed and the AI itself flagged low confidence / missing
+      // => surface as attention.
+      if (field.confidence === "low" || field.confidence === "missing") {
         attention += 1;
         continue;
       }

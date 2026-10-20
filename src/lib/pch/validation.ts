@@ -176,11 +176,15 @@ export type ExpenseLineShape = { amountPaid: number; evidence: string | null };
 
 export type Readiness = { ok: boolean; blockers: string[] };
 
-// Vehicle statuses where no mileage / method / business-% is needed
-// because there is no owned vehicle for capital-allowance or actual-
-// cost accounting (any related rent / insurance / fuel already lands
-// via the bank statement into pch_expense_lines).
-const VEHICLE_NO_CA_STATUSES = new Set(["Leased", "Rented", "No vehicle"]);
+// Vehicle statuses that put the car into the capital-allowances pool.
+// Only these four need a business-use % or mileage figure for the engine
+// to work out the deduction. Any other status (including Leased, Rented,
+// No vehicle, or null/empty from a case that hasn't engaged with the
+// Vehicle section at all) means "no CA to compute, no gate".
+//
+// Kept in sync with isCaEligibleStatus in ai-interview-slots.ts and
+// with compute.ts's caEligible set.
+const VEHICLE_CA_ELIGIBLE_STATUSES = new Set(["Owned outright", "Hire purchase", "PCP", "Loan"]);
 
 // Can the engine be run? Needs at least one income line with a positive
 // gross figure, and (if the client has a vehicle to depreciate) a
@@ -201,17 +205,23 @@ export function canRunDraft(
       "No income yet. Upload a bank statement in the Documents section above; we'll categorise your fares and other income automatically.",
     );
   }
-  if (vehicle) {
-    const statusSkipsCa = VEHICLE_NO_CA_STATUSES.has((vehicle.status ?? "").trim());
-    if (!statusSkipsCa) {
-      const hasMileage = (vehicle.odo_start ?? 0) > 0 && (vehicle.odo_end ?? 0) > (vehicle.odo_start ?? 0);
-      const hasMethod = (vehicle.method_choice ?? "").length > 0;
-      const hasPctOverride = (vehicle.business_pct_override ?? 0) > 0;
-      if (!hasMileage && !hasMethod && !hasPctOverride) {
-        blockers.push(
-          "Open the Vehicle and capital allowances section above and finish the short chat. If you own or finance the car, we need a business-use percentage (or odometer readings) to work out your deduction.",
-        );
-      }
+  // Positive check: only block when the client has explicitly declared
+  // a CA-eligible status (owned, HP, PCP, loan). Anything else, including
+  // null/empty/missing-row from a case that hasn't engaged with Vehicle
+  // at all, short-circuits as "no CA to compute, no gate". The prior
+  // negative check (exclude {Leased, Rented, No vehicle}) was flipping
+  // on anything OUTSIDE those three, including null, which was blocking
+  // legitimate no-vehicle cases where the server-side call forgot to
+  // forward the status field.
+  const vehicleStatus = (vehicle?.status ?? "").trim();
+  if (VEHICLE_CA_ELIGIBLE_STATUSES.has(vehicleStatus)) {
+    const hasMileage = (vehicle?.odo_start ?? 0) > 0 && (vehicle?.odo_end ?? 0) > (vehicle?.odo_start ?? 0);
+    const hasMethod = (vehicle?.method_choice ?? "").length > 0;
+    const hasPctOverride = (vehicle?.business_pct_override ?? 0) > 0;
+    if (!hasMileage && !hasMethod && !hasPctOverride) {
+      blockers.push(
+        "Open the Vehicle and capital allowances section above and finish the short chat. You said you own or finance the car, so we need a business-use percentage (or odometer readings) to work out your deduction.",
+      );
     }
   }
   return { ok: blockers.length === 0, blockers };

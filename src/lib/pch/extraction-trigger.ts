@@ -134,6 +134,15 @@ export async function runPchExtractionJob(extractionId: string): Promise<void> {
       return;
     }
 
+    // For PCH-24 licence sides, pre-populate field_states to auto-skip
+    // the fields we already know won't be on this image (name/DOB are on
+    // the front, address is on the back). The review UI hides these
+    // auto-skipped rows entirely so the client doesn't tap Skip on each
+    // one; the summary panel still counts them as resolved. The server
+    // marker (actedBy='system:auto-skip') is what the review filter
+    // keys on.
+    const autoSkipStates = buildAutoSkipFieldStates(ext.slot_code, ext.photo_id_side);
+
     await admin
       .from("pch_doc_extractions")
       .update({
@@ -145,6 +154,7 @@ export async function runPchExtractionJob(extractionId: string): Promise<void> {
         fields: result.fields,
         raw_json: result.rawJson,
         usage: { latency_ms: Date.now() - started },
+        ...(Object.keys(autoSkipStates).length > 0 ? { field_states: autoSkipStates } : {}),
       })
       .eq("id", extractionId);
   } catch (e) {
@@ -167,6 +177,31 @@ function inferMimeType(filename: string): DocumentInput["mimeType"] {
   if (lower.endsWith(".webp")) return "image/webp";
   // Default to jpeg (covers .jpg + .jpeg + anything odd).
   return "image/jpeg";
+}
+
+// Fields that live on the OTHER side of a UK driving licence. Pre-marked
+// rejected (actedBy = system marker) so the review UI can hide them
+// without the client needing to tap Skip on each. Keys match the AI
+// extraction schema for PCH-24.
+const LICENCE_OFF_SIDE_FIELDS: Record<"front" | "back", readonly string[]> = {
+  // Front shows name, DOB, licence number. Address is on the back.
+  front: ["address", "postcode"],
+  // Back shows address. Name, DOB, licence number are on the front.
+  back: ["documentNumber", "fullName", "dateOfBirth"],
+};
+
+function buildAutoSkipFieldStates(
+  slotCode: string,
+  photoIdSide: string | null,
+): Record<string, { status: "rejected"; actedAt: string; actedBy: string }> {
+  if (slotCode !== "PCH-24") return {};
+  if (photoIdSide !== "front" && photoIdSide !== "back") return {};
+  const now = new Date().toISOString();
+  const states: Record<string, { status: "rejected"; actedAt: string; actedBy: string }> = {};
+  for (const key of LICENCE_OFF_SIDE_FIELDS[photoIdSide]) {
+    states[key] = { status: "rejected", actedAt: now, actedBy: "system:auto-skip" };
+  }
+  return states;
 }
 
 async function buildContext(

@@ -86,6 +86,23 @@ export default async function PchClientPage({
     .eq("case_id", id)
     .order("uploaded_at", { ascending: false });
 
+  // Checklist items the card-level skip buttons on sections 5-8 flip
+  // to Done. The sections render a "Marked as not applicable" state
+  // when the matching item is in this set, so the client sees the
+  // skip persist across refresh (previously the UI stayed in empty
+  // state because the *_note column wasn't touched by the skip action).
+  const { data: skipRows } = await admin
+    .from("pch_check_status")
+    .select("item_number, note")
+    .eq("case_id", id)
+    .in("item_number", [5, 11, 19, 27, 31])
+    .eq("status", "Done");
+  const skippedItems = new Set<number>(
+    (skipRows ?? [])
+      .filter((r) => typeof r.note === "string" && r.note.includes("not applicable"))
+      .map((r) => r.item_number as number),
+  );
+
   // Compute outstanding prior-year returns. We filter the output so we
   // only show years OLDER than this case's own tax year (the current
   // year's deadline is tracked on the case itself, not here) and we
@@ -169,6 +186,7 @@ export default async function PchClientPage({
       extractions={extractions}
       priorYearOptions={priorYearOptions}
       bankTransactions={bankTransactions}
+      skippedItems={Array.from(skippedItems)}
       pendingAddons={(pendingAddons.data ?? []).map((a) => ({
         id: a.id as string,
         description: a.description as string,

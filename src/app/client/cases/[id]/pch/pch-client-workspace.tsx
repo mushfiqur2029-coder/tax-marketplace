@@ -111,6 +111,11 @@ export function PchClientWorkspace(props: {
   extractions: ExtractionReviewPayload[];
   priorYearOptions: PriorYearOption[];
   bankTransactions: BankTransactionView[];
+  // Checklist item numbers currently marked "not applicable" via the
+  // card-level skip buttons on sections 5-8. The sections render a
+  // "Marked as not applicable" captured state when their item is in
+  // this list, so the skip persists visually across refresh.
+  skippedItems: number[];
   pendingAddons: Array<{ id: string; description: string; amount_pence: number }>;
   finalPackSentAt: string | null;
   finalPackConfirmedAt: string | null;
@@ -289,6 +294,7 @@ export function PchClientWorkspace(props: {
                     pensionPence={Number(props.head?.personal_pension_net_pence ?? 0) || 0}
                     giftAidPence={Number(props.head?.gift_aid_net_pence ?? 0) || 0}
                     maStatus={(props.head?.marriage_allowance_status as string | null) ?? "None"}
+                    skipped={props.skippedItems.includes(19)}
                   />
                 </div>
 
@@ -311,6 +317,7 @@ export function PchClientWorkspace(props: {
                     advanceAction={advancePchIncomeProbeInterviewAction}
                     commitAction={commitPchIncomeProbeInterviewAction}
                     checklistItems={[5]}
+                    skipped={props.skippedItems.includes(5)}
                   />
                 </div>
 
@@ -333,6 +340,7 @@ export function PchClientWorkspace(props: {
                     advanceAction={advancePchExpensesProbeInterviewAction}
                     commitAction={commitPchExpensesProbeInterviewAction}
                     checklistItems={[11, 27]}
+                    skipped={props.skippedItems.includes(11) || props.skippedItems.includes(27)}
                   />
                 </div>
 
@@ -355,6 +363,7 @@ export function PchClientWorkspace(props: {
                     advanceAction={advancePchFilingDetailsInterviewAction}
                     commitAction={commitPchFilingDetailsInterviewAction}
                     checklistItems={[31]}
+                    skipped={props.skippedItems.includes(31)}
                   />
                 </div>
               </>
@@ -400,7 +409,7 @@ function SingleAnswerSection({
   panelFlowLabel, panelFlowSubtitle, panelFinishedMessage,
   panelCommitLabel, panelCommitPendingLabel,
   startAction, advanceAction, commitAction,
-  checklistItems,
+  checklistItems, skipped,
 }: {
   caseId: string;
   title: string;
@@ -421,6 +430,11 @@ function SingleAnswerSection({
   // confirmed not applicable" when the client taps "Not applicable"
   // in the panel header.
   checklistItems: number[];
+  // True when any mapped checklist item is already marked
+  // "Client confirmed not applicable" in pch_check_status. The card
+  // shows a "Marked as not applicable" captured state and hides the
+  // skip button so the client sees the skip persist across refresh.
+  skipped: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -442,6 +456,11 @@ function SingleAnswerSection({
           <div className="font-semibold mb-0.5">Captured answer</div>
           <div className="whitespace-pre-wrap">{answer}</div>
         </div>
+      ) : skipped ? (
+        <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+          <div className="font-semibold mb-0.5">Marked as not applicable</div>
+          <div>You said this doesn&apos;t apply. Open the chat if you want to add something after all.</div>
+        </div>
       ) : (
         <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           {emptyPrompt}
@@ -454,12 +473,14 @@ function SingleAnswerSection({
             onClick={() => setOpen(true)}
             className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
           >
-            {hasAnswer ? reopenLabel : openLabel}
+            {hasAnswer || skipped ? reopenLabel : openLabel}
           </button>
           {/* Card-level skip: one-tap "Not applicable" that writes
               the same checklist state as the in-panel N/A button,
-              without forcing the client to open the chat first. */}
-          {!hasAnswer ? (
+              without forcing the client to open the chat first.
+              Hidden once there's an answer OR the item is already
+              marked skipped. */}
+          {!hasAnswer && !skipped ? (
             <button
               type="button"
               onClick={skipCard}
@@ -655,12 +676,16 @@ function ExpenseInterviewSection({
 // a short summary; otherwise same open / re-open UX as
 // SingleAnswerSection above.
 function ReliefsSection({
-  caseId, pensionPence, giftAidPence, maStatus,
+  caseId, pensionPence, giftAidPence, maStatus, skipped,
 }: {
   caseId: string;
   pensionPence: number;
   giftAidPence: number;
   maStatus: string;
+  // True when checklist item 19 is already marked "Client confirmed
+  // not applicable" in pch_check_status. Same visual behaviour as
+  // SingleAnswerSection's skipped state.
+  skipped: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -688,6 +713,11 @@ function ReliefsSection({
           <div>Gift Aid (net): <strong>{fmt(giftAidPence)}</strong></div>
           <div>Marriage Allowance: <strong>{maStatus || "None"}</strong></div>
         </div>
+      ) : skipped ? (
+        <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+          <div className="font-semibold mb-0.5">Marked as not applicable</div>
+          <div>You said none of these apply. Open the chat if you want to add something after all.</div>
+        </div>
       ) : (
         <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           You haven&apos;t told us yet about any pension contributions, Gift Aid or Marriage Allowance.
@@ -700,9 +730,9 @@ function ReliefsSection({
             onClick={() => setOpen(true)}
             className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
           >
-            {hasAny ? "Update your reliefs" : "Walk through it with the AI"}
+            {hasAny || skipped ? "Update your reliefs" : "Walk through it with the AI"}
           </button>
-          {!hasAny ? (
+          {!hasAny && !skipped ? (
             <button
               type="button"
               onClick={skipCard}

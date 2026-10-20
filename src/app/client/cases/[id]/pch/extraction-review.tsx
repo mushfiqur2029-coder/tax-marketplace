@@ -24,6 +24,11 @@ export type ExtractionFieldState = {
   status: "proposed" | "accepted" | "edited" | "rejected";
   overrideValue?: string | number | null;
   actedAt?: string;
+  // Author of the state change. Normal client actions carry the user
+  // UUID; auto-skip markers written by the extraction trigger carry
+  // "system:auto-skip" so the review UI can hide fields the server
+  // already knows are N/A for this side of a licence.
+  actedBy?: string;
 };
 export type ExtractionSource = "document" | "ai_interview";
 
@@ -73,13 +78,29 @@ export function ExtractionReview({ ext, canEdit }: {
   if (ext.status === "skipped") return null;
 
   const low = ext.overallConfidence === "low" || ext.overallConfidence === "missing";
-  const fieldKeys = Object.keys(ext.fields);
-  const targetableKeys = fieldKeys.filter((k) => ext.targetable[k]);
+  const allKeys = Object.keys(ext.fields);
+  // Only show fields that will actually pre-fill the intake. Informational
+  // fields (e.g. "ID document number" on PCH-24) are tracked for audit
+  // but add noise to the client-facing review card; hide them entirely.
+  const targetableKeys = allKeys.filter((k) => ext.targetable[k]);
+  // Also hide fields that have been auto-rejected by the system (fields
+  // on the wrong side of a licence, where we already know the AI can't
+  // read them). The server marks these with actedBy='system:auto-skip';
+  // the client should see them resolved in the summary chip count but
+  // not have to Confirm/Edit/Skip each one by hand.
+  const displayedKeys = targetableKeys.filter((k) => {
+    const s = ext.fieldStates[k];
+    return !(s?.status === "rejected" && typeof s.actedBy === "string" && s.actedBy.startsWith("system:"));
+  });
+  const autoSkippedCount = targetableKeys.length - displayedKeys.length;
   const savedCount = targetableKeys.filter((k) => {
+    const s = ext.fieldStates[k];
+    return s?.status === "accepted" || s?.status === "edited" || s?.status === "rejected";
+  }).length;
+  const pendingCount = displayedKeys.length - targetableKeys.filter((k) => {
     const s = ext.fieldStates[k];
     return s?.status === "accepted" || s?.status === "edited";
   }).length;
-  const pendingCount = targetableKeys.length - savedCount;
 
   const fromInterview = ext.source === "ai_interview";
   const sideLabel =
@@ -118,7 +139,7 @@ export function ExtractionReview({ ext, canEdit }: {
       ) : null}
 
       <ul className="space-y-2">
-        {fieldKeys.map((key) => (
+        {displayedKeys.map((key) => (
           <FieldRow
             key={key}
             extractionId={ext.id}
@@ -133,12 +154,19 @@ export function ExtractionReview({ ext, canEdit }: {
       </ul>
 
       {canEdit && targetableKeys.length > 0 ? (
-        <div className="mt-3 text-slate-600">
-          {savedCount === 0
-            ? `Confirm each field above to save it to your intake. ${pendingCount} field${pendingCount === 1 ? "" : "s"} to review.`
-            : pendingCount === 0
-              ? `All ${savedCount} field${savedCount === 1 ? "" : "s"} saved to your intake.`
-              : `${savedCount} of ${targetableKeys.length} fields saved. ${pendingCount} still to review.`}
+        <div className="mt-3 text-xs text-slate-600 space-y-1">
+          <div>
+            {savedCount === 0
+              ? `Confirm each field above to save it to your intake. ${pendingCount} field${pendingCount === 1 ? "" : "s"} to review.`
+              : pendingCount === 0
+                ? `All ${savedCount} field${savedCount === 1 ? "" : "s"} saved to your intake.`
+                : `${savedCount} of ${targetableKeys.length} fields saved. ${pendingCount} still to review.`}
+          </div>
+          {autoSkippedCount > 0 ? (
+            <div className="text-slate-500">
+              {autoSkippedCount} field{autoSkippedCount === 1 ? "" : "s"} skipped automatically (not shown on this side of the card).
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

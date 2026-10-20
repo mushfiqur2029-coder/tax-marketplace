@@ -72,22 +72,49 @@ describe("canRunDraft", () => {
   it("blocks when no income line has gross > 0", () => {
     const r = canRunDraft([{ grossTakings: 0, type: "Fares" }], null);
     expect(r.ok).toBe(false);
-    expect(r.blockers.join()).toMatch(/income line/i);
+    expect(r.blockers.join()).toMatch(/no income|bank statement/i);
   });
-  it("ok with one positive income + method chosen", () => {
+  it("ok with one positive income + CA-eligible status + method chosen", () => {
     const r = canRunDraft(
       [{ grossTakings: 10000, type: "Fares" }],
-      { method_choice: "Actual costs" } as never,
+      { status: "Owned outright", method_choice: "Actual costs" } as never,
     );
     expect(r.ok).toBe(true);
   });
-  it("blocks when vehicle has no mileage, method or override", () => {
+  it("blocks when CA-eligible vehicle has no mileage, method or override", () => {
     const r = canRunDraft(
       [{ grossTakings: 10000, type: "Fares" }],
-      { method_choice: "" } as never,
+      { status: "Owned outright", method_choice: "" } as never,
     );
     expect(r.ok).toBe(false);
-    expect(r.blockers.join()).toMatch(/odometer|method/i);
+    expect(r.blockers.join()).toMatch(/business-use|odometer/i);
+  });
+  it("does NOT block when status is 'No vehicle'", () => {
+    const r = canRunDraft(
+      [{ grossTakings: 10000, type: "Fares" }],
+      { status: "No vehicle" } as never,
+    );
+    expect(r.ok).toBe(true);
+  });
+  it("does NOT block when status is 'Leased' or 'Rented'", () => {
+    for (const status of ["Leased", "Rented"]) {
+      const r = canRunDraft(
+        [{ grossTakings: 10000, type: "Fares" }],
+        { status } as never,
+      );
+      expect(r.ok).toBe(true);
+    }
+  });
+  it("does NOT block when status is missing (fresh case, no vehicle row)", () => {
+    const r = canRunDraft(
+      [{ grossTakings: 10000, type: "Fares" }],
+      { status: null } as never,
+    );
+    expect(r.ok).toBe(true);
+  });
+  it("does NOT block when vehicle itself is null", () => {
+    const r = canRunDraft([{ grossTakings: 10000, type: "Fares" }], null);
+    expect(r.ok).toBe(true);
   });
 });
 
