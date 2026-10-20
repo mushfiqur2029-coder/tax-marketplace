@@ -30,6 +30,10 @@ import {
 } from "@/lib/pch/overrides";
 import { canRequestFiling } from "@/lib/pch/validation";
 import { hydrateInputsFromDb } from "@/lib/pch/engine-snapshot";
+import {
+  cascadeTaxableProfitOverride,
+  cascadeRevertTaxableProfit,
+} from "@/lib/pch/override-cascade";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -227,6 +231,22 @@ export async function applyPchOverrideAction(
     overridden_by: me.id,
   });
   if (error) return { ok: false, error: error.message };
+
+  // Downstream cascade: taxable profit drives income tax, Class 4, and
+  // SA103S box 31. We insert auto-cascaded override rows so the view
+  // reads a coherent set of figures without the accountant having to
+  // override each one by hand. Non-fatal: if cascade fails the primary
+  // override is already saved.
+  if (fieldPath === "pl.taxableProfit") {
+    try {
+      await cascadeTaxableProfitOverride({
+        admin, caseId, meId: me.id, newTaxableProfit: newValue, snapshot,
+      });
+    } catch (e) {
+      console.warn("[pch-override] taxableProfit cascade failed:", e instanceof Error ? e.message : e);
+    }
+  }
+
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };
 }
@@ -355,6 +375,18 @@ export async function revertPchOverrideAction(
     overridden_by: me.id,
   });
   if (error) return { ok: false, error: error.message };
+
+  // Revert the auto-cascade too when the parent is reverted. Only
+  // touches rows that are themselves auto-cascaded; a manual override
+  // on a cascaded field wins and stays.
+  if (fieldPath === "pl.taxableProfit") {
+    try {
+      await cascadeRevertTaxableProfit({ admin, caseId, meId: me.id });
+    } catch (e) {
+      console.warn("[pch-override] taxableProfit cascade revert failed:", e instanceof Error ? e.message : e);
+    }
+  }
+
   revalidatePath(`/accountant/cases/${caseId}/pch`);
   return { ok: true };
 }
