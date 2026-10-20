@@ -17,6 +17,7 @@ import {
 } from "@/components/case/case-messages-panel";
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 
 // Dynamic so a brand new extraction row (populated in a Next after()
 // callback after an upload) is visible on the very next page load,
@@ -173,7 +174,36 @@ export default async function PchClientPage({
   }));
 
   return (
-    <PchClientWorkspace
+    <>
+      <RealtimeRefresh
+        channel={`client-pch-${id}-${me.id}`}
+        subscriptions={[
+          // Status transitions: accountant takes the case (submitted
+          // -> in_review), sends for approval (-> client_approval),
+          // confirms filing (-> filed). The client workspace swaps
+          // sections based on status, so this is the headline source.
+          { table: "cases", filter: `id=eq.${id}` },
+          // Head updates: accountant edits head fields, bookkeeping
+          // confirm, final_pack_sent_at (lets the client see the pack
+          // as soon as it's dispatched).
+          { table: "pch_cases", filter: `case_id=eq.${id}` },
+          // 33-check status: when an interview answer commits via the
+          // AI chat, the row flips to Done; show that instantly.
+          { table: "pch_check_status", filter: `case_id=eq.${id}` },
+          // Extraction progress: an uploaded doc takes 10 to 60s to
+          // process, and the client needs to see the review card land.
+          { table: "pch_doc_extractions", filter: `case_id=eq.${id}` },
+          // Bank statement ingest produces N transactions async; show
+          // them in the ledger as they land.
+          { table: "pch_bank_transactions", filter: `case_id=eq.${id}` },
+          // Chat.
+          { table: "case_messages", filter: `case_id=eq.${id}` },
+          // Add-on raised by the accountant lands on the client as a
+          // Pay banner.
+          { table: "case_addons", filter: `case_id=eq.${id}` },
+        ]}
+      />
+      <PchClientWorkspace
       caseId={id}
       caseStatus={caseRow.status}
       head={head.data ?? null}
@@ -212,7 +242,8 @@ export default async function PchClientPage({
           viewerUserId={me.id}
         />
       }
-    />
+      />
+    </>
   );
 }
 

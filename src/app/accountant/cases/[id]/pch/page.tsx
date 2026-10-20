@@ -14,6 +14,7 @@ import { deriveChecklistPrefills, type ChecklistPrefill } from "@/lib/pch/checkl
 import { takeCaseAction, getDocSignedUrlForAccountant } from "@/app/accountant/actions";
 import { TakeCaseForm } from "../take-case-form";
 import { PortalPageHeader } from "@/components/portal-page-header";
+import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 
 // Phase 2a accountant surface: 33-check review + read-only engine
@@ -254,7 +255,38 @@ export default async function PchAccountantPage({
   }));
 
   return (
-    <PchAccountantView
+    <>
+      <RealtimeRefresh
+        channel={`accountant-pch-${id}-${me.id}`}
+        subscriptions={[
+          // Status transitions (client_approval, filed, complete) and
+          // admin reassignment.
+          { table: "cases", filter: `id=eq.${id}` },
+          // Head updates: engine snapshot refresh, client_approval_at,
+          // bookkeeping confirm, final_pack confirm, override of head
+          // fields.
+          { table: "pch_cases", filter: `case_id=eq.${id}` },
+          // 33-check status + client interview answers landing (an
+          // interview commit flips the row to Done).
+          { table: "pch_check_status", filter: `case_id=eq.${id}` },
+          // Client uploads a new file post-submit, or AI extraction
+          // writes against an existing one.
+          { table: "case_documents", filter: `case_id=eq.${id}` },
+          { table: "pch_doc_extractions", filter: `case_id=eq.${id}` },
+          // Client flags "I don't have this document" (AwaitingAccountantPanel).
+          { table: "pch_doc_status", filter: `case_id=eq.${id}` },
+          // Chat.
+          { table: "case_messages", filter: `case_id=eq.${id}` },
+          // Add-on paid / rejected flips.
+          { table: "case_addons", filter: `case_id=eq.${id}` },
+          // Bank ingest results stream in after an upload (async job).
+          { table: "pch_bank_transactions", filter: `case_id=eq.${id}` },
+          // Overrides from a second-browser tab (own case, two
+          // devices) land here.
+          { table: "pch_overrides", filter: `case_id=eq.${id}` },
+        ]}
+      />
+      <PchAccountantView
       caseId={id}
       caseStatus={caseRow.status}
       checksMeta={checksMeta.data ?? []}
@@ -341,7 +373,8 @@ export default async function PchAccountantPage({
           viewerUserId={me.id}
         />
       }
-    />
+      />
+    </>
   );
 }
 
