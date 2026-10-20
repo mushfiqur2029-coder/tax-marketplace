@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { getCurrentUser, requireApprovedAccountant } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
@@ -72,7 +72,31 @@ export default async function PchAccountantPage({
   // two accountants from winning a race on the same row.
   if (caseRow.accountant_id === null) {
     if (caseRow.status !== "submitted" || caseRow.stripe_payment_status !== "succeeded") {
-      notFound();
+      // Reachable but not in a takeable state (e.g. unpaid, or a status/
+      // accountant_id mismatch from manual data edits). Not a removed
+      // case, so a different message, but still no bare 404.
+      return (
+        <>
+          <PortalPageHeader
+            eyebrow="Case"
+            title="Not ready to take yet"
+            description="This case isn't in a state an accountant can pick up right now."
+          />
+          <div className="card-sl max-w-xl p-6 sm:p-8">
+            <p className="text-sm text-slate">
+              Status is <strong>{caseRow.status}</strong> with no accountant
+              assigned, and payment is <strong>{caseRow.stripe_payment_status ?? "unknown"}</strong>.
+              If you expect this case to be in the queue, ask an admin to
+              check it.
+            </p>
+            <div className="mt-5">
+              <Link href="/accountant" className="btn-sl btn-sl-primary">
+                Back to your cases
+              </Link>
+            </div>
+          </div>
+        </>
+      );
     }
     const approved = await requireApprovedAccountant();
     const [clientRes, pchHeadRes] = await Promise.all([
