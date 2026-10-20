@@ -20,6 +20,7 @@ import { VehicleInterviewPanel } from "./vehicle-interview-panel";
 import { AiInterviewPanel } from "@/components/case/ai-interview-panel";
 import { isCaEligibleStatus } from "@/lib/pch/ai-interview-slots";
 import {
+  markNoVehicleAction,
   markNoVehicleDisposalAction,
   startPchDisposalInterviewAction,
   advancePchDisposalInterviewAction,
@@ -51,9 +52,18 @@ type Props = {
 };
 
 export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [skipping, startSkip] = useTransition();
+  const [skipErr, setSkipErr] = useState<string | null>(null);
   const rows = buildRows(vehicle);
   const captured = rows.some((r) => r.value && r.value.trim().length > 0);
+  const skipCard = () => startSkip(async () => {
+    setSkipErr(null);
+    const r = await markNoVehicleAction(caseId);
+    if (!r.ok) setSkipErr(r.error);
+    else router.refresh();
+  });
 
   return (
     <div className="space-y-4">
@@ -69,13 +79,30 @@ export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
           </p>
         </div>
         {editable ? (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
-          >
-            {captured ? "Update my vehicle" : "Let's walk through your vehicle"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+            >
+              {captured ? "Update my vehicle" : "Let's walk through your vehicle"}
+            </button>
+            {/* Card-level "no vehicle" shortcut: identical server-side
+                effect to answering 'No vehicle' in the full chat. Hidden
+                once anything is captured, since the user is clearly past
+                the "do I have a vehicle" question at that point. */}
+            {!captured ? (
+              <button
+                type="button"
+                onClick={skipCard}
+                disabled={skipping}
+                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {skipping ? "Saving..." : "I have no vehicle, skip this"}
+              </button>
+            ) : null}
+            {skipErr ? <span className="text-xs text-rose-700">{skipErr}</span> : null}
+          </div>
         ) : null}
       </header>
 

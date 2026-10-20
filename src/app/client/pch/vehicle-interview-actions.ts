@@ -512,3 +512,41 @@ export async function markNoVehicleDisposalAction(
     };
   }
 }
+
+// Card-level "I have no vehicle" skip. Same semantics as the client
+// answering "No vehicle" in the full VEHICLE_CA chat: upserts the
+// pch_vehicle row with status='No vehicle' and clears any disposal
+// fields (a client flipping to no-vehicle shouldn't leave stale
+// disposal figures behind that compute.ts would still apply). All
+// vehicle-related checklist items (12/13/15) are auto-derived from
+// pch_vehicle, so the no-vehicle status flows through to the
+// accountant's view without explicit pch_check_status writes.
+export async function markNoVehicleAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const { caseRow, admin } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+    const { error } = await admin
+      .from("pch_vehicle")
+      .upsert(
+        {
+          case_id: caseId,
+          status: "No vehicle",
+          disposed: false,
+          disposal_proceeds_pence: null,
+          disposal_date: null,
+        },
+        { onConflict: "case_id" },
+      );
+    if (error) return { ok: false, error: error.message };
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not record 'no vehicle'.",
+    };
+  }
+}

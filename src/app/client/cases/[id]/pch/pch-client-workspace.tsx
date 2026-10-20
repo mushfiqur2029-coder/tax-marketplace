@@ -422,8 +422,17 @@ function SingleAnswerSection({
   // in the panel header.
   checklistItems: number[];
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [skipping, startSkip] = useTransition();
+  const [skipErr, setSkipErr] = useState<string | null>(null);
   const hasAnswer = (answer ?? "").trim().length > 0;
+  const skipCard = () => startSkip(async () => {
+    setSkipErr(null);
+    const r = await markPchChecklistNotApplicableAction(caseId, checklistItems);
+    if (!r.ok) setSkipErr(r.error);
+    else router.refresh();
+  });
   return (
     <div className="space-y-3">
       <div className="text-sm font-medium text-slate-900">{title}</div>
@@ -439,13 +448,29 @@ function SingleAnswerSection({
         </div>
       )}
       {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
-        >
-          {hasAnswer ? reopenLabel : openLabel}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+          >
+            {hasAnswer ? reopenLabel : openLabel}
+          </button>
+          {/* Card-level skip: one-tap "Not applicable" that writes
+              the same checklist state as the in-panel N/A button,
+              without forcing the client to open the chat first. */}
+          {!hasAnswer ? (
+            <button
+              type="button"
+              onClick={skipCard}
+              disabled={skipping}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {skipping ? "Skipping..." : "Not needed, skip this"}
+            </button>
+          ) : null}
+          {skipErr ? <span className="text-xs text-rose-700">{skipErr}</span> : null}
+        </div>
       ) : (
         <AiInterviewPanel
           caseId={caseId}
@@ -637,10 +662,19 @@ function ReliefsSection({
   giftAidPence: number;
   maStatus: string;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [skipping, startSkip] = useTransition();
+  const [skipErr, setSkipErr] = useState<string | null>(null);
   const hasAny = pensionPence > 0 || giftAidPence > 0 || (maStatus && maStatus !== "None");
   const fmt = (p: number) =>
     "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const skipCard = () => startSkip(async () => {
+    setSkipErr(null);
+    const r = await markPchChecklistNotApplicableAction(caseId, [19]);
+    if (!r.ok) setSkipErr(r.error);
+    else router.refresh();
+  });
   return (
     <div className="space-y-3">
       <div className="text-sm font-medium text-slate-900">Pension, Gift Aid, Marriage Allowance</div>
@@ -660,13 +694,26 @@ function ReliefsSection({
         </div>
       )}
       {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
-        >
-          {hasAny ? "Update your reliefs" : "Walk through it with the AI"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+          >
+            {hasAny ? "Update your reliefs" : "Walk through it with the AI"}
+          </button>
+          {!hasAny ? (
+            <button
+              type="button"
+              onClick={skipCard}
+              disabled={skipping}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {skipping ? "Skipping..." : "Not needed, skip this"}
+            </button>
+          ) : null}
+          {skipErr ? <span className="text-xs text-rose-700">{skipErr}</span> : null}
+        </div>
       ) : (
         <AiInterviewPanel
           caseId={caseId}
