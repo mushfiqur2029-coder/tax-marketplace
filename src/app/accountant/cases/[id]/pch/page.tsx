@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, requireApprovedAccountant } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { PchAccountantView } from "./pch-accountant-view";
@@ -10,6 +10,10 @@ import {
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
 import { deriveChecklistPrefills, type ChecklistPrefill } from "@/lib/pch/checklist-prefills";
+import { takeCaseAction } from "@/app/accountant/actions";
+import { TakeCaseForm } from "../take-case-form";
+import { PortalPageHeader } from "@/components/portal-page-header";
+import { formatDateTime } from "@/lib/format";
 
 // Phase 2a accountant surface: 33-check review + read-only engine
 // snapshot + "request client filing" button. Full override UI + SA
@@ -29,13 +33,81 @@ export default async function PchAccountantPage({
   const admin = createAdminClient();
   const { data: caseRow } = await admin
     .from("cases")
-    .select("id, client_id, accountant_id, status, tier")
+    .select("id, client_id, accountant_id, status, tier, stripe_payment_status, submitted_at, deadline, is_urgent")
     .eq("id", id).single();
   if (!caseRow) notFound();
-  if (caseRow.accountant_id !== me.id) notFound();
   if (caseRow.tier !== "uber_phv_automated") {
     redirect(`/accountant/cases/${id}`);
   }
+
+  // Queue state: paid PCH case not yet taken by any accountant. Render
+  // a minimal Take Case view with a short preview of what the client
+  // has filled in so far. The atomic UPDATE in takeCaseAction prevents
+  // two accountants from winning a race on the same row.
+  if (caseRow.accountant_id === null) {
+    if (caseRow.status !== "submitted" || caseRow.stripe_payment_status !== "succeeded") {
+      notFound();
+    }
+    const approved = await requireApprovedAccountant();
+    const [clientRes, pchHeadRes] = await Promise.all([
+      admin.from("users").select("email").eq("id", caseRow.client_id).maybeSingle(),
+      admin.from("pch_cases").select("cl_name, tax_year, engine_snapshot_at").eq("case_id", id).maybeSingle(),
+    ]);
+    const take = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+      "use server";
+      return takeCaseAction(id);
+    };
+    const intakeComplete = !!pchHeadRes.data?.engine_snapshot_at;
+    return (
+      <>
+        <PortalPageHeader
+          eyebrow="PCH automated · in the queue"
+          title={pchHeadRes.data?.cl_name ?? "New PCH case"}
+          description={
+            clientRes.data?.email
+              ? `Client: ${clientRes.data.email}`
+              : "Paid and waiting for an accountant to pick up."
+          }
+        />
+        <div className="card-sl max-w-xl space-y-4 p-6 sm:p-8">
+          <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-[160px_1fr]">
+            <dt className="text-slate">Tax year</dt>
+            <dd className="font-medium text-ink">{pchHeadRes.data?.tax_year ?? "."}</dd>
+            <dt className="text-slate">Submitted</dt>
+            <dd className="font-medium text-ink">
+              {caseRow.submitted_at ? formatDateTime(caseRow.submitted_at as string) : "."}
+            </dd>
+            <dt className="text-slate">Intake</dt>
+            <dd className={intakeComplete ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
+              {intakeComplete
+                ? "Submitted for review (engine snapshot ready)"
+                : "Still in progress (client hasn't clicked Submit for review yet)"}
+            </dd>
+          </dl>
+          {!intakeComplete ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              The client paid but hasn&apos;t finished the intake. You can
+              still take the case to help them finish via chat; the figures
+              you&apos;ll see are from whatever they&apos;ve entered so far.
+            </p>
+          ) : null}
+          {approved.status !== "suspended" ? (
+            <TakeCaseForm take={take} />
+          ) : (
+            <p className="text-sm text-slate">
+              Your account is suspended. Taking new cases is locked until an
+              admin reinstates you.
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // Case assigned to another accountant. Keep the 404 for simplicity;
+  // the queue filter stops cases from leaking to the wrong accountant
+  // in the normal path, so this only trips on direct URL access.
+  if (caseRow.accountant_id !== me.id) notFound();
 
   const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta, addonRows, incomeLines, expenseLines] = await Promise.all([
     admin.from("pch_check_items").select("*").order("sort_order"),
