@@ -1320,6 +1320,9 @@ function vehicleToSummary(v: Vehicle | null): VehicleSummary | null {
     purchase_price_pence: num("purchase_price_pence"),
     new_or_used: str("new_or_used"),
     business_pct_override: num("business_pct_override"),
+    disposed: v.disposed === true || v.disposed === "true",
+    disposal_proceeds_pence: num("disposal_proceeds_pence"),
+    disposal_date: str("disposal_date"),
   };
 }
 

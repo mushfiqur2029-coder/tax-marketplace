@@ -235,6 +235,50 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
   },
 
   // ------------------------------------------------------------------
+  // Phase 7 Slice 7.6c: VEHICLE_CA_EXT, disposal follow-up to the main
+  // VEHICLE_CA chat. Only shown when the client owns or finances the
+  // vehicle (status in Owned outright / HP / PCP / Loan); leased /
+  // rented / no-vehicle cases never surface a balancing event. Writes
+  // pch_vehicle.{disposed, disposal_proceeds_pence, disposal_date} and
+  // marks pch_check_status item 16 Done.
+  //
+  // WDV sanity: compute.ts fires caBalancing = wdvBroughtForward +
+  // caAddition - caFya - proceeds the moment disposed='Yes', so a
+  // disposal with proceeds but no WDV looks like a big one-liner
+  // balancing charge. The prompt tells the client to mark proceeds
+  // missing (not guess) if they can't confirm the figure or if they
+  // don't know what the car was worth on last year's return; the
+  // accountant then pulls WDV off the prior-year SA302.
+  // ------------------------------------------------------------------
+  VEHICLE_CA_EXT: {
+    slotCode: "VEHICLE_CA_EXT",
+    title: "Vehicle disposal",
+    resultLabel: "AI interview: vehicle disposal",
+    opener:
+      "Quick follow-up on your vehicle. Did you sell, part-exchange, or scrap the car during this tax year? If you still have it, just say 'no' and we're done. If it left your hands, I'll ask for the proceeds and the date.",
+    fields: [
+      {
+        key: "disposed",
+        label: "Vehicle disposed this year",
+        description:
+          "Exactly 'Yes' or 'No'. 'Yes' means the client sold the car, part-exchanged it against another vehicle, scrapped it, or wrote it off through insurance during this tax year. 'No' means it is still owned at year end. If the client is unsure, treat as 'No' and the accountant can revisit.",
+      },
+      {
+        key: "disposal_proceeds_gbp",
+        label: "Disposal proceeds (GBP)",
+        description:
+          "Numeric GBP. Only ask when disposed='Yes'. Total received for the car: a sale price, a part-exchange allowance against a new car (even if no cash changed hands), scrap value, or insurance payout. If the client cannot confirm the exact figure, mark missing (do not guess); a balancing charge off a guessed number is a real tax hit. Mark missing if disposed='No'.",
+      },
+      {
+        key: "disposal_date",
+        label: "Disposal date",
+        description:
+          "Date in yyyy-mm-dd. Only ask when disposed='Yes'. The date ownership transferred (sale completion, part-exchange, scrap collection, insurance write-off). Must fall inside the tax year (6 April to 5 April). Mark missing if the client only remembers the month; the accountant will chase paperwork. Mark missing if disposed='No'.",
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------------
   // Phase 8 Slice 8.5: INCOME_INTERVIEW, chat-based income capture for
   // drivers who don't have a bank statement to upload. Produces one
   // aggregated pch_income_lines row (gross, platform fees, on-trip

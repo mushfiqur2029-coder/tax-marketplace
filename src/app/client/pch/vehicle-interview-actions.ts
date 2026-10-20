@@ -298,3 +298,225 @@ export async function commitPchVehicleInterviewAction(
     };
   }
 }
+
+// -------------------------------------------------------------------
+// Phase 7 Slice 7.6c: VEHICLE_CA_EXT, vehicle disposal follow-up.
+//
+// Separate trio from VEHICLE_CA so a client who already finished the
+// main vehicle chat doesn't have to re-run it just to record a
+// disposal. Gated upstream in the UI on CA-eligible status (Owned
+// outright / HP / PCP / Loan); the server also tolerates a run against
+// a leased/rented case but will only persist disposed='No' in that
+// case.
+// -------------------------------------------------------------------
+
+const CA_ELIGIBLE_STATUSES = new Set(["Owned outright", "Hire purchase", "PCP", "Loan"]);
+
+function buildDisposalOpener(current: VehicleRow & { disposed?: boolean | null; disposal_proceeds_pence?: number | null; disposal_date?: string | null } | null): string | undefined {
+  if (!current) return undefined;
+  if (!current.disposed) return undefined;
+  const bits: string[] = ["Just checking in on the disposal you told us about."];
+  if (current.disposal_proceeds_pence != null) {
+    const pounds = (Math.round(current.disposal_proceeds_pence) / 100).toLocaleString(
+      "en-GB",
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+    );
+    bits.push(`Proceeds captured: £${pounds}.`);
+  }
+  if (current.disposal_date) {
+    bits.push(`Date captured: ${current.disposal_date}.`);
+  }
+  bits.push("Anything to change, or should we leave it as is?");
+  return bits.join(" ");
+}
+
+export async function startPchDisposalInterviewAction(
+  caseId: string,
+): Promise<ActionResult<{ opener: InterviewMessage }>> {
+  try {
+    const { caseRow, admin } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+    const { data } = await admin
+      .from("pch_vehicle")
+      .select("status, fuel, make_model, registration, co2_gpkm, purchase_date, purchase_price_pence, new_or_used, business_pct_override, disposed, disposal_proceeds_pence, disposal_date")
+      .eq("case_id", caseId)
+      .maybeSingle();
+    const override = buildDisposalOpener(data as (VehicleRow & { disposed?: boolean | null; disposal_proceeds_pence?: number | null; disposal_date?: string | null }) | null);
+    const opener = openInterview("VEHICLE_CA_EXT", override);
+    return { ok: true, opener };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Disposal interview failed to start.",
+    };
+  }
+}
+
+export async function advancePchDisposalInterviewAction(
+  caseId: string,
+  transcript: InterviewMessage[],
+): Promise<ActionResult<{ turn: InterviewTurnResult }>> {
+  try {
+    const { caseRow } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+    const cleaned = transcript
+      .map((m) => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content.trim() : "",
+      }))
+      .filter((m) => m.content.length > 0);
+    if (cleaned.length === 0 || cleaned[0].role !== "assistant") {
+      return { ok: false, error: "Transcript must start with the opener message." };
+    }
+    const turn = await runInterviewTurn("VEHICLE_CA_EXT", cleaned);
+    return { ok: true, turn };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "AI interview failed." };
+  }
+}
+
+export async function commitPchDisposalInterviewAction(
+  caseId: string,
+  transcript: InterviewMessage[],
+): Promise<ActionResult<{ writtenKeys: string[] }>> {
+  try {
+    const { me, caseRow, admin } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+
+    const finalizeTranscript = [...transcript];
+    while (
+      finalizeTranscript.length > 0
+      && finalizeTranscript[finalizeTranscript.length - 1].role !== "user"
+    ) {
+      finalizeTranscript.pop();
+    }
+    const final = await runInterviewTurn("VEHICLE_CA_EXT", finalizeTranscript);
+    if (final.kind !== "done") {
+      return {
+        ok: false,
+        error:
+          "The AI isn't finished yet, there are still questions to answer. Keep going in the chat.",
+      };
+    }
+
+    const written: string[] = [];
+    const disposedRaw = final.fields.disposed;
+    const disposed =
+      disposedRaw && disposedRaw.confidence !== "missing"
+      && String(disposedRaw.value).trim().toLowerCase() === "yes";
+
+    const patch: Record<string, boolean | number | string | null> = { disposed };
+    written.push("disposed");
+
+    if (disposed) {
+      const proceedsField = final.fields.disposal_proceeds_gbp;
+      if (proceedsField && proceedsField.confidence !== "missing" && proceedsField.value != null) {
+        const n = Number(proceedsField.value);
+        if (Number.isFinite(n) && n >= 0) {
+          patch.disposal_proceeds_pence = Math.round(n * 100);
+          written.push("disposal_proceeds_gbp");
+        }
+      }
+      const dateField = final.fields.disposal_date;
+      if (dateField && dateField.confidence !== "missing" && dateField.value != null) {
+        const raw = String(dateField.value).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+          patch.disposal_date = raw;
+          written.push("disposal_date");
+        }
+      }
+    } else {
+      // Explicitly clear any previously captured proceeds/date so a
+      // client who flips disposed Yes to No doesn't leave stale figures
+      // sitting on the row for compute.ts to pick up on a later run.
+      patch.disposal_proceeds_pence = null;
+      patch.disposal_date = null;
+    }
+
+    const { error } = await admin
+      .from("pch_vehicle")
+      .upsert({ case_id: caseId, ...patch }, { onConflict: "case_id" });
+    if (error) return { ok: false, error: error.message };
+
+    // Checklist row (item 16): one-line note the accountant reads
+    // without opening the chat.
+    let note: string;
+    if (disposed) {
+      const proceeds = typeof patch.disposal_proceeds_pence === "number"
+        ? "£" + (patch.disposal_proceeds_pence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : "proceeds unconfirmed";
+      const date = typeof patch.disposal_date === "string" ? patch.disposal_date : "date unconfirmed";
+      note = `Disposed this year. ${proceeds}, ${date}.`;
+    } else {
+      note = "No disposal this year.";
+    }
+    await admin.from("pch_check_status").upsert(
+      {
+        case_id: caseId,
+        item_number: 16,
+        status: "Done",
+        note: note.slice(0, 2000),
+        updated_at: new Date().toISOString(),
+        updated_by: me.id,
+      },
+      { onConflict: "case_id,item_number" },
+    );
+
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    return { ok: true, writtenKeys: written };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not save the disposal answer.",
+    };
+  }
+}
+
+// Exported so the UI can gate the disposal entry point on exactly the
+// same statuses the engine treats as CA-eligible.
+export function isCaEligibleStatus(status: string | null | undefined): boolean {
+  return status != null && CA_ELIGIBLE_STATUSES.has(status.trim());
+}
+
+// One-tap "No, I kept the car" path. Semantically identical to running
+// the chat and answering disposed='No', so we write the same state:
+// pch_vehicle.disposed=false (plus clear any stale proceeds/date) and
+// mark item 16 Done with the matching note. Lets the common-case driver
+// resolve item 16 in a single click without opening the AI panel.
+export async function markNoVehicleDisposalAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const { me, caseRow, admin } = await requireClientPchCase(caseId);
+    const lock = assertEditable(caseRow.status);
+    if (lock) return lock;
+    const { error } = await admin
+      .from("pch_vehicle")
+      .upsert(
+        { case_id: caseId, disposed: false, disposal_proceeds_pence: null, disposal_date: null },
+        { onConflict: "case_id" },
+      );
+    if (error) return { ok: false, error: error.message };
+    await admin.from("pch_check_status").upsert(
+      {
+        case_id: caseId,
+        item_number: 16,
+        status: "Done",
+        note: "No disposal this year.",
+        updated_at: new Date().toISOString(),
+        updated_by: me.id,
+      },
+      { onConflict: "case_id,item_number" },
+    );
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not record 'no disposal'.",
+    };
+  }
+}

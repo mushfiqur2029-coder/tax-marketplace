@@ -14,8 +14,17 @@
 // opener (set by the start action) already explains capital allowances
 // in plain English before asking the first question.
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { VehicleInterviewPanel } from "./vehicle-interview-panel";
+import { AiInterviewPanel } from "@/components/case/ai-interview-panel";
+import {
+  isCaEligibleStatus,
+  markNoVehicleDisposalAction,
+  startPchDisposalInterviewAction,
+  advancePchDisposalInterviewAction,
+  commitPchDisposalInterviewAction,
+} from "@/app/client/pch/vehicle-interview-actions";
 
 export type VehicleSummary = {
   status: string | null;
@@ -27,6 +36,12 @@ export type VehicleSummary = {
   purchase_price_pence: number | null;
   new_or_used: string | null;
   business_pct_override: number | null;
+  // Phase 7 Slice 7.6c: disposal fields drive the sub-panel's captured
+  // vs prompt state. Null disposal_date + disposal_proceeds_pence means
+  // "no disposal captured"; disposed=true gates the captured summary.
+  disposed: boolean;
+  disposal_proceeds_pence: number | null;
+  disposal_date: string | null;
 };
 
 type Props = {
@@ -89,6 +104,113 @@ export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {isCaEligibleStatus(vehicle?.status) ? (
+        <DisposalSubpanel
+          caseId={caseId}
+          disposed={vehicle?.disposed ?? false}
+          proceedsPence={vehicle?.disposal_proceeds_pence ?? null}
+          date={vehicle?.disposal_date ?? null}
+          canEdit={editable}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Phase 7 Slice 7.6c: disposal sub-panel. Gated upstream on CA-eligible
+// status (Owned outright / HP / PCP / Loan). Two paths: a one-tap
+// "No, I kept the car" button that resolves item 16 in a single click,
+// and a "Yes, walk me through disposal" opener that launches the
+// VEHICLE_CA_EXT chat. Captured state (disposed=true) replaces both
+// with a summary + Update button.
+function DisposalSubpanel({
+  caseId, disposed, proceedsPence, date, canEdit,
+}: {
+  caseId: string;
+  disposed: boolean;
+  proceedsPence: number | null;
+  date: string | null;
+  canEdit: boolean;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+
+  const markNo = () => start(async () => {
+    setErr(null);
+    const r = await markNoVehicleDisposalAction(caseId);
+    if (!r.ok) setErr(r.error);
+    else router.refresh();
+  });
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+        Did you sell or part-exchange your car this year?
+      </h4>
+      {disposed ? (
+        <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-0.5">
+          <div className="font-semibold mb-0.5">Disposal recorded</div>
+          <div>Proceeds: <strong>{proceedsPence != null ? formatPence(proceedsPence) : "Not confirmed"}</strong></div>
+          <div>Date: <strong>{date ?? "Not confirmed"}</strong></div>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-slate-600">
+          Sold it, part-exchanged against a new car, scrapped it, or an
+          insurance write-off? HMRC calls that a disposal and it changes
+          your capital allowances for the year.
+        </p>
+      )}
+      {canEdit ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {disposed ? (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+            >
+              Update my disposal
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={markNo}
+                disabled={busy}
+                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {busy ? "Saving..." : "No, I kept the car"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+              >
+                Yes, walk me through it
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
+      {err ? <div className="mt-2 text-xs text-rose-700">{err}</div> : null}
+      {open ? (
+        <div className="mt-3">
+          <AiInterviewPanel
+            caseId={caseId}
+            onClose={() => setOpen(false)}
+            flowLabel="Vehicle disposal"
+            flowSubtitle="Sold, part-exchanged, scrapped, or written off"
+            finishedMessage="Thanks, saving the disposal details now."
+            commitButtonLabel="Save my disposal"
+            commitPendingLabel="Saving..."
+            start={startPchDisposalInterviewAction}
+            advance={advancePchDisposalInterviewAction}
+            commit={commitPchDisposalInterviewAction}
+          />
         </div>
       ) : null}
     </div>
