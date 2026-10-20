@@ -173,7 +173,7 @@ export const SLOT_DEFINITIONS: Record<string, SlotDefinition> = {
           "Date of birth, yyyy-mm-dd. UK driving licences print it as DD-MM-YYYY on the front; convert.",
         ),
         address: fieldSchema(
-          "Residential address lines joined by commas, excluding the postcode (which goes in its own field). UK driving licence shows this on the front. Passports do not carry an address; mark missing.",
+          "Residential address lines joined by commas, excluding the postcode (which goes in its own field). A UK driving licence prints this on the FRONT of the card, alongside the name and date of birth. Passports do not carry an address; mark missing.",
         ),
         postcode: fieldSchema(
           "UK postcode as printed, uppercase, one space between the outward and inward parts (e.g. 'SW1A 2AA'). Missing on passports.",
@@ -260,9 +260,16 @@ async function runExtraction(
 // PCH-24 prompt factory. The client picks passport vs licence up-front
 // on the identity card, and licence uploads are split into Front/Back,
 // so we always know what the model is looking at. Tell it exactly which
-// fields to expect and which must be reported missing (DOB on licence
-// front, address on licence back and passport, etc.) so a legitimate
+// fields to expect and which must be reported missing so a legitimate
 // absent field isn't downgraded as "low confidence".
+//
+// Corrected 2026-10-20: a UK photocard driving licence prints name, date
+// of birth, licence number AND the residential address all on the FRONT.
+// The back only carries the vehicle-category entitlement table, no
+// personal data in our schema. The prompt previously had this backwards
+// (forced address/postcode to null on the front, expected them on the
+// back), which meant a client's address was never actually read even
+// though it was plainly visible on the front photo they uploaded.
 // -------------------------------------------------------------------
 function photoIdPrompt(ctx: ExtractionContext): string {
   const base =
@@ -284,20 +291,22 @@ function photoIdPrompt(ctx: ExtractionContext): string {
   if (ctx.idKind === "licence" && ctx.idSide === "front") {
     return (
       base +
-      " This image should be the FRONT of a UK driving licence. The front shows the holder's full name, " +
-      "date of birth, and the driver number printed under field 5 (return it as documentNumber). " +
-      "The residential address is on the BACK of the licence, not here: set address and postcode to null with " +
-      "confidence='missing' and a note explaining they live on the back of the card."
+      " This image should be the FRONT of a UK photocard driving licence. The front shows the holder's full " +
+      "name, date of birth, the residential address (extract the address lines joined by commas, excluding " +
+      "the postcode which goes in its own field, and the postcode itself), and the driver number printed " +
+      "under field 5 (return it as documentNumber). All five fields are genuinely present on this side: only " +
+      "mark one missing if it truly isn't legible or present on the actual image (e.g. a cropped or damaged " +
+      "photo), never because of where it's 'supposed' to be."
     );
   }
   if (ctx.idKind === "licence" && ctx.idSide === "back") {
     return (
       base +
-      " This image should be the BACK of a UK driving licence. The back shows the residential address " +
-      "(extract the address lines joined by commas, excluding the postcode which goes in its own field, " +
-      "and the postcode itself). The driver's printed name and date of birth are on the FRONT of the licence, " +
-      "not here: set fullName and dateOfBirth to null with confidence='missing' and a note explaining they " +
-      "live on the front of the card. The driver number printed as documentNumber is on the front; mark it missing too."
+      " This image should be the BACK of a UK photocard driving licence. The back only shows the vehicle " +
+      "category entitlement table; it carries no personal data. Set documentNumber, fullName, dateOfBirth, " +
+      "address and postcode all to null with confidence='missing' and a note explaining they're on the front " +
+      "of the card, not here. This side exists purely to keep a record of the full card; nothing here needs " +
+      "manual review from the client."
     );
   }
 
@@ -307,6 +316,6 @@ function photoIdPrompt(ctx: ExtractionContext): string {
   return (
     base +
     " Extract the holder's printed name, date of birth, residential address, and postcode. " +
-    "For a UK driving licence the address is on the front; for a passport there is no address, mark it missing."
+    "For a UK driving licence all of these are on the front; for a passport there is no address, mark it missing."
   );
 }

@@ -200,6 +200,13 @@ export default async function PchClientPage({
           // Add-on raised by the accountant lands on the client as a
           // Pay banner.
           { table: "case_addons", filter: `case_id=eq.${id}` },
+          // AI-interview commits and extraction auto-apply write these
+          // directly; without a subscription, a figure entered via the
+          // AI chat (or auto-applied from a confirmed document field)
+          // only shows up after the next unrelated refresh.
+          { table: "pch_income_lines", filter: `case_id=eq.${id}` },
+          { table: "pch_expense_lines", filter: `case_id=eq.${id}` },
+          { table: "pch_vehicle", filter: `case_id=eq.${id}` },
         ]}
       />
       <PchClientWorkspace

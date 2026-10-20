@@ -179,15 +179,21 @@ function inferMimeType(filename: string): DocumentInput["mimeType"] {
   return "image/jpeg";
 }
 
-// Fields that live on the OTHER side of a UK driving licence. Pre-marked
-// rejected (actedBy = system marker) so the review UI can hide them
-// without the client needing to tap Skip on each. Keys match the AI
-// extraction schema for PCH-24.
+// Fields that are known to never be on a given side of a UK driving
+// licence. Pre-marked rejected (actedBy = system marker) so the review
+// UI can hide them without the client needing to tap Skip on each. Keys
+// match the AI extraction schema for PCH-24.
+//
+// A UK photocard licence prints name, DOB, licence number AND the
+// residential address all on the FRONT; the back carries only the
+// vehicle-category entitlement table, no personal data at all. (This
+// previously had front/back reversed, which is what caused address and
+// postcode to go unextracted even when plainly visible on the front.)
 const LICENCE_OFF_SIDE_FIELDS: Record<"front" | "back", readonly string[]> = {
-  // Front shows name, DOB, licence number. Address is on the back.
-  front: ["address", "postcode"],
-  // Back shows address. Name, DOB, licence number are on the front.
-  back: ["documentNumber", "fullName", "dateOfBirth"],
+  // Everything in our schema is genuinely on the front.
+  front: [],
+  // Nothing in our schema is on the back; it's captured for record only.
+  back: ["documentNumber", "fullName", "dateOfBirth", "address", "postcode"],
 };
 
 function buildAutoSkipFieldStates(

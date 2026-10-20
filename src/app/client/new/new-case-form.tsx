@@ -88,6 +88,11 @@ export function NewCaseForm({
   const [isUrgent, setIsUrgent] = useState<boolean>(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Split into two pages so the client isn't scrolling past three
+  // stacked steps on a phone: Step 1 (who's filing) + Step 2 (service)
+  // on page 1, Step 3 (deadline + order summary) on page 2. An enquiry
+  // tier has no Step 3 at all, so it submits straight from page 1.
+  const [page, setPage] = useState<1 | 2>(1);
 
   const urgentFeeGbp = urgentFeePence / 100;
   const minDate = isUrgent ? earliestUrgent : earliestStandard;
@@ -106,6 +111,7 @@ export function NewCaseForm({
     setDeadline("");
     setIsUrgent(false);
     setError(null);
+    setPage(1);
   };
 
   // When the urgent toggle flips off, snap any too-early date back to
@@ -163,6 +169,8 @@ export function NewCaseForm({
       <input type="hidden" name="deadline" value={deadline} />
       <input type="hidden" name="is_urgent" value={isUrgent ? "true" : "false"} />
 
+      {page === 1 ? (
+      <>
       {/* Step 1: top-level Personal vs Limited Company */}
       <section>
         <SectionHeading eyebrow="Step 1" title="Who's filing?" />
@@ -259,9 +267,63 @@ export function NewCaseForm({
         </section>
       ) : null}
 
+      {error ? (
+        <p
+          className="rounded-lg px-3 py-2 text-sm font-medium text-red-700"
+          role="alert"
+          style={{ background: "rgba(220,38,38,0.08)" }}
+        >
+          {error}
+        </p>
+      ) : null}
+
+      {/* Page-1 navigation: an enquiry tier has no Step 3, so it submits
+          the form (and redirects to /client/new/enquiry) right from
+          here. A flat-fee tier just advances to page 2 for Step 3. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+        {isEnquiryTier ? (
+          <SLButton
+            type="submit"
+            variant="primary"
+            className="w-full sm:w-auto"
+            disabled={pending || !canSubmit}
+          >
+            {pending ? "Continuing…" : "Continue to enquiry"}
+          </SLButton>
+        ) : (
+          <SLButton
+            type="button"
+            variant="primary"
+            className="w-full sm:w-auto"
+            disabled={!tier}
+            onClick={() => setPage(2)}
+          >
+            Continue
+          </SLButton>
+        )}
+        <span className="text-sm text-slate">
+          {isEnquiryTier
+            ? "Short enquiry form next. We'll get back to you within one business day to arrange a call."
+            : "Next: pick your filing deadline, then sign and pay."}
+        </span>
+      </div>
+      </>
+      ) : null}
+
+      {page === 2 ? (
+      <>
+      <button
+        type="button"
+        onClick={() => setPage(1)}
+        className="text-sm font-semibold text-sky hover:underline"
+      >
+        ← Back to service
+      </button>
+
       {/* Step 3: shared deadline picker + urgent fee (+£{urgentFeeGbp})
           + order summary. Renders for Personal (always) and LC when a
-          flat-fee tier is picked. Enquiry picks skip this entirely. */}
+          flat-fee tier is picked. Enquiry picks skip this entirely and
+          never reach page 2. */}
       {showDeadlineStep ? (
         <section>
           <SectionHeading
@@ -351,18 +413,15 @@ export function NewCaseForm({
           className="w-full sm:w-auto"
           disabled={pending || !canSubmit}
         >
-          {pending
-            ? "Creating…"
-            : isEnquiryTier
-              ? "Continue to enquiry"
-              : "Continue"}
+          {pending ? "Creating…" : "Continue"}
         </SLButton>
         <span className="text-sm text-slate">
-          {isEnquiryTier
-            ? "Short enquiry form next. We'll get back to you within one business day to arrange a call."
-            : "You'll sign the engagement letter, pay the fee, then upload the required documents."}
+          You&apos;ll sign the engagement letter, pay the fee, then upload the
+          required documents.
         </span>
       </div>
+      </>
+      ) : null}
     </form>
   );
 }

@@ -966,6 +966,13 @@ function DocRow({
   const [helpOpen, setHelpOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  // A direct `await someServerAction()` call from an event handler (not
+  // a <form action>) must be wrapped in a transition, otherwise Next
+  // mutates the data but doesn't apply the refreshed RSC payload to the
+  // page: the UI only catches up on a manual reload. onChanged() (which
+  // calls router.refresh()) is called inside the transition too, so the
+  // explicit refresh it triggers is itself coordinated through it.
+  const [, startActionTransition] = useTransition();
   const inputId = `up-${slot.code}`;
   const isRequired = /^Required/i.test(slot.required_rule);
   const effectiveStatus =
@@ -990,39 +997,43 @@ function DocRow({
   // per-file progress feedback for multi-file slots (bank statements
   // across accounts, bulk receipts). The server action still accepts
   // one file per call; this is a client-side loop around it.
-  const uploadMany = async (files: File[]) => {
+  const uploadMany = (files: File[]) => {
     if (files.length === 0) return;
-    setBusy(true); setErr(null);
-    setProgress({ done: 0, total: files.length });
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const fd = new FormData();
-        fd.set("file", files[i]);
-        try {
-          const r = await uploadPchDocumentAction(caseId, slot.code, fd);
-          if (!r.ok) { setErr(r.error); break; }
-        } catch (e) {
-          setErr(
-            e instanceof Error
-              ? "Upload failed: " + e.message
-              : "Upload failed. Try again, and if it keeps failing, re-save the file smaller.",
-          );
-          break;
+    startActionTransition(async () => {
+      setBusy(true); setErr(null);
+      setProgress({ done: 0, total: files.length });
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const fd = new FormData();
+          fd.set("file", files[i]);
+          try {
+            const r = await uploadPchDocumentAction(caseId, slot.code, fd);
+            if (!r.ok) { setErr(r.error); break; }
+          } catch (e) {
+            setErr(
+              e instanceof Error
+                ? "Upload failed: " + e.message
+                : "Upload failed. Try again, and if it keeps failing, re-save the file smaller.",
+            );
+            break;
+          }
+          setProgress({ done: i + 1, total: files.length });
         }
-        setProgress({ done: i + 1, total: files.length });
+      } finally {
+        setBusy(false);
+        setProgress(null);
+        onChanged();
       }
-    } finally {
-      setBusy(false);
-      setProgress(null);
-      onChanged();
-    }
+    });
   };
-  const markNA = async () => {
-    setBusy(true); setErr(null);
-    const r = await setPchDocStatusAction(caseId, slot.code, "Not applicable");
-    setBusy(false);
-    if (!r.ok) setErr(r.error);
-    onChanged();
+  const markNA = () => {
+    startActionTransition(async () => {
+      setBusy(true); setErr(null);
+      const r = await setPchDocStatusAction(caseId, slot.code, "Not applicable");
+      setBusy(false);
+      if (!r.ok) setErr(r.error);
+      onChanged();
+    });
   };
   // Phase 7 Slice 7.1: drag-drop handlers wrap the whole row. Visual
   // feedback via the sky border when dragOver.
@@ -1217,17 +1228,24 @@ function PhotoIdSection({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // See DocRow's matching comment: a bare `await` here mutates the data
+  // but Next won't apply the refreshed page to the screen without a
+  // transition, which is exactly why the passport/licence choice used
+  // to need a manual reload before the next upload step appeared.
+  const [, startActionTransition] = useTransition();
   const isRequired = /^Required/i.test(slot.required_rule);
   const effectiveStatus =
     status?.status ?? (uploaded.length ? "Uploaded" : "Awaiting");
 
-  const pickKind = async (next: "passport" | "licence") => {
+  const pickKind = (next: "passport" | "licence") => {
     if (!canEdit || busy) return;
-    setBusy(true); setErr(null);
-    const r = await setPchPhotoIdKindAction(caseId, next);
-    setBusy(false);
-    if (!r.ok) setErr(r.error);
-    onChanged();
+    startActionTransition(async () => {
+      setBusy(true); setErr(null);
+      const r = await setPchPhotoIdKindAction(caseId, next);
+      setBusy(false);
+      if (!r.ok) setErr(r.error);
+      onChanged();
+    });
   };
 
   return (
@@ -1317,7 +1335,7 @@ function PhotoIdSlots({
         <div className="text-xs text-slate-700">
           {kind === "passport"
             ? "Upload a clear photo of the data page (the one with your photo and personal details)."
-            : "Upload both sides of your licence. The front has your name and DOB; the back has your address."}
+            : "Upload both sides of your licence. The front has your name, DOB and address; the back is just for our records."}
         </div>
         {canEdit ? (
           <button
@@ -1381,22 +1399,28 @@ function PhotoIdUploadTile({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // See DocRow's matching comment: wrap in a transition so the uploaded
+  // doc's refreshed page actually reaches the screen without a manual
+  // reload.
+  const [, startActionTransition] = useTransition();
   const inputId = `up-pch24-${side ?? "passport"}`;
 
-  const upload = async (file: File) => {
-    setBusy(true); setErr(null);
-    const fd = new FormData();
-    fd.set("file", file);
-    if (side) fd.set("photo_id_side", side);
-    try {
-      const r = await uploadPchDocumentAction(caseId, "PCH-24", fd);
-      if (!r.ok) setErr(r.error);
-    } catch (e) {
-      setErr(e instanceof Error ? "Upload failed: " + e.message : "Upload failed. Try again.");
-    } finally {
-      setBusy(false);
-      onChanged();
-    }
+  const upload = (file: File) => {
+    startActionTransition(async () => {
+      setBusy(true); setErr(null);
+      const fd = new FormData();
+      fd.set("file", file);
+      if (side) fd.set("photo_id_side", side);
+      try {
+        const r = await uploadPchDocumentAction(caseId, "PCH-24", fd);
+        if (!r.ok) setErr(r.error);
+      } catch (e) {
+        setErr(e instanceof Error ? "Upload failed: " + e.message : "Upload failed. Try again.");
+      } finally {
+        setBusy(false);
+        onChanged();
+      }
+    });
   };
 
   return (

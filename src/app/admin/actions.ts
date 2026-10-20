@@ -529,9 +529,19 @@ export async function deleteAccountantAccountAction(
     // Case documents the accountant uploaded survive via SET NULL
     // (migration 0060), the DB row stays with uploaded_by=null,
     // the storage file is preserved. No storage cleanup needed on
-    // this path. cases.accountant_id SET NULL leaves the cases
-    // themselves intact and unassigned; the UI's unassigned-queue
-    // picks them back up.
+    // this path. cases.accountant_id SET NULL (FK cascade) leaves the
+    // cases themselves intact and unassigned, but the FK cascade only
+    // touches accountant_id, not status: a case this accountant had
+    // in in_review/prepared would otherwise sit accountant-less with
+    // a stale status, invisible to the open queue (status='submitted'
+    // filter) and still showing its old status pill. Reset those
+    // first so they fall back into the queue as "Awaiting review"
+    // once the FK cascade clears accountant_id.
+    await admin
+      .from("cases")
+      .update({ status: "submitted" })
+      .eq("accountant_id", targetUserId)
+      .in("status", ["in_review", "prepared"]);
 
     await admin.from("admin_actions").insert({
       target_user_id: target.id,
@@ -730,9 +740,28 @@ export async function reassignCaseAction(
   // status, so the status flip here is no longer needed, reassignment
   // is a pure assignment change, status transitions stay with the
   // accountant via updateCaseStatusAction.
+  // Unassigning (back to the queue): a case sitting in in_review or
+  // prepared implies an accountant was actively working it. Leaving
+  // the status alone would strand the case, accountant_id null but
+  // status past 'submitted', so it shows a stale status pill and
+  // never resurfaces in the open queue (which filters on
+  // status='submitted'). Reset to 'submitted' so it both re-queues
+  // and reads "Awaiting review" via StatusPill. Advanced statuses
+  // (client_approval/filed/complete) are left untouched, unassigning
+  // at that stage is an edge case for admin judgement, not an
+  // automatic requeue.
+  const statusPatch: { accountant_id: string | null; status?: "submitted" } =
+    { accountant_id: newAccountantId };
+  if (
+    newAccountantId === null &&
+    (current.status === "in_review" || current.status === "prepared")
+  ) {
+    statusPatch.status = "submitted";
+  }
+
   const { error: updateErr } = await supabase
     .from("cases")
-    .update({ accountant_id: newAccountantId })
+    .update(statusPatch)
     .eq("id", caseId);
   if (updateErr) throw new Error(updateErr.message);
 
