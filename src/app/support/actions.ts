@@ -264,10 +264,10 @@ export async function listSupportThreadsAction(
     const userIds = Array.from(new Set(list.map((t) => t.user_id)));
     const { data: users } = await admin
       .from("users")
-      .select("id, email, name")
+      .select("id, email")
       .in("id", userIds);
     const labelById = new Map(
-      (users ?? []).map((u) => [u.id as string, (u.name as string | null) ?? (u.email as string)]),
+      (users ?? []).map((u) => [u.id as string, u.email as string]),
     );
 
     // Latest message body preview per thread, for the inbox row.
@@ -318,10 +318,10 @@ export async function getSupportThreadAction(
     const messages = await loadThreadMessages(admin, thread.id);
     const { data: user } = await admin
       .from("users")
-      .select("email, name")
+      .select("email")
       .eq("id", thread.user_id)
       .maybeSingle();
-    const label = user?.name ?? user?.email ?? thread.user_id.slice(0, 8);
+    const label = user?.email ?? thread.user_id.slice(0, 8);
     return { ok: true, thread: shapeThread(thread, messages), userLabel: label };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not load thread." };
@@ -532,10 +532,10 @@ async function loadThreadMessages(
   const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
   const { data: users } = await admin
     .from("users")
-    .select("id, email, name")
+    .select("id, email")
     .in("id", authorIds);
   const labelById = new Map(
-    (users ?? []).map((u) => [u.id as string, (u.name as string | null) ?? (u.email as string)]),
+    (users ?? []).map((u) => [u.id as string, u.email as string]),
   );
   return list.map((m) => ({
     id: m.id,
