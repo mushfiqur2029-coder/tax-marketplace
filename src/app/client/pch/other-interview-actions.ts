@@ -52,11 +52,13 @@ async function requireClientPchCase(caseId: string) {
 }
 
 function assertEditable(status: string): ActionErr | null {
-  if (status === "submitted") return null;
+  if (status === "submitted" || status === "in_review" || status === "prepared") {
+    return null;
+  }
   return {
     ok: false,
     error:
-      "Your return is already with your accountant. Message them if something needs to change.",
+      "This return has already moved to the approval stage. Message your accountant if something needs to change.",
   };
 }
 

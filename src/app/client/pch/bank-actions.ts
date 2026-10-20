@@ -20,8 +20,9 @@
 //   setBankTransactionCategoryAction, DB-only: direct category edit
 //      from the ledger table UI. Same aggregation refresh.
 //
-// Edit lock: all three refuse once the case has left 'submitted'.
-// Mirrors the lock pattern already used by other client actions.
+// Edit lock: all three stay open through submitted / in_review /
+// prepared, same as the rest of the client intake, and refuse only
+// once the case has reached client_approval or later.
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
@@ -51,11 +52,13 @@ async function requireClientPchCase(caseId: string) {
 }
 
 function assertEditable(status: string): ActionErr | null {
-  if (status === "submitted") return null;
+  if (status === "submitted" || status === "in_review" || status === "prepared") {
+    return null;
+  }
   return {
     ok: false,
     error:
-      "Your return is already with your accountant. Message them if something needs to change.",
+      "This return has already moved to the approval stage. Message your accountant if something needs to change.",
   };
 }
 
