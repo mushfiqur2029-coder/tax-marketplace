@@ -8,13 +8,12 @@
 //   1. One row for the Photo ID slot. Reuses DocRow + the existing
 //      extraction/review pipeline so the client confirms the AI's
 //      reading of name, DOB, address, and postcode. On confirm those
-//      flow into pch_cases via SLOT_APPLY_MAPS["PCH-24"].
+//      flow into pch_cases via SLOT_APPLY_MAPS["PCH-24"]. Edits to
+//      address/postcode happen on that review card too; this section
+//      only owns the HMRC references.
 //
-//   2. Four short inputs for the fields that may not be readable off
-//      an ID: UTR, NI number, address line, and postcode. UK driving
-//      licence backs often don't carry a visible address (only vehicle
-//      category codes) and a passport never does, so address + postcode
-//      need a manual fallback. Validation mirrors the server-side check.
+//   2. Two inputs for the fields that can't be read off any ID: UTR
+//      and NI. Validation mirrors the server-side check.
 //
 // Nothing else lives in Tab 1 anymore. The old 30-field grid, the
 // seven-question profile interview, and the "N of M fields captured"
@@ -23,11 +22,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { savePchIdentityFieldsAction } from "@/app/client/pch/actions";
-import {
-  validateUtr,
-  validateNino,
-  validatePostcode,
-} from "@/lib/pch/validation";
+import { validateUtr, validateNino } from "@/lib/pch/validation";
 
 export type IdentityHead = {
   cl_name: string | null;
@@ -48,32 +43,22 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
   const router = useRouter();
   const [utr, setUtr] = useState(head.cl_utr ?? "");
   const [nino, setNino] = useState(head.cl_nino ?? "");
-  const [address, setAddress] = useState(head.cl_address ?? "");
-  const [postcode, setPostcode] = useState(head.cl_postcode ?? "");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
 
   const utrErr = useMemo(() => (utr.trim().length === 0 ? null : validateUtr(utr.trim())), [utr]);
   const ninoErr = useMemo(() => (nino.trim().length === 0 ? null : validateNino(nino.trim())), [nino]);
-  const postcodeErr = useMemo(
-    () => (postcode.trim().length === 0 ? null : validatePostcode(postcode.trim())),
-    [postcode],
-  );
 
   const utrChanged = (utr.trim() || null) !== (head.cl_utr || null);
   const ninoChanged = (nino.trim().toUpperCase() || null) !== (head.cl_nino || null);
-  const addressChanged = (address.trim() || null) !== (head.cl_address || null);
-  const postcodeChanged = (postcode.trim().toUpperCase() || null) !== (head.cl_postcode || null);
-  const anyChange = utrChanged || ninoChanged || addressChanged || postcodeChanged;
-  const canSave = editable && anyChange && !utrErr && !ninoErr && !postcodeErr;
+  const anyChange = utrChanged || ninoChanged;
+  const canSave = editable && anyChange && !utrErr && !ninoErr;
 
   const save = () => start(async () => {
     setMsg(null);
     const r = await savePchIdentityFieldsAction(caseId, {
       cl_utr: utrChanged ? utr : undefined,
       cl_nino: ninoChanged ? nino : undefined,
-      cl_address: addressChanged ? address : undefined,
-      cl_postcode: postcodeChanged ? postcode : undefined,
     });
     if (r.ok) {
       setMsg("Saved");
@@ -87,45 +72,11 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
     <div className="space-y-4">
       <IdentitySummary head={head} />
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-900">Address and HMRC references</h3>
+        <h3 className="text-sm font-semibold text-slate-900">HMRC references</h3>
         <p className="mt-1 text-xs text-slate-600">
-          UTR and NI aren&apos;t on your ID, so just type them. Address and
-          postcode come off your Photo ID when we can read them; if we
-          couldn&apos;t (common on UK licence backs, which only show vehicle
-          categories), fill them in here.
+          UTR and NI aren&apos;t on your ID, so type them here.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block sm:col-span-2">
-            <span className="text-xs font-semibold text-slate-600">
-              Residential address
-            </span>
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="12 Example Street, London"
-              autoComplete="street-address"
-              maxLength={500}
-              disabled={!editable || pending}
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold text-slate-600">Postcode</span>
-            <input
-              className={
-                "mt-1 w-full rounded border px-2 py-1 text-sm " +
-                (postcodeErr ? "border-rose-400" : "border-slate-300")
-              }
-              value={postcode}
-              onChange={(e) => setPostcode(e.target.value.toUpperCase())}
-              placeholder="SW1A 1AA"
-              autoComplete="postal-code"
-              disabled={!editable || pending}
-            />
-            {postcodeErr ? (
-              <span className="mt-1 block text-xs text-rose-700">{postcodeErr}</span>
-            ) : null}
-          </label>
           <label className="block">
             <span className="text-xs font-semibold text-slate-600">UTR (10 digits)</span>
             <input
@@ -189,9 +140,8 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
 }
 
 // Compact read-only summary of what the Photo ID extraction already
-// captured (if anything). Shown above the editable card. Blank state is
-// a short "we'll fill this in from your ID upload above" nudge. The ID
-// upload itself lives in the Documents section (PCH-24 slot).
+// captured (if anything). Shown above the HMRC references card. Blank
+// state is a short nudge pointing at the Photo ID slot in Documents.
 function IdentitySummary({ head }: { head: IdentityHead }) {
   const rows: { label: string; value: string | null }[] = [
     { label: "Full name", value: head.cl_name },
@@ -204,9 +154,9 @@ function IdentitySummary({ head }: { head: IdentityHead }) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
         Upload your Photo ID in the Documents section above and we&apos;ll fill
-        in your name, date of birth, and address here automatically. Review and
-        edit anything that didn&apos;t read correctly, or type it in the card
-        below.
+        in your name, date of birth, and address here automatically. Review
+        and edit anything that didn&apos;t read correctly on the Photo ID
+        review card.
       </div>
     );
   }
@@ -214,9 +164,8 @@ function IdentitySummary({ head }: { head: IdentityHead }) {
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h3 className="text-sm font-semibold text-slate-900">From your Photo ID</h3>
       <p className="mt-1 text-xs text-slate-600">
-        Confirmed from your uploaded ID. To correct name or date of birth,
-        use the review card on the Photo ID slot above. Address and postcode
-        can also be edited in the card below.
+        Confirmed from your uploaded ID. To correct any of these, use the
+        review card on the Photo ID slot above.
       </p>
       <ul className="mt-3 space-y-2">
         {rows.map((r) => (

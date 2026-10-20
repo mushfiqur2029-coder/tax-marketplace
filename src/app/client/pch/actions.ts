@@ -32,7 +32,6 @@ import {
   canRunDraft,
   validateUtr,
   validateNino,
-  validatePostcode,
 } from "@/lib/pch/validation";
 import { hydrateInputsFromDb } from "@/lib/pch/engine-snapshot";
 import {
@@ -353,27 +352,22 @@ export async function setPchPhotoIdKindAction(
 //   - accountant overrides (pch_overrides, for anything else)
 
 // -------------------------------------------------------------------
-// Phase 6 Slice 1 / Audit fix: compact Identity save. UTR is 10 digits,
-// NI is 2 letters + 6 digits + 1 letter. Address + postcode are free
-// text with a UK postcode format check. All four fields are OPTIONAL
-// in isolation (client may fill some, save, come back for the rest)
-// but each one, when present, must validate server-side so a
-// hand-crafted POST can't bypass the format check.
+// Phase 6 Slice 1: compact Identity save. UTR is 10 digits, NI is 2
+// letters + 6 digits + 1 letter. Both fields are OPTIONAL in isolation
+// (client may fill one, save, come back for the other) but when
+// present each must validate server-side so a hand-crafted POST can't
+// bypass the format check.
 //
-// Address + postcode were added when the audit caught that a client
-// whose licence back doesn't carry a visible address (which is normal
-// for UK licences, backs only have vehicle-category codes) had no way
-// to correct cl_address/cl_postcode in the client workspace. The Photo
-// ID extraction + sign-up sync populate these fields when they can;
-// this form is the fallback.
+// Address and postcode are not accepted here. They come off the Photo
+// ID extraction (cl_address + cl_postcode via SLOT_APPLY_MAPS["PCH-24"])
+// and the client confirms or edits them inline on the extraction review
+// card. One surface, no duplicate entry.
 // -------------------------------------------------------------------
 export async function savePchIdentityFieldsAction(
   caseId: string,
   patch: {
     cl_utr?: string | null;
     cl_nino?: string | null;
-    cl_address?: string | null;
-    cl_postcode?: string | null;
   },
 ): Promise<ActionResult> {
   const { caseRow } = await requirePchCase(caseId);
@@ -395,21 +389,6 @@ export async function savePchIdentityFieldsAction(
       if (ninoErr) return { ok: false, error: ninoErr };
     }
     toWrite.cl_nino = nino.length > 0 ? nino.toUpperCase() : null;
-  }
-  if (patch.cl_address !== undefined) {
-    const addr = (patch.cl_address ?? "").trim();
-    if (addr.length > 500) {
-      return { ok: false, error: "Address is too long (max 500 characters)." };
-    }
-    toWrite.cl_address = addr.length > 0 ? addr : null;
-  }
-  if (patch.cl_postcode !== undefined) {
-    const pc = (patch.cl_postcode ?? "").trim().toUpperCase();
-    if (pc.length > 0) {
-      const pcErr = validatePostcode(pc);
-      if (pcErr) return { ok: false, error: pcErr };
-    }
-    toWrite.cl_postcode = pc.length > 0 ? pc : null;
   }
   if (Object.keys(toWrite).length === 0) return { ok: true };
   const admin = createAdminClient();
