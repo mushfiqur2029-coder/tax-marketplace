@@ -414,9 +414,48 @@ function deriveVehicleWdv(vehicle: Vehicle): ChecklistPrefill | null {
 // interview captures method_choice; the engine's recommendedMethod is
 // then available in the snapshot (handled in 7.5c for the comparison).
 // Here we just confirm method is chosen.
+//
+// Standing principle: automation only acts on data the client provided
+// and the result must stay visible to the accountant. So when the
+// client says "No vehicle" but has reported business mileage anyway,
+// we flag it as a contradiction for the accountant to resolve rather
+// than silently showing "nothing to flag". The system never
+// auto-clears the mileage or decides the question; the accountant
+// does, with the raw numbers in front of them.
 function deriveVehicleMethod(vehicle: Vehicle): ChecklistPrefill | null {
   const status = typeof vehicle.status === "string" ? vehicle.status : null;
-  if (status === "Leased" || status === "Rented" || status === "No vehicle") {
+  if (status === "No vehicle") {
+    const odoStart = Number(vehicle.odo_start ?? 0);
+    const odoEnd = Number(vehicle.odo_end ?? 0);
+    const otherMiles = Number(vehicle.other_business_miles ?? 0);
+    const odoDelta = Math.max(0, odoEnd - odoStart);
+    const totalReportedMiles = odoDelta + otherMiles;
+    if (totalReportedMiles > 0) {
+      const parts: string[] = [];
+      if (odoDelta > 0) {
+        parts.push(
+          `odometer ${odoStart.toLocaleString()} to ${odoEnd.toLocaleString()} (${odoDelta.toLocaleString()} miles)`,
+        );
+      }
+      if (otherMiles > 0) {
+        parts.push(`${otherMiles.toLocaleString()} other business miles`);
+      }
+      return {
+        item: 15,
+        verdict: "warn",
+        evidence:
+          `Status is "No vehicle" but ${totalReportedMiles.toLocaleString()} business miles were reported (${parts.join("; ")}). Check with the client whether they drove a vehicle this year (and the status should change) or whether the mileage was entered in error.`,
+        derivedAt: now(),
+      };
+    }
+    return {
+      item: 15,
+      verdict: "nothing_to_show",
+      evidence: `Vehicle status: No vehicle. No method choice needed.`,
+      derivedAt: now(),
+    };
+  }
+  if (status === "Leased" || status === "Rented") {
     return {
       item: 15,
       verdict: "nothing_to_show",
