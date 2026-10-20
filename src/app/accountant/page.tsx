@@ -140,17 +140,24 @@ export default async function AccountantDashboard({
   // deadlinesForYear() (31 January after the tax year end); other
   // tiers fall back to cases.deadline (the client-chosen filing-by
   // date). Cases with no deadline at all are pushed to the back.
+  //
+  // The same query also carries engine_snapshot_at so the queue card
+  // can render an "Intake in progress" badge on PCH cases where the
+  // client paid but hasn't clicked Submit for review yet. Mirrors the
+  // LC "Onboarding in progress" badge further down.
   const pchIds = [...queue, ...mine]
     .filter((c) => c.tier === "uber_phv_automated")
     .map((c) => c.id);
   const pchTaxYearById = new Map<string, string>();
+  const pchIntakeReadyById = new Map<string, boolean>();
   if (pchIds.length > 0) {
     const { data: pchHeads } = await supabase
       .from("pch_cases")
-      .select("case_id, tax_year")
+      .select("case_id, tax_year, engine_snapshot_at")
       .in("case_id", pchIds);
     for (const h of pchHeads ?? []) {
       if (h.tax_year) pchTaxYearById.set(h.case_id, h.tax_year);
+      pchIntakeReadyById.set(h.case_id, !!h.engine_snapshot_at);
     }
   }
   const FAR_FUTURE = Number.MAX_SAFE_INTEGER;
@@ -292,7 +299,15 @@ export default async function AccountantDashboard({
       ) : (
         <ul className="grid gap-3">
           {filtered.map((c) => (
-            <li key={c.id}>{renderCard(c, tierMap.get(c.tier) ?? null)}</li>
+            <li key={c.id}>
+              {renderCard(
+                c,
+                tierMap.get(c.tier) ?? null,
+                c.tier === "uber_phv_automated"
+                  ? pchIntakeReadyById.get(c.id) ?? false
+                  : null,
+              )}
+            </li>
           ))}
         </ul>
       )}
@@ -300,7 +315,7 @@ export default async function AccountantDashboard({
   );
 }
 
-function renderCard(c: Row, tier: PlanTier | null) {
+function renderCard(c: Row, tier: PlanTier | null, pchIntakeReady: boolean | null) {
   const seg = getSegment(c.segment);
   const isMine = !!c.accountant_id;
   const companyName = companyNameFromAnswers(c.intake_answers, c.segment);
@@ -312,6 +327,10 @@ function renderCard(c: Row, tier: PlanTier | null) {
   const onboardingInProgress =
     (c.segment === "limited_company_vat" || c.segment === "personal") &&
     !c.onboarding_submitted_at;
+  // PCH queue cards get a parallel "intake in progress" nudge when the
+  // client has paid but not yet clicked Submit for review (no engine
+  // snapshot yet). pchIntakeReady is null for non-PCH tiers.
+  const pchIntakeInProgress = pchIntakeReady === false;
   return (
     <Link
       href={`/accountant/cases/${c.id}`}
@@ -367,6 +386,18 @@ function renderCard(c: Row, tier: PlanTier | null) {
             }}
           >
             Onboarding in progress · client may need help
+          </div>
+        ) : null}
+        {pchIntakeInProgress ? (
+          <div
+            className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+            style={{
+              background: "rgba(217, 159, 25, 0.14)",
+              color: "#B57E12",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            Intake in progress · client still filling in
           </div>
         ) : null}
       </div>

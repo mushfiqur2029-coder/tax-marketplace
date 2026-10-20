@@ -8,9 +8,10 @@
 //
 // Flow (post-refactor, see docs on the new client workspace):
 //   submitted (paid) → client edits intake (sections 1-5)
-//     → submitForReviewAction runs the engine, auto-assigns an
-//       accountant, moves status to in_review. Client no longer sees
-//       any figures from this point on.
+//     → submitForReviewAction runs the engine and saves the snapshot.
+//       Status stays 'submitted' and the case sits in the shared
+//       accountant queue until any approved accountant picks it up
+//       via takeCaseAction (atomic UPDATE, race-safe).
 //   in_review / prepared → accountant works (checklist, overrides,
 //     SA302) via accountant actions. Client intake is read-only.
 //   client_approval → accountant has advanced the case; the client
@@ -25,7 +26,6 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { autoAssignAccountant } from "@/lib/case/auto-assign";
 import { computeAll } from "@/lib/tax-engine";
 import {
   validateVehicle,
@@ -38,7 +38,6 @@ import {
   schedulePchExtraction,
   runPchExtractionJob,
 } from "@/lib/pch/extraction-trigger";
-import { sendPchInReviewEmail } from "@/lib/pch/status-emails";
 import { syncPchProfileFromUserAction } from "@/app/client/pch/profile-actions";
 
 type ActionOk = { ok: true };
@@ -602,18 +601,18 @@ export async function requestPchAccountantHelpAction(
 // case off, so the accountant inherits a pre-computed snapshot ready
 // to review.
 // -------------------------------------------------------------------
-// -------------------------------------------------------------------
-// Submit the finished intake to the accountant. One transition that:
-//   1. Runs the engine on the current intake and stores the snapshot
-//      (the accountant inherits it; the client never sees it).
-//   2. Auto-assigns the least-loaded approved accountant when the case
-//      is still unassigned. Admin can override later.
-//   3. Moves case status: submitted -> in_review.
+// Finalize the intake and publish to the accountant queue. The engine
+// runs on the current intake and the snapshot lands on pch_cases; the
+// case stays at status='submitted' with accountant_id=null so it shows
+// in the shared accountant queue the same way every other case type
+// does. An accountant picks it up through TakeCaseForm (atomic UPDATE
+// in takeCaseAction), which is where the status flip to in_review and
+// the "we're on it" email now live.
 //
-// All three happen in sequence inside this action so a half-done
-// handoff (snapshot without assignment, etc.) is not possible. If the
-// engine readiness check fails, nothing moves and the client is told
-// what to fix.
+// Earlier revisions auto-assigned here before flipping to in_review in
+// one transition, which hid new PCH cases from every other accountant
+// and left unassignable rows in the queue when a client paid but never
+// clicked submit. The queue-first flow replaces that.
 // -------------------------------------------------------------------
 export async function submitForReviewAction(
   caseId: string,
@@ -665,23 +664,6 @@ export async function submitForReviewAction(
       .eq("case_id", caseId);
     if (snapErr) return { ok: false, error: snapErr.message };
 
-    const assignment = await autoAssignAccountant(caseId);
-    if (!assignment.assigned && assignment.reason === "no_accountants") {
-      return {
-        ok: false,
-        error:
-          "No accountant is available right now. Try again later or contact support.",
-      };
-    }
-
-    const { error: statusErr } = await admin
-      .from("cases")
-      .update({ status: "in_review" })
-      .eq("id", caseId)
-      .eq("status", "submitted");
-    if (statusErr) return { ok: false, error: statusErr.message };
-
-    after(() => sendPchInReviewEmail(caseId));
     revalidatePath(`/client/cases/${caseId}/pch`);
     revalidatePath(`/accountant`);
     return { ok: true };

@@ -827,7 +827,9 @@ function FiledView(props: {
 }
 
 // Replaces the old "Run draft" button. One click runs the engine
-// server-side, auto-assigns an accountant, and advances the case.
+// server-side and parks the case in the shared accountant queue; an
+// accountant picks it up through their own workspace. Status flips to
+// in_review at pickup, not here.
 function SubmitForReviewSection({
   caseId, readiness,
 }: {
@@ -846,10 +848,11 @@ function SubmitForReviewSection({
     <div className="mt-10 rounded-lg border border-slate-200 bg-white p-5">
       <h2 className="text-lg font-bold mb-1">Ready to send to your accountant?</h2>
       <p className="text-sm text-slate-600 mb-3">
-        Once you submit, your accountant takes over and prepares your figures.
-        You will get a notification when they are ready for your approval. You
-        will not be able to edit the intake while they work, so make sure
-        everything above is complete and correct.
+        Once you submit, your return goes into the queue for one of our
+        accountants to pick up. You will get an email when they take it on,
+        and another when your figures are ready for your approval. If you
+        spot something to fix before they pick it up, you can still come
+        back and change it; the engine re-runs on their side.
       </p>
       {!readiness.ok ? (
         <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">

@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPchInReviewEmail } from "@/lib/pch/status-emails";
 import {
   insertAddonPendingAdminNotifications,
   insertAddonReadyToPayNotification,
@@ -98,13 +100,23 @@ export async function takeCaseAction(caseId: string): Promise<ActionResult> {
       .eq("status", "submitted")
       .eq("stripe_payment_status", "succeeded")
       .is("accountant_id", null)
-      .select("id")
+      .select("id, tier")
       .single();
 
     if (error || !data) {
       throw new Error(
         "Couldn't take this case. Someone may have grabbed it, or it's not in the queue anymore.",
       );
+    }
+
+    // PCH automated cases used to fire the "we're on it" email from
+    // submitForReviewAction when auto-assign ran there. With the queue-
+    // first flow the handoff moment is here: an accountant has picked
+    // the case up, so the client gets the email now. Non-PCH tiers were
+    // never on this path and keep their existing notify_case_change
+    // trigger behavior.
+    if (data.tier === "uber_phv_automated") {
+      after(() => sendPchInReviewEmail(caseId));
     }
 
     revalidatePath("/accountant");
