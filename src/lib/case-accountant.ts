@@ -39,9 +39,16 @@ export type TakenByOther = {
   tier: PlanTier;
 };
 
+// The row is simply gone (deleted by an admin, a cleanup pass, etc). The
+// accountant landed here from a stale link, an old notification email, or
+// a bookmark; a plain Next.js 404 reads like a broken link in the app
+// itself, so we render an explanatory page instead.
+export type CaseRemoved = { kind: "removed" };
+
 export type AccountantCaseLoad =
   | ({ kind: "ok" } & AccountantCaseData)
-  | TakenByOther;
+  | TakenByOther
+  | CaseRemoved;
 
 export async function loadAccountantCase(
   caseId: string,
@@ -60,7 +67,7 @@ export async function loadAccountantCase(
     )
     .eq("id", caseId)
     .single();
-  if (error || !row) notFound();
+  if (error || !row) return { kind: "removed" };
 
   const segment = getSegment(row.segment);
   const tier = await getTier(row.tier);

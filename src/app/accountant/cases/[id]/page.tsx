@@ -103,6 +103,33 @@ export default async function AccountantCaseDetailPage({
 
   const load = await loadAccountantCase(id);
 
+  // The case row is simply gone. Render a plain explanation instead of
+  // the app's generic 404, which reads like a broken link rather than
+  // "this case was removed".
+  if (load.kind === "removed") {
+    return (
+      <>
+        <PortalPageHeader
+          eyebrow="Case"
+          title="This case has been removed"
+          description="It no longer exists in the system."
+        />
+        <AccountantSuspensionBanner />
+        <div className="card-sl max-w-xl p-6 sm:p-8">
+          <p className="text-sm text-slate">
+            The case you followed a link to is no longer here. It may have
+            been removed by an admin, or the link may be out of date.
+          </p>
+          <div className="mt-5">
+            <Link href="/accountant" className="btn-sl btn-sl-primary">
+              Back to your cases
+            </Link>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // If the case has been taken by a different accountant, render a
   // helpful explanation instead of a bare 404.
   if (load.kind === "taken") {
