@@ -129,7 +129,16 @@ export function PchClientWorkspace(props: {
   const h2 = "text-lg font-bold mt-10 mb-3 border-b border-slate-200 pb-2";
   const card = "rounded-lg border border-slate-200 bg-white p-4";
   const status = props.caseStatus;
-  const editable = status === "submitted";
+  // Intake (documents, income, expenses, vehicle) stays editable all the
+  // way up to client_approval, including while the accountant has the
+  // case (in_review / prepared). The accountant's review screen reads
+  // the same live tables, so a client edit after pickup is visible to
+  // them immediately rather than silently invalidating a frozen
+  // snapshot. Locked only once the case reaches client_approval, where
+  // the client is reviewing figures that have already been signed off
+  // for presentation.
+  const editable =
+    status === "submitted" || status === "in_review" || status === "prepared";
   const withAccountant = status === "in_review" || status === "prepared";
   const awaitingApproval = status === "client_approval";
   const filed = status === "filed" || status === "complete";
@@ -370,7 +379,7 @@ export function PchClientWorkspace(props: {
             ) : null}
           </fieldset>
 
-          {editable ? (
+          {status === "submitted" ? (
             <SubmitForReviewSection caseId={props.caseId} readiness={readiness} />
           ) : null}
         </>
@@ -392,8 +401,9 @@ function WithAccountantBanner() {
       </p>
       <p className="mt-1 text-xs text-sky-800">
         They are reviewing what you sent and preparing your figures. You will
-        get a notification when they are ready for your approval. Your intake
-        below is read-only while they work.
+        get a notification when they are ready for your approval. You can
+        still upload documents or update your details below if something
+        changes. Your accountant sees the update straight away.
       </p>
     </div>
   );

@@ -13,14 +13,17 @@
 //       accountant queue until any approved accountant picks it up
 //       via takeCaseAction (atomic UPDATE, race-safe).
 //   in_review / prepared → accountant works (checklist, overrides,
-//     SA302) via accountant actions. Client intake is read-only.
+//     SA302) via accountant actions. Client intake stays editable
+//     (documents, income, expenses, vehicle) so the client can add
+//     anything the accountant is waiting on without needing a bounce-
+//     back; the accountant's screens read the same live tables.
 //   client_approval → accountant has advanced the case; the client
 //     sees the figures for the first time and signs off.
 //   filed / complete → done.
 //
-// Edit lock: once a case has left `submitted`, every intake-mutating
-// action in this file refuses. The accountant must bounce it back if
-// a change is needed.
+// Edit lock: once a case reaches client_approval or later, every
+// intake-mutating action in this file refuses. Up to that point
+// (submitted, in_review, prepared) the client can keep editing.
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -65,16 +68,22 @@ async function requirePchCase(caseId: string) {
   return { me, caseRow: data };
 }
 
-// Guard for intake-mutating actions: refuse once the case has been
-// submitted for review. The client no longer owns the data from that
-// point; the accountant does, and silent edits post-review would
-// invalidate the engine snapshot they're working against.
+// Guard for intake-mutating actions: refuse once the case has reached
+// client_approval or later. Up to that point (submitted, in_review,
+// prepared) the client can keep uploading documents and updating their
+// details even after an accountant has taken the case - the accountant's
+// review screen reads the same live tables, so an edit is visible to
+// them immediately. Locked only once the client is reviewing figures
+// that have already been signed off for presentation (client_approval),
+// and for the terminal filed/complete states.
 function assertEditableByClient(status: string): ActionErr | null {
-  if (status === "submitted") return null;
+  if (status === "submitted" || status === "in_review" || status === "prepared") {
+    return null;
+  }
   return {
     ok: false,
     error:
-      "Your return is already with your accountant. Message them if something needs to change.",
+      "This return has already moved to the approval stage. Message your accountant if something needs to change.",
   };
 }
 

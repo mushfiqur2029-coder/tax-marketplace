@@ -151,9 +151,8 @@ export default async function PchClientPage({
 
   // Hide the engine snapshot from the client until the accountant has
   // explicitly moved the case to client_approval. Up to that point the
-  // client sees intake only (editable while status is submitted,
-  // read-only once in_review/prepared); the figures are first shown on
-  // the approval screen.
+  // client sees intake only, editable throughout (submitted, in_review,
+  // prepared); the figures are first shown on the approval screen.
   const showFigures =
     caseRow.status === "client_approval" ||
     caseRow.status === "filed" ||
