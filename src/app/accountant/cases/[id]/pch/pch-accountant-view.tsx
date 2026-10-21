@@ -130,18 +130,6 @@ export function PchAccountantView(props: {
     return () => { void supabase.removeChannel(channel); };
   }, [supabase, props.caseId]);
 
-  // Advance-to-approval gate: every positive-amount expense line must
-  // carry an evidence method. Mirrors the server-side canRequestFiling
-  // check so the accountant sees the blocker count up-front, not just as
-  // an error after clicking the big button. The 33-point checklist used
-  // to be a second gate here; accountants no longer work a checklist, so
-  // this is the only gate left.
-  const missingEvidenceCount = props.expenseLines.filter(
-    (l) => l.amount_paid_pence > 0 && !(l.evidence && l.evidence.trim().length > 0),
-  ).length;
-  const allEvidenced = missingEvidenceCount === 0;
-  const canAdvance = allEvidenced;
-
   const requestFiling = () => start(async () => {
     const r = await requestClientFilingAction(props.caseId);
     if (!r.ok) setErr(r.error);
@@ -217,29 +205,19 @@ export function PchAccountantView(props: {
       {/* Pre-filing readiness band */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 mb-6">
         <h2 className="text-sm font-bold mb-3">Ready to hand back to client?</h2>
-        <ul className="text-sm space-y-1">
-          <li>
-            <span className={allEvidenced ? "text-emerald-700" : "text-amber-700"}>
-              {allEvidenced ? "✓" : "•"}
-            </span>{" "}
-            Expense evidence:{" "}
-            {allEvidenced
-              ? <>all <strong>{props.expenseLines.length}</strong> line{props.expenseLines.length === 1 ? "" : "s"} have a method recorded</>
-              : <><strong>{missingEvidenceCount}</strong> line{missingEvidenceCount === 1 ? "" : "s"} still need an evidence method, set one from each row above using the amber quick-pick</>
-            }
-          </li>
-          {props.approvalAt ? (
+        {props.approvalAt ? (
+          <ul className="text-sm space-y-1">
             <li>
               <span className="text-emerald-700">✓</span>{" "}
               Client approval signed: {props.approvalName} on{" "}
               {new Date(props.approvalAt).toLocaleString()}
             </li>
-          ) : null}
-        </ul>
+          </ul>
+        ) : null}
         <div className="mt-4 flex items-center gap-3">
           <button type="button"
             onClick={requestFiling}
-            disabled={pending || !canAdvance}
+            disabled={pending}
             className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
             {pending ? "Requesting..." : "Advance to client approval"}
           </button>

@@ -65,11 +65,6 @@ export type ExpenseLineRow = {
   edited_at: string | null;
 };
 
-// Common evidence method codes. The free-form field (via the full edit
-// panel) still accepts anything, but 95% of lines fall into one of
-// these buckets, so the inline quick-pick covers the common path.
-const EVIDENCE_QUICK_PICKS = ["Bank statement", "Receipt", "Invoice", "Estimate E2"] as const;
-
 type Props = {
   caseId: string;
   incomeLines: IncomeLineRow[];
@@ -406,14 +401,12 @@ function ExpenseRow({
   // viewer's own save firing the "new updates" reload.
   const [savedLabel, setSavedLabel] = useState(line.label);
   const [savedAmountPence, setSavedAmountPence] = useState(line.amount_paid_pence);
-  const [savedEvidence, setSavedEvidence] = useState<string | null>(line.evidence);
   const [savedEditedAt, setSavedEditedAt] = useState<string | null>(line.edited_at);
   const [label, setLabel] = useState(line.label);
   const [amountPounds, setAmountPounds] = useState((line.amount_paid_pence / 100).toFixed(2));
 
   const aiAmount = line.ai_proposed_json?.amount_paid_pence ?? null;
   const amountDiff = aiAmount != null && aiAmount !== savedAmountPence;
-  const missingEvidence = !savedEvidence || savedEvidence.trim().length === 0;
 
   const save = () => start(async () => {
     setErr(null);
@@ -431,23 +424,8 @@ function ExpenseRow({
     setEditing(false);
   });
 
-  const quickPickEvidence = (method: string) => start(async () => {
-    setErr(null);
-    markLocalMutation();
-    const r = await editExpenseLineAction(caseId, line.id, { evidence: method });
-    markLocalMutation();
-    if (!r.ok) { setErr(r.error); return; }
-    setSavedEvidence(method);
-    setSavedEditedAt(new Date().toISOString());
-  });
-
   return (
-    <li className={
-      "rounded border p-3 text-xs "
-      + (missingEvidence && editable
-        ? "border-amber-300 bg-amber-50/50"
-        : "border-slate-200 bg-slate-50/60")
-    }>
+    <li className="rounded border border-slate-200 bg-slate-50/60 p-3 text-xs">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="font-medium text-slate-900">{savedLabel}</div>
@@ -457,16 +435,6 @@ function ExpenseRow({
           <div className="mt-0.5 text-[11px] text-slate-500">
             Amount <strong>{formatPence(savedAmountPence)}</strong>
             {amountDiff ? <DiffPill ai={aiAmount!} /> : null}
-          </div>
-          <div className="mt-0.5 text-[11px]">
-            Evidence{" "}
-            {missingEvidence ? (
-              <span className="font-medium text-amber-800">
-                Missing, this blocks Advance to client approval
-              </span>
-            ) : (
-              <strong className="text-slate-700">{savedEvidence}</strong>
-            )}
           </div>
           {savedEditedAt ? (
             <div className="mt-0.5 text-[10px] text-slate-500">
@@ -484,24 +452,6 @@ function ExpenseRow({
           </button>
         ) : null}
       </div>
-      {editable && missingEvidence && !editing ? (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">
-            Mark as:
-          </span>
-          {EVIDENCE_QUICK_PICKS.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => quickPickEvidence(m)}
-              disabled={pending}
-              className="rounded border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-      ) : null}
       {editing ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="block">

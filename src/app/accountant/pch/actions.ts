@@ -9,10 +9,12 @@
 // reason = 'Revert'. Current state is derived by taking the newest
 // row per field_path.
 //
-// The 33-point review checklist that used to gate this transition has
-// been removed from the accountant workflow: accountants no longer work
-// a checklist, so "ready to file" now rests on the evidence gate below
-// plus the client's own approval signature. The pch_check_status /
+// The 33-point review checklist that used to gate the advance-to-
+// approval transition has been removed from the accountant workflow,
+// along with the per-line expense-evidence gate it was paired with:
+// accountants no longer tag each bank-derived expense with a method
+// code before advancing. "Ready to file" now rests entirely on the
+// client's own approval signature. The pch_check_status /
 // pch_check_items tables and the client-facing interview flows that
 // still write into pch_check_status are untouched; this file simply
 // stops requiring them to be resolved.
@@ -30,7 +32,6 @@ import {
   PCH_OVERRIDE_FIELD_BY_PATH,
   reasonRequired,
 } from "@/lib/pch/overrides";
-import { canRequestFiling } from "@/lib/pch/validation";
 import { hydrateInputsFromDb } from "@/lib/pch/engine-snapshot";
 import {
   cascadeTaxableProfitOverride,
@@ -61,35 +62,16 @@ async function requireAccountantPchCase(caseId: string) {
 
 // -------------------------------------------------------------------
 // Advance a PCH case to "client_approval" (which is the trigger for
-// the client-side "Approve and file" step). Server-side guard: every
-// positive-amount expense line has an evidence method recorded, and
-// the case is at a status this transition is valid from.
+// the client-side "Approve and file" step). Server-side guard: the
+// case is at a status this transition is valid from. The per-line
+// expense-evidence gate was removed along with the 33-point
+// checklist, see file header.
 // -------------------------------------------------------------------
 export async function requestClientFilingAction(
   caseId: string,
 ): Promise<ActionResult> {
   const { caseRow } = await requireAccountantPchCase(caseId);
   const admin = createAdminClient();
-
-  // Evidence gate: every positive-amount expense must have a method
-  // code (receipts, bank statement, estimate E2, etc.) before filing.
-  // Mirrors the Est_Flag convention from tab 3 of the workbook. The
-  // 33-check item on evidence covers the review-side obligation; this
-  // gate is the mechanical belt-and-braces that no case can slip to
-  // approval with blank-evidence rows still sitting in the data.
-  const { data: expenses } = await admin
-    .from("pch_expense_lines")
-    .select("amount_paid_pence, evidence")
-    .eq("case_id", caseId);
-  const evidenceCheck = canRequestFiling(
-    (expenses ?? []).map((r) => ({
-      amountPaid: (r.amount_paid_pence ?? 0) / 100,
-      evidence: r.evidence ?? null,
-    })),
-  );
-  if (!evidenceCheck.ok) {
-    return { ok: false, error: evidenceCheck.blockers.join(" ") };
-  }
 
   // Status gate: the current status must be in_review or prepared. We
   // can't request filing from draft/submitted.
