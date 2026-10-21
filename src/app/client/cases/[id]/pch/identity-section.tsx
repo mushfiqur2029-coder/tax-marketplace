@@ -63,8 +63,15 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
   const anyChange = utrChanged || ninoChanged;
   const canSave = editable && anyChange && !utrErr && !ninoErr;
 
+  // markLocalMutation() fires before the request goes out, not after it
+  // resolves (see the matching comment in extraction-review.tsx's run()):
+  // the realtime push for this write can reach the browser before the
+  // action's own HTTP response does, so marking only after success can
+  // lose that race and make RealtimeRefresh treat this save as someone
+  // else's change.
   const save = () => start(async () => {
     setMsg(null);
+    markLocalMutation();
     const nextUtr = utrChanged ? (utr.trim() || null) : savedHead.cl_utr;
     const nextNino = ninoChanged ? (nino.trim().toUpperCase() || null) : savedHead.cl_nino;
     const r = await savePchIdentityFieldsAction(caseId, {
@@ -72,7 +79,6 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
       cl_nino: ninoChanged ? nino : undefined,
     });
     if (r.ok) {
-      markLocalMutation();
       setMsg("Saved");
       setSavedHead((prev) => ({ ...prev, cl_utr: nextUtr, cl_nino: nextNino }));
     } else {

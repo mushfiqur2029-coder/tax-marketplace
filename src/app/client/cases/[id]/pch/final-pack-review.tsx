@@ -43,15 +43,20 @@ export function FinalPackReview({
   const [confirmedAt, setConfirmedAt] = useState(initialConfirmedAt);
   const [confirmedName, setConfirmedName] = useState(initialConfirmedName);
 
+  // markLocalMutation() fires before the request goes out: the realtime
+  // push for this write (pch_cases, a watched table) can reach the
+  // browser before this action's own HTTP response does, so marking
+  // only on success can lose that race and trigger an unwanted
+  // RealtimeRefresh reload for the viewer's own click.
   const confirm = () => start(async () => {
     setErr(null);
+    markLocalMutation();
     const trimmed = name.trim();
     const r = await confirmFinalPackAction(caseId, trimmed);
     if (!r.ok) {
       setErr(r.error);
       return;
     }
-    markLocalMutation();
     setConfirmedAt(new Date().toISOString());
     setConfirmedName(trimmed);
   });

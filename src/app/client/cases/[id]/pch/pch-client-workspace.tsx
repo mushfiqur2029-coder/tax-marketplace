@@ -467,14 +467,18 @@ function SingleAnswerSection({
   // item, so a successful call means exactly what it says on the tin.
   const [skipped, setSkipped] = useState(initialSkipped);
   const hasAnswer = (answer ?? "").trim().length > 0;
+  // markLocalMutation() fires before the request goes out: see the
+  // matching comment in extraction-review.tsx's run() for why marking
+  // only on success can lose the race against this write's own
+  // realtime push on pch_check_status, a watched table.
   const skipCard = () => startSkip(async () => {
     setSkipErr(null);
+    markLocalMutation();
     const r = await markPchChecklistNotApplicableAction(caseId, checklistItems);
     if (!r.ok) {
       setSkipErr(r.error);
       return;
     }
-    markLocalMutation();
     setSkipped(true);
   });
   return (
@@ -537,8 +541,10 @@ function SingleAnswerSection({
           notApplicable={{
             label: "Not applicable",
             action: () => markPchChecklistNotApplicableAction(caseId, checklistItems),
+            // AiInterviewPanel marks the local mutation itself before
+            // this action's request goes out; this callback just
+            // reflects the confirmed outcome locally.
             onConfirmed: () => {
-              markLocalMutation();
               setSkipped(true);
             },
           }}
@@ -732,12 +738,12 @@ function ReliefsSection({
     "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const skipCard = () => startSkip(async () => {
     setSkipErr(null);
+    markLocalMutation();
     const r = await markPchChecklistNotApplicableAction(caseId, [19]);
     if (!r.ok) {
       setSkipErr(r.error);
       return;
     }
-    markLocalMutation();
     setSkipped(true);
   });
   return (
@@ -799,8 +805,10 @@ function ReliefsSection({
           notApplicable={{
             label: "None of these apply",
             action: () => markPchChecklistNotApplicableAction(caseId, [19]),
+            // AiInterviewPanel marks the local mutation itself before
+            // this action's request goes out; this callback just
+            // reflects the confirmed outcome locally.
             onConfirmed: () => {
-              markLocalMutation();
               setSkipped(true);
             },
           }}
@@ -889,13 +897,17 @@ function SubmitForReviewSection({
   // plain local flag is enough to show the confirmation.
   const [submitted, setSubmitted] = useState(false);
   const submit = () => start(async () => {
+    // Fire before the request goes out: see the matching comment in
+    // extraction-review.tsx's run() for why marking only on success
+    // can lose the race against this write's own realtime push on
+    // pch_cases, a watched table.
+    markLocalMutation();
     const r = await submitForReviewAction(caseId);
     if (!r.ok) {
       setErr(r.error);
       return;
     }
     setErr(null);
-    markLocalMutation();
     setSubmitted(true);
   });
   return (
@@ -1334,13 +1346,17 @@ function PhotoIdSection({
     if (!canEdit || busy) return;
     startActionTransition(async () => {
       setBusy(true); setErr(null);
+      // Fire before the request goes out: see the matching comment in
+      // extraction-review.tsx's run() for why marking only on success
+      // can lose the race against this write's own realtime push on
+      // pch_cases, a watched table.
+      markLocalMutation();
       const r = await setPchPhotoIdKindAction(caseId, next);
       setBusy(false);
       if (!r.ok) {
         setErr(r.error);
         return;
       }
-      markLocalMutation();
       setPhotoIdKind(next);
     });
   };
@@ -1725,6 +1741,11 @@ function ApprovalSection({
     );
   }
   const submit = () => start(async () => {
+    // Fire before the request goes out: see the matching comment in
+    // extraction-review.tsx's run() for why marking only on success
+    // can lose the race against this write's own realtime push on
+    // cases/pch_cases, both watched tables.
+    markLocalMutation();
     const trimmed = name.trim();
     const r = await recordClientApprovalAction(caseId, trimmed);
     if (!r.ok) {
@@ -1732,7 +1753,6 @@ function ApprovalSection({
       return;
     }
     setErr(null);
-    markLocalMutation();
     setLocalApproval({ at: new Date().toISOString(), name: trimmed });
   });
   return (

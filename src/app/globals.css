@@ -252,6 +252,35 @@
   }
   .sl-deadline-pulse { animation: slDeadlinePulse 1.8s ease-in-out infinite; }
 
+  /* Mini indeterminate progress bar shown while the AI is thinking on
+     the chat-based interview panels (PCH AI chat). A slim track with a
+     short highlight sweeping across it, so the client sees the AI is
+     actively working on a reply rather than wondering if the chat has
+     stalled. */
+  @keyframes slAiThinking {
+    0% { left: -35%; }
+    100% { left: 100%; }
+  }
+  .sl-ai-progress {
+    position: relative;
+    height: 3px;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--line);
+  }
+  .sl-ai-progress::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -35%;
+    height: 100%;
+    width: 35%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--sky), var(--mint));
+    animation: slAiThinking 1.1s ease-in-out infinite;
+  }
+
   /* Service page bits (per service-self-employed.html) */
   .service-hero { padding: 150px 0 70px; position: relative; overflow: hidden; }
   @media (max-width: 720px) { .service-hero { padding: 120px 0 60px; } }

@@ -18,6 +18,7 @@ import type {
   InterviewMessage,
   InterviewTurnResult,
 } from "@/lib/pch/ai-interview";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 // Server action signatures the panel talks to. Each flow provides its
 // own trio; the shapes are identical to vehicle-interview-actions.ts.
@@ -176,6 +177,11 @@ export function AiInterviewPanel({
     if (!notApplicable) return;
     start(async () => {
       setErr(null);
+      // Fire before the request goes out, not after it resolves: when
+      // onConfirmed is provided (no reload), the realtime push for this
+      // write can reach the browser before this action's own response
+      // does, so marking only on success can lose that race.
+      if (notApplicable.onConfirmed) markLocalMutation();
       const r = await notApplicable.action();
       if (!r.ok) {
         setErr(r.error);
@@ -246,8 +252,17 @@ export function AiInterviewPanel({
               </li>
             ))}
             {pending ? (
-              <li className="rounded border border-slate-200 bg-white px-2 py-1.5 text-slate-500 italic">
-                Thinking...
+              <li className="rounded border border-slate-200 bg-white px-2 py-2 text-slate-500">
+                <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  AI assistant
+                </div>
+                <div className="italic">Thinking...</div>
+                {/* Mini indeterminate progress bar so the client can see
+                    the AI is actively working, not that the chat has
+                    stalled, while a turn (or the commit/finalise step)
+                    is in flight. Shared design-system class, see
+                    globals.css. */}
+                <div className="sl-ai-progress mt-1.5" />
               </li>
             ) : null}
           </ul>
@@ -262,7 +277,13 @@ export function AiInterviewPanel({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") send();
+              // Enter sends, same as the Send button. Shift+Enter still
+              // inserts a newline for a client who genuinely wants to
+              // write more than one line.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
             }}
             placeholder={inputPlaceholder ?? DEFAULT_PLACEHOLDER}
             className="w-full resize-y rounded border border-slate-300 bg-white px-2 py-1 text-sm"
@@ -274,7 +295,7 @@ export function AiInterviewPanel({
               type="button"
               onClick={send}
               disabled={pending || draft.trim().length === 0}
-              title="Ctrl/Cmd + Enter to send"
+              title="Enter to send, Shift+Enter for a new line"
               className="rounded bg-slate-900 px-3 py-1.5 font-medium text-white disabled:opacity-50"
             >
               {pending ? "Sending..." : "Send"}
@@ -292,6 +313,7 @@ export function AiInterviewPanel({
           >
             {pending ? commitPendingLabel : commitButtonLabel}
           </button>
+          {pending ? <div className="sl-ai-progress" /> : null}
         </div>
       )}
     </div>

@@ -270,15 +270,27 @@ function FieldRow({ extractionId, fieldKey, label, field, state, onStateChanged,
   // Task #14: no reload. Each action below writes a value we already
   // know client-side, so on success we update this field's state
   // directly (via the parent's fieldStates map) instead of reloading.
+  //
+  // markLocalMutation() fires BEFORE the request goes out, not after it
+  // resolves. The realtime push for this exact write can reach the
+  // browser over the websocket before the server action's own HTTP
+  // response does (the write commits and fans out to every subscriber,
+  // this tab included, while the action's response is still in
+  // flight), and RealtimeRefresh only has a 400ms window before it
+  // checks whether this was the viewer's own change. Marking it after
+  // the await lost that race often enough to make this card's Confirm
+  // button look like it was still forcing a reload. Marking before
+  // guarantees the mark is already in place before anything could come
+  // back over the wire.
   const run = (
     fn: () => Promise<{ ok: boolean; error?: string }>,
     nextState: ExtractionFieldState,
     after?: () => void,
   ) => {
     start(async () => {
+      markLocalMutation();
       const r = await fn();
       if (r.ok) {
-        markLocalMutation();
         if (after) after();
         onStateChanged(nextState);
       } else {

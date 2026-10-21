@@ -68,7 +68,23 @@ export function LedgerSection({ caseId, transactions: initialTransactions, edita
     <div className="space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-900">Your bookkeeping</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">Your bookkeeping</h3>
+            {/* Red while something still needs the client's input, green
+                the instant nothing does, so the status reads at a glance
+                without needing to parse the sentence below. */}
+            {pending > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden="true" />
+                {pending} to review
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                All done
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-xs text-slate-600">
             {transactions.length} transaction{transactions.length === 1 ? "" : "s"} read from your bank statement{transactions.length === 1 ? "" : "s"}.
             {pending > 0

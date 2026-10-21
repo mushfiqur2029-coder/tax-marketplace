@@ -258,12 +258,15 @@ function TransactionRow({
     }
     start(async () => {
       setErr(null);
+      // Fire before the request goes out: see the matching comment in
+      // extraction-review.tsx's run() for why marking only on success
+      // can lose the race against this write's own realtime push.
+      markLocalMutation();
       const r = await setBankTransactionCategoryAction(caseId, txn.id, next);
       if (!r.ok) {
         setErr(r.error);
         return;
       }
-      markLocalMutation();
       setEditing(false);
       onCategoryChanged(txn.id, next);
     });

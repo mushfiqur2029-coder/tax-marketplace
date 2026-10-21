@@ -109,6 +109,12 @@ export function BankClarifyChat({ caseId, initialPendingCount, onAnswered }: Pro
       const txnId = current.id;
       setTurns((prev) => [...prev, { role: "user", text: body }]);
       setDraft("");
+      // Fire before the request goes out: the realtime push for this
+      // write (pch_bank_transactions, a watched table) can reach the
+      // browser before this action's own HTTP response does, so marking
+      // only on success can lose that race and trigger an unwanted
+      // RealtimeRefresh reload for the viewer's own answer.
+      markLocalMutation();
       const r = await recordBankClarifyAnswerAction(caseId, txnId, body);
       if (!r.ok) {
         setErr(r.error);
@@ -122,7 +128,6 @@ export function BankClarifyChat({ caseId, initialPendingCount, onAnswered }: Pro
         },
       ]);
       setRemaining((n) => Math.max(0, n - 1));
-      markLocalMutation();
       onAnswered(txnId, r.newCategory, r.newConfidence);
       loadNext();
     });
