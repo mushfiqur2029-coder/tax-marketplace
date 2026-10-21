@@ -109,7 +109,7 @@ export default async function AccountantDashboard({
       .order("created_at", { ascending: false }),
   ]);
 
-  const queue = (queueRes.data ?? []) as Row[];
+  let queue = (queueRes.data ?? []) as Row[];
   const mine = (mineRes.data ?? []) as Row[];
 
   // Pre-fetch every tier (including retired/admin-only/inactive) into
@@ -160,6 +160,19 @@ export default async function AccountantDashboard({
       pchIntakeReadyById.set(h.case_id, !!h.engine_snapshot_at);
     }
   }
+  // A PCH case hits status='submitted' the moment Stripe confirms
+  // payment, before the client has done anything beyond paying. It
+  // used to join the open queue immediately at that point (with an
+  // "Intake in progress" badge below), but that put unworked, half-
+  // empty cases in front of every accountant the second a client paid.
+  // Now the queue itself waits for the client's explicit "Submit for
+  // review" (which stamps engine_snapshot_at); until then the case is
+  // still visible on the client's own dashboard and editable as
+  // normal, it just doesn't show up here yet. Other tiers have no
+  // equivalent submit step, so they're untouched.
+  queue = queue.filter(
+    (c) => c.tier !== "uber_phv_automated" || pchIntakeReadyById.get(c.id),
+  );
   const FAR_FUTURE = Number.MAX_SAFE_INTEGER;
   const effectiveDeadline = (c: Row): number => {
     if (c.tier === "uber_phv_automated") {

@@ -78,6 +78,9 @@ export async function loadAccountantCase(
   // if the client hasn't finished the onboarding checklist. Clients
   // often need help filling it in; the accountant case detail page
   // flags "Onboarding in progress" so there's no surprise about state.
+  // (PCH automated cases have their own queue-eligibility rule, but
+  // they never reach this function: the page that calls it redirects
+  // PCH-tier cases to /accountant/cases/[id]/pch before loading this.)
   const canTake =
     !row.accountant_id &&
     row.status === "submitted" &&
