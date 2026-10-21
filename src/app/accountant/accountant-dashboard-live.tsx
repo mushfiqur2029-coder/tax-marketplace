@@ -94,36 +94,38 @@ export function AccountantDashboardLive({
   const pchTaxYearById = useMemo(() => new Map(pchTaxYears), [pchTaxYears]);
   const pchIntakeReadyById = useMemo(() => new Map(pchIntakeReady), [pchIntakeReady]);
 
-  // Two live-tracked lists keyed off the two server queries. Each
-  // scopes its own realtime map so we only hold rows this viewer can
-  // actually see without crosstalk between the mine and queue buckets.
-  const mine = useLiveList<Row>(initialMine, {
+  // Single realtime feed across both buckets. Two useLiveList calls on
+  // the same table don't both deliver events reliably (one of them
+  // consistently drops rows that cross buckets, e.g. a take-case
+  // UPDATE where accountant_id flips from null to me vanishes from
+  // queue but never lands in mine). Partitioning client-side off one
+  // merged list avoids that: the hook sees every event once, updates
+  // in place by id, and the two derived lists re-bucket on the next
+  // render.
+  const initialAll = useMemo(() => {
+    const byId = new Map<string, Row>();
+    for (const r of initialMine) byId.set(r.id, r);
+    for (const r of initialQueue) byId.set(r.id, r);
+    return Array.from(byId.values());
+  }, [initialMine, initialQueue]);
+  const all = useLiveList<Row>(initialAll, {
     table: "cases",
-    channel: `accountant-dash-mine-${meId}`,
+    channel: `accountant-dash-${meId}`,
     map: (row) => {
       const r = rowFromPayload(row);
-      if (r.accountant_id !== meId) return null;
+      const isMine = r.accountant_id === meId;
+      const isQueueCandidate =
+        r.accountant_id === null &&
+        r.status === "submitted" &&
+        r.stripe_payment_status === "succeeded" &&
+        (r.tier !== "uber_phv_automated" || !!pchIntakeReadyById.get(r.id));
+      if (!isMine && !isQueueCandidate) return null;
       return r;
     },
   });
-  const queue = useLiveList<Row>(initialQueue, {
-    table: "cases",
-    channel: `accountant-dash-queue-${meId}`,
-    map: (row) => {
-      const r = rowFromPayload(row);
-      if (r.accountant_id !== null) return null;
-      if (r.status !== "submitted") return null;
-      if (r.stripe_payment_status !== "succeeded") return null;
-      // PCH tier only joins the queue once the client has submitted
-      // for review (engine_snapshot_at stamped on pch_cases). We don't
-      // have that bit for a case we haven't seen before, so a brand-new
-      // paid PCH row stays out of the queue until next navigation; a
-      // row we already have retains whatever intake-ready state the
-      // server derived at page load.
-      if (r.tier === "uber_phv_automated" && !pchIntakeReadyById.get(r.id)) return null;
-      return r;
-    },
-  });
+
+  const mine = all.filter((c) => c.accountant_id === meId);
+  const queue = all.filter((c) => c.accountant_id === null);
 
   const live = mine.filter((c) => LIVE_STATUSES.has(c.status));
   const completed = mine.filter((c) => c.status === "complete");
