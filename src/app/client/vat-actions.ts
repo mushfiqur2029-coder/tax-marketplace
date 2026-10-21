@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -229,17 +230,25 @@ export async function submitVatCycleDocsAction(
       throw new Error("Couldn't submit. The cycle may have moved on.");
     }
 
+    // Deferred: same fix as the Step 3 engagement letter delay
+    // (createCaseAction) and onboarding submit. The accountant
+    // notification doesn't affect what the client sees, so it
+    // shouldn't make Submit wait on an extra lookup + insert.
     if (caseRow.accountant_id) {
-      const { data: meRow } = await admin
-        .from("users")
-        .select("email")
-        .eq("id", me.id)
-        .single();
-      await insertVatDocsSubmittedNotification({
-        caseId: cycle.case_id,
-        accountantId: caseRow.accountant_id,
-        clientEmail: meRow?.email ?? "The client",
-        periodLabel: cycle.period_label,
+      const accountantId = caseRow.accountant_id;
+      const meId = me.id;
+      after(async () => {
+        const { data: meRow } = await admin
+          .from("users")
+          .select("email")
+          .eq("id", meId)
+          .single();
+        await insertVatDocsSubmittedNotification({
+          caseId: cycle.case_id,
+          accountantId,
+          clientEmail: meRow?.email ?? "The client",
+          periodLabel: cycle.period_label,
+        });
       });
     }
 
@@ -327,26 +336,38 @@ export async function approveAndFileVatCycleAction(
       // continue so the client's filed action still succeeds.
       console.error("Auto-open next VAT cycle failed:", insErr.message);
     } else if (inserted) {
-      await insertVatCycleOpenedNotification({
-        caseId: cycle.case_id,
-        clientId: me.id,
-        periodLabel: label,
-        hmrcDueDate: inserted.cycle_hmrc_due_date,
-      });
+      // Deferred, same reasoning as elsewhere in this file: neither
+      // notification changes what this response (or the client's next
+      // page) looks like, so they shouldn't make "approve and file"
+      // wait on them.
+      const nextDueDate = inserted.cycle_hmrc_due_date;
+      const meId = me.id;
+      after(() =>
+        insertVatCycleOpenedNotification({
+          caseId: cycle.case_id,
+          clientId: meId,
+          periodLabel: label,
+          hmrcDueDate: nextDueDate,
+        }),
+      );
     }
 
     // Notify the accountant that the just-filed cycle was approved.
     if (caseRow.accountant_id) {
-      const { data: meRow } = await admin
-        .from("users")
-        .select("email")
-        .eq("id", me.id)
-        .single();
-      await insertVatFiledNotification({
-        caseId: cycle.case_id,
-        accountantId: caseRow.accountant_id,
-        clientEmail: meRow?.email ?? "The client",
-        periodLabel: cycle.period_label,
+      const accountantId = caseRow.accountant_id;
+      const meId = me.id;
+      after(async () => {
+        const { data: meRow } = await admin
+          .from("users")
+          .select("email")
+          .eq("id", meId)
+          .single();
+        await insertVatFiledNotification({
+          caseId: cycle.case_id,
+          accountantId,
+          clientEmail: meRow?.email ?? "The client",
+          periodLabel: cycle.period_label,
+        });
       });
     }
 

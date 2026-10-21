@@ -555,12 +555,19 @@ export async function reconcileAddonPaymentAction(addonId: string) {
     .eq("id", addonId)
     .eq("status", "pending_payment"); // race guard against the webhook
 
-  await insertAddonPaidNotification({
-    caseId: addon.case_id,
-    accountantId: addon.accountant_id,
-    amountPence: addon.amount_pence,
-    description: addon.description,
-  });
+  // This reconcile runs synchronously on the case page's own render
+  // (the page-load fallback for a slow Stripe webhook), so the status
+  // update above has to be awaited, but the notification insert has no
+  // bearing on what the client sees and was needlessly adding to that
+  // same page-load delay. Defer it instead.
+  after(() =>
+    insertAddonPaidNotification({
+      caseId: addon.case_id,
+      accountantId: addon.accountant_id,
+      amountPence: addon.amount_pence,
+      description: addon.description,
+    }),
+  );
 
   revalidatePath(`/client/cases/${addon.case_id}`);
   revalidatePath(`/accountant/cases/${addon.case_id}`);

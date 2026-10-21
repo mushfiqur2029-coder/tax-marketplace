@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -438,17 +439,25 @@ export async function submitChecklistAction(
     // Admin fan-out. The DB trigger notify_case_change only fires on
     // cases.status changes; this UPDATE only writes a timestamp, so
     // admins would otherwise learn about the submission only when the
-    // accountant moves the case on. Fire-and-forget: a notify failure
-    // must not undo a legit submission.
-    const tierRecord = await getTier(tier);
-    const tierTitle = tierRecord?.title ?? caseRow.tier;
-    await insertOnboardingSubmittedAdminNotification({
-      caseId,
-      clientEmail: me.email ?? "A client",
-      tierTitle,
-    }).catch((err) =>
-      console.error("[onboarding submitted admin notification] failed:", err),
-    );
+    // accountant moves the case on. Genuinely fire-and-forget via
+    // after(): this used to be awaited (with only a .catch guarding the
+    // throw), which still blocked the client's Submit button on an
+    // extra tier lookup + admin notification insert before they got
+    // bounced back to the dashboard. Same bug as Step 3's engagement
+    // letter delay (createCaseAction), same fix.
+    after(async () => {
+      try {
+        const tierRecord = await getTier(tier);
+        const tierTitle = tierRecord?.title ?? caseRow.tier;
+        await insertOnboardingSubmittedAdminNotification({
+          caseId,
+          clientEmail: me.email ?? "A client",
+          tierTitle,
+        });
+      } catch (err) {
+        console.error("[onboarding submitted admin notification] failed:", err);
+      }
+    });
 
     revalidatePath(`/client/cases/${caseId}`);
     revalidatePath(`/client/cases/${caseId}/onboarding`);

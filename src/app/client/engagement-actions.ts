@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -411,22 +412,33 @@ export async function signEngagementAction(
       <p>PDF is attached.</p>
     `;
 
-    await sendEmail({
-      to: me.email,
-      subject: "Your Sterling Ledger engagement letter",
-      html: clientHtml,
-      pdfBase64,
-      filename: pdfFilename,
-      logCaseId: caseId,
-    });
-    await sendEmail({
-      to: "info@sterlingledger.co.uk",
-      subject: `New signed engagement · ${me.email} · ${tier.title}`,
-      html: internalHtml,
-      pdfBase64,
-      filename: pdfFilename,
-      logCaseId: caseId,
-    });
+    // These were awaited serially (two round-trips to the Apps Script
+    // email endpoint, each carrying the PDF as base64), which is the
+    // most likely cause of visible lag right after signing: the
+    // comment above already says emails here are best-effort, so defer
+    // them with after() (same fix as the Step 3 -> engagement letter
+    // delay in createCaseAction) and send both at once rather than one
+    // after the other.
+    after(() =>
+      Promise.all([
+        sendEmail({
+          to: me.email,
+          subject: "Your Sterling Ledger engagement letter",
+          html: clientHtml,
+          pdfBase64,
+          filename: pdfFilename,
+          logCaseId: caseId,
+        }),
+        sendEmail({
+          to: "info@sterlingledger.co.uk",
+          subject: `New signed engagement · ${me.email} · ${tier.title}`,
+          html: internalHtml,
+          pdfBase64,
+          filename: pdfFilename,
+          logCaseId: caseId,
+        }),
+      ]),
+    );
 
     revalidatePath(`/client/cases/${caseId}`);
     revalidatePath(`/client`);

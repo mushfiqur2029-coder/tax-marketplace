@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -311,16 +312,25 @@ export async function submitPeriodDocsAction(
       );
     }
 
+    // Deferred: the accountant notification has no bearing on what the
+    // client sees after hitting Submit, so it shouldn't make them wait
+    // for an extra lookup + insert. Same fix as the Step 3 engagement
+    // letter delay (createCaseAction) and the onboarding submit
+    // (onboarding-actions.ts).
     if (caseRow.accountant_id) {
-      const { data: meRow } = await admin
-        .from("users")
-        .select("email")
-        .eq("id", caseRow.client_id)
-        .single();
-      await insertPeriodDocsSubmittedNotification({
-        caseId,
-        accountantId: caseRow.accountant_id,
-        clientEmail: meRow?.email ?? "the client",
+      const accountantId = caseRow.accountant_id;
+      const clientId = caseRow.client_id;
+      after(async () => {
+        const { data: meRow } = await admin
+          .from("users")
+          .select("email")
+          .eq("id", clientId)
+          .single();
+        await insertPeriodDocsSubmittedNotification({
+          caseId,
+          accountantId,
+          clientEmail: meRow?.email ?? "the client",
+        });
       });
     }
 
