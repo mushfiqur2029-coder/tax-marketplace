@@ -418,7 +418,7 @@ function SingleAnswerSection({
   panelFlowLabel, panelFlowSubtitle, panelFinishedMessage,
   panelCommitLabel, panelCommitPendingLabel,
   startAction, advanceAction, commitAction,
-  checklistItems, skipped,
+  checklistItems, skipped: initialSkipped,
 }: {
   caseId: string;
   title: string;
@@ -448,12 +448,18 @@ function SingleAnswerSection({
   const [open, setOpen] = useState(false);
   const [skipping, startSkip] = useTransition();
   const [skipErr, setSkipErr] = useState<string | null>(null);
+  // Task #14: no reload, the skip write is all-or-nothing per checklist
+  // item, so a successful call means exactly what it says on the tin.
+  const [skipped, setSkipped] = useState(initialSkipped);
   const hasAnswer = (answer ?? "").trim().length > 0;
   const skipCard = () => startSkip(async () => {
     setSkipErr(null);
     const r = await markPchChecklistNotApplicableAction(caseId, checklistItems);
-    if (!r.ok) setSkipErr(r.error);
-    else window.location.reload();
+    if (!r.ok) {
+      setSkipErr(r.error);
+      return;
+    }
+    setSkipped(true);
   });
   return (
     <div className="space-y-3">
@@ -515,6 +521,7 @@ function SingleAnswerSection({
           notApplicable={{
             label: "Not applicable",
             action: () => markPchChecklistNotApplicableAction(caseId, checklistItems),
+            onConfirmed: () => setSkipped(true),
           }}
         />
       )}
@@ -684,7 +691,7 @@ function ExpenseInterviewSection({
 // a short summary; otherwise same open / re-open UX as
 // SingleAnswerSection above.
 function ReliefsSection({
-  caseId, pensionPence, giftAidPence, maStatus, skipped,
+  caseId, pensionPence, giftAidPence, maStatus, skipped: initialSkipped,
 }: {
   caseId: string;
   pensionPence: number;
@@ -698,14 +705,19 @@ function ReliefsSection({
   const [open, setOpen] = useState(false);
   const [skipping, startSkip] = useTransition();
   const [skipErr, setSkipErr] = useState<string | null>(null);
+  // Task #14: no reload, see SingleAnswerSection's matching comment.
+  const [skipped, setSkipped] = useState(initialSkipped);
   const hasAny = pensionPence > 0 || giftAidPence > 0 || (maStatus && maStatus !== "None");
   const fmt = (p: number) =>
     "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const skipCard = () => startSkip(async () => {
     setSkipErr(null);
     const r = await markPchChecklistNotApplicableAction(caseId, [19]);
-    if (!r.ok) setSkipErr(r.error);
-    else window.location.reload();
+    if (!r.ok) {
+      setSkipErr(r.error);
+      return;
+    }
+    setSkipped(true);
   });
   return (
     <div className="space-y-3">
@@ -766,6 +778,7 @@ function ReliefsSection({
           notApplicable={{
             label: "None of these apply",
             action: () => markPchChecklistNotApplicableAction(caseId, [19]),
+            onConfirmed: () => setSkipped(true),
           }}
         />
       )}
@@ -845,10 +858,20 @@ function SubmitForReviewSection({
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  // Task #14: no reload. Submitting for review only stamps
+  // pch_cases.engine_snapshot_at (see submitForReviewAction); it doesn't
+  // touch cases.status, so nothing on this page actually needs fresh
+  // server data afterward, intake stays editable exactly as before. A
+  // plain local flag is enough to show the confirmation.
+  const [submitted, setSubmitted] = useState(false);
   const submit = () => start(async () => {
     const r = await submitForReviewAction(caseId);
-    if (!r.ok) setErr(r.error);
-    else { setErr(null); window.location.reload(); }
+    if (!r.ok) {
+      setErr(r.error);
+      return;
+    }
+    setErr(null);
+    setSubmitted(true);
   });
   return (
     <div className="mt-10 rounded-lg border border-slate-200 bg-white p-5">
@@ -868,17 +891,23 @@ function SubmitForReviewSection({
           </ul>
         </div>
       ) : null}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={pending || !readiness.ok}
-          className="rounded bg-slate-900 px-4 py-2 text-white text-sm font-medium disabled:opacity-50"
-        >
-          {pending ? "Submitting..." : "Submit for accountant review"}
-        </button>
-        {err ? <span className="text-xs text-red-600">{err}</span> : null}
-      </div>
+      {submitted ? (
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          Submitted. Your return is now in the queue for an accountant to pick up.
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={pending || !readiness.ok}
+            className="rounded bg-slate-900 px-4 py-2 text-white text-sm font-medium disabled:opacity-50"
+          >
+            {pending ? "Submitting..." : "Submit for accountant review"}
+          </button>
+          {err ? <span className="text-xs text-red-600">{err}</span> : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -973,10 +1002,14 @@ function DocRow({
   // screen, which is exactly the "have to refresh after every click"
   // bug. A full reload is heavier but guaranteed correct.
   const [, startActionTransition] = useTransition();
+  // Task #14: "Mark not applicable" doesn't involve AI extraction or any
+  // server-decided content (unlike an upload), so it doesn't need the
+  // reload below, a local override is enough.
+  const [localStatus, setLocalStatus] = useState<string | null>(null);
   const inputId = `up-${slot.code}`;
   const isRequired = /^Required/i.test(slot.required_rule);
   const effectiveStatus =
-    status?.status ?? (uploaded.length ? "Uploaded" : "Awaiting");
+    localStatus ?? status?.status ?? (uploaded.length ? "Uploaded" : "Awaiting");
   // Phase 6 Slice 7: the per-slot AI-interview path (PCH-01/02/03) is
   // gone; the only non-upload option left is the accountant-help
   // request. Shown on non-mandatory slots once no help request is
@@ -1031,8 +1064,11 @@ function DocRow({
       setBusy(true); setErr(null);
       const r = await setPchDocStatusAction(caseId, slot.code, "Not applicable");
       setBusy(false);
-      if (!r.ok) setErr(r.error);
-      onChanged();
+      if (!r.ok) {
+        setErr(r.error);
+        return;
+      }
+      setLocalStatus("Not applicable");
     });
   };
   // Phase 7 Slice 7.1: drag-drop handlers wrap the whole row. Visual
@@ -1218,7 +1254,7 @@ function DocRow({
 // expect (DOB on licence back, address on licence front, both on
 // passport data page).
 function PhotoIdSection({
-  caseId, slot, status, uploaded, extractions, canEdit, photoIdKind, onChanged,
+  caseId, slot, status, uploaded, extractions, canEdit, photoIdKind: initialPhotoIdKind, onChanged,
 }: {
   caseId: string; slot: Slot; status: DocStatus | undefined;
   uploaded: UploadedDoc[]; extractions: ExtractionReviewPayload[];
@@ -1228,10 +1264,10 @@ function PhotoIdSection({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // See DocRow's matching comment: a bare `await` here mutates the data
-  // but Next won't apply the refreshed page to the screen without a
-  // transition, which is exactly why the passport/licence choice used
-  // to need a manual reload before the next upload step appeared.
+  // Task #14: no reload. setPchPhotoIdKindAction just writes one field
+  // (passport vs licence), no AI extraction involved, so we track it
+  // locally the instant it succeeds instead of reloading the page.
+  const [photoIdKind, setPhotoIdKind] = useState(initialPhotoIdKind);
   const [, startActionTransition] = useTransition();
   const isRequired = /^Required/i.test(slot.required_rule);
   const effectiveStatus =
@@ -1243,8 +1279,11 @@ function PhotoIdSection({
       setBusy(true); setErr(null);
       const r = await setPchPhotoIdKindAction(caseId, next);
       setBusy(false);
-      if (!r.ok) setErr(r.error);
-      onChanged();
+      if (!r.ok) {
+        setErr(r.error);
+        return;
+      }
+      setPhotoIdKind(next);
     });
   };
 
@@ -1581,22 +1620,34 @@ function ApprovalSection({
   const [name, setName] = useState("");
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  // Task #14: no reload. recordClientApprovalAction only writes
+  // client_approval_name/client_approval_at (see actions.ts); it doesn't
+  // touch cases.status, so we already know exactly what to show.
+  const [localApproval, setLocalApproval] = useState<{ at: string; name: string } | null>(
+    approvalAt && approvalName ? { at: approvalAt, name: approvalName } : null,
+  );
   void snapshotAt;
 
-  if (approvalAt && approvalName) {
+  if (localApproval) {
     return (
       <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4">
         <p className="text-sm">
-          <strong>Approved and filed</strong> by {approvalName} on{" "}
-          {new Date(approvalAt).toLocaleString()}.
+          <strong>Figures approved</strong> by {localApproval.name} on{" "}
+          {new Date(localApproval.at).toLocaleString()}. Your accountant will prepare the
+          final accounts pack next.
         </p>
       </div>
     );
   }
   const submit = () => start(async () => {
-    const r = await recordClientApprovalAction(caseId, name);
-    if (!r.ok) setErr(r.error);
-    else { setErr(null); window.location.reload(); }
+    const trimmed = name.trim();
+    const r = await recordClientApprovalAction(caseId, trimmed);
+    if (!r.ok) {
+      setErr(r.error);
+      return;
+    }
+    setErr(null);
+    setLocalApproval({ at: new Date().toISOString(), name: trimmed });
   });
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">

@@ -64,6 +64,12 @@ type Props = {
   notApplicable?: {
     label?: string;               // Button copy, defaults to "Not applicable"
     action: () => Promise<{ ok: true } | { ok: false; error: string }>;
+    // Task #14: unlike commit (where the AI's finalising turn decides
+    // data server-side), a successful "not applicable" write is
+    // all-or-nothing and tells us everything we need, so the caller
+    // can update its own local "skipped" state instead of reloading.
+    // Falls back to a reload when a caller hasn't been updated yet.
+    onConfirmed?: () => void;
   };
 };
 
@@ -175,7 +181,12 @@ export function AiInterviewPanel({
         setErr(r.error);
         return;
       }
-      window.location.reload();
+      if (notApplicable.onConfirmed) {
+        notApplicable.onConfirmed();
+        onClose();
+      } else {
+        window.location.reload();
+      }
     });
   };
 
