@@ -1229,10 +1229,8 @@ function DocRow({
           caseId={caseId}
           slotCode={slot.code}
           slotLabel={slot.display_name}
-          onClose={() => {
-            setHelpOpen(false);
-            onChanged();
-          }}
+          onClose={() => setHelpOpen(false)}
+          onRequested={() => setLocalStatus("Awaiting accountant")}
         />
       ) : null}
       {extractions.length > 0 ? (

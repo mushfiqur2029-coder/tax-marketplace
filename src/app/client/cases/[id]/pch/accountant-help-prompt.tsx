@@ -16,6 +16,12 @@ type Props = {
   slotCode: string;
   slotLabel: string;
   onClose: () => void;
+  // Task #14: no reload. requestPchAccountantHelpAction just upserts one
+  // pch_doc_status row to "Awaiting accountant", which the parent DocRow
+  // already renders from its own local status override, so we tell it
+  // directly instead of reloading the whole page out from under the
+  // "Help requested" confirmation below.
+  onRequested?: () => void;
 };
 
 export function AccountantHelpPrompt({
@@ -23,6 +29,7 @@ export function AccountantHelpPrompt({
   slotCode,
   slotLabel,
   onClose,
+  onRequested,
 }: Props) {
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
@@ -39,7 +46,7 @@ export function AccountantHelpPrompt({
         return;
       }
       setDone(true);
-      window.location.reload();
+      onRequested?.();
     });
   };
 

@@ -29,22 +29,29 @@ type Props = {
 export function FinalPackReview({
   caseId,
   sentAt,
-  confirmedAt,
-  confirmedName,
+  confirmedAt: initialConfirmedAt,
+  confirmedName: initialConfirmedName,
   prefillName,
 }: Props) {
   const [name, setName] = useState(prefillName);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  // Task #14: no reload. confirmFinalPackAction only writes
+  // final_pack_confirmed_at/_name, it doesn't touch cases.status, so
+  // we already know exactly what to show once it succeeds.
+  const [confirmedAt, setConfirmedAt] = useState(initialConfirmedAt);
+  const [confirmedName, setConfirmedName] = useState(initialConfirmedName);
 
   const confirm = () => start(async () => {
     setErr(null);
-    const r = await confirmFinalPackAction(caseId, name);
+    const trimmed = name.trim();
+    const r = await confirmFinalPackAction(caseId, trimmed);
     if (!r.ok) {
       setErr(r.error);
       return;
     }
-    window.location.reload();
+    setConfirmedAt(new Date().toISOString());
+    setConfirmedName(trimmed);
   });
 
   if (confirmedAt) {
