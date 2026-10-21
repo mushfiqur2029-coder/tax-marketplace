@@ -24,6 +24,7 @@ import {
   clearFinalPackAction,
   markFiledWithHmrcAction,
 } from "@/app/accountant/pch/actions";
+import { updateCaseStatusAction } from "@/app/accountant/actions";
 
 type Props = {
   caseId: string;
@@ -48,17 +49,6 @@ export function FinalSignoffPanel({
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
 
-  if (caseStatus === "filed" || caseStatus === "complete") {
-    return (
-      <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-        <h2 className="text-sm font-bold text-emerald-900">Filed with HMRC</h2>
-        <p className="mt-1 text-xs text-emerald-900">
-          Case status is <strong>{caseStatus}</strong>. Nothing more to do here.
-        </p>
-      </section>
-    );
-  }
-
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
     start(async () => {
       setErr(null);
@@ -66,6 +56,46 @@ export function FinalSignoffPanel({
       if (!r.ok) setErr(r.error ?? "Action failed.");
       else router.refresh();
     });
+
+  if (caseStatus === "complete") {
+    return (
+      <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+        <h2 className="text-sm font-bold text-emerald-900">Case complete</h2>
+        <p className="mt-1 text-xs text-emerald-900">
+          Case closed and commission settled. Nothing more to do here.
+        </p>
+      </section>
+    );
+  }
+
+  if (caseStatus === "filed") {
+    // Status is 'filed' but not yet 'complete'. The non-PCH case page
+    // has the same transition in its generic status widget; PCH never
+    // had a UI to flip filed->complete, so until this button landed a
+    // PCH case stayed at 'filed' forever. The generic action lives in
+    // @/app/accountant/actions and is already safe for PCH (the only
+    // PCH-specific guard inside it blocks filed->complete's sibling
+    // path to client_approval, not this one).
+    return (
+      <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+        <h2 className="text-sm font-bold text-emerald-900">Filed with HMRC</h2>
+        <p className="mt-1 text-xs text-emerald-900">
+          Case is <strong>filed</strong>. Mark it complete once you&apos;ve confirmed the HMRC submission is settled; that posts the 50% commission to your wallet and closes the case out.
+        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => run(() => updateCaseStatusAction(caseId, "complete"))}
+            disabled={pending}
+            className="rounded bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            {pending ? "Marking..." : "Mark complete"}
+          </button>
+          {err ? <span className="text-xs text-rose-700">{err}</span> : null}
+        </div>
+      </section>
+    );
+  }
 
   // Guard: the client must approve the figures first.
   if (!clientApprovalAt) {
