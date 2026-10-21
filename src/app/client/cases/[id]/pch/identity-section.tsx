@@ -20,7 +20,6 @@
 // summary are gone with the Phase 6 bookkeeping redesign.
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { savePchIdentityFieldsAction } from "@/app/client/pch/actions";
 import { validateUtr, validateNino } from "@/lib/pch/validation";
 
@@ -40,7 +39,16 @@ type Props = {
 };
 
 export function IdentitySection({ caseId, head, editable = true }: Props) {
-  const router = useRouter();
+  // Task #14: neither router.refresh() nor a hard reload is used here.
+  // router.refresh() was live-tested on this exact save (single clean
+  // click, no automated storm) and still left stale data on screen, so
+  // we don't rely on the server round-trip to tell us what to show.
+  // Instead we treat "savedHead" as the local source of truth for the
+  // saved baseline: we know precisely what we just wrote (it's the same
+  // validated values the server accepted), so we update it ourselves
+  // the instant the action confirms success. No navigation, no flash,
+  // no dependency on RSC payloads reaching the DOM.
+  const [savedHead, setSavedHead] = useState(head);
   const [utr, setUtr] = useState(head.cl_utr ?? "");
   const [nino, setNino] = useState(head.cl_nino ?? "");
   const [pending, start] = useTransition();
@@ -49,26 +57,22 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
   const utrErr = useMemo(() => (utr.trim().length === 0 ? null : validateUtr(utr.trim())), [utr]);
   const ninoErr = useMemo(() => (nino.trim().length === 0 ? null : validateNino(nino.trim())), [nino]);
 
-  const utrChanged = (utr.trim() || null) !== (head.cl_utr || null);
-  const ninoChanged = (nino.trim().toUpperCase() || null) !== (head.cl_nino || null);
+  const utrChanged = (utr.trim() || null) !== (savedHead.cl_utr || null);
+  const ninoChanged = (nino.trim().toUpperCase() || null) !== (savedHead.cl_nino || null);
   const anyChange = utrChanged || ninoChanged;
   const canSave = editable && anyChange && !utrErr && !ninoErr;
 
   const save = () => start(async () => {
     setMsg(null);
+    const nextUtr = utrChanged ? (utr.trim() || null) : savedHead.cl_utr;
+    const nextNino = ninoChanged ? (nino.trim().toUpperCase() || null) : savedHead.cl_nino;
     const r = await savePchIdentityFieldsAction(caseId, {
       cl_utr: utrChanged ? utr : undefined,
       cl_nino: ninoChanged ? nino : undefined,
     });
     if (r.ok) {
       setMsg("Saved");
-      // TEMP (live A/B test, task #14): router.refresh() instead of a hard
-      // reload, to confirm whether it actually merges fresh RSC data here
-      // under a single clean action (prior "it silently fails" conclusion
-      // may have been confounded by a rapid-fire multi-upload test storm).
-      // Called inside the same transition the mutation ran in, per Next's
-      // docs for merging without losing client state.
-      router.refresh();
+      setSavedHead((prev) => ({ ...prev, cl_utr: nextUtr, cl_nino: nextNino }));
     } else {
       setMsg(r.error);
     }
