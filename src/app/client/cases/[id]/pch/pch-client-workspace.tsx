@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
-import { createClient } from "@/lib/supabase/client";
+import { useLiveRow, useLiveList } from "@/lib/realtime-live-merge";
 import {
   setPchDocStatusAction,
   uploadPchDocumentAction,
@@ -129,36 +129,89 @@ export function PchClientWorkspace(props: {
 }) {
   const h2 = "text-lg font-bold mt-10 mb-3 border-b border-slate-200 pb-2";
   const card = "rounded-lg border border-slate-200 bg-white p-4";
-  // Status is live-tracked rather than read directly from the prop so
-  // the workspace swaps modes (submitted / in_review / client_approval /
-  // filed) the instant the DB row flips, without needing the viewer to
-  // click "Refresh now" on the generic RealtimeRefresh banner. The
-  // page-level banner is left in place for other cases.* field changes
-  // (accountant_id reassign etc) that the workspace doesn't track
-  // explicitly.
-  const supabase = useMemo(() => createClient(), []);
-  const [status, setStatus] = useState(props.caseStatus);
-  useEffect(() => {
-    const channel = supabase
-      .channel(`client-workspace-status-${props.caseId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "cases",
-          filter: `id=eq.${props.caseId}`,
-        },
-        (payload) => {
-          const newStatus = (payload.new as { status?: string })?.status;
-          if (typeof newStatus === "string" && newStatus.length > 0) {
-            setStatus(newStatus);
-          }
-        },
-      )
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [supabase, props.caseId]);
+  // Live-tracked state so the whole workspace stays current without
+  // ever rendering the generic "new updates" banner. Covers:
+  //   - cases.status: workspace swaps modes (submitted / in_review /
+  //     client_approval / filed) the instant the row flips.
+  //   - pch_cases head: the fields the accountant can flip from their
+  //     side (final_pack_sent_at, final_pack_confirmed_at + name,
+  //     approval_at + name, bookkeeping_confirmed_at), which gate
+  //     the "final pack" and "approve" UI below. Also carries the
+  //     head columns consumed by inline AI-interview summaries and
+  //     the HMRC references card so an accountant override lands
+  //     without an F5.
+  //   - case_addons: a new addon raised by the accountant surfaces
+  //     a Pay banner at the top of the workspace. The hook dedupes
+  //     by id + handles paid/rejected status flips through UPDATE.
+  const status = useLiveRow(props.caseStatus, {
+    table: "cases",
+    filter: `id=eq.${props.caseId}`,
+    channel: `client-workspace-status-${props.caseId}`,
+    map: (row, prev) => {
+      const s = row.status;
+      return typeof s === "string" && s.length > 0 ? s : prev;
+    },
+  });
+  type LiveHead = {
+    final_pack_sent_at: string | null;
+    final_pack_confirmed_at: string | null;
+    final_pack_confirmed_name: string | null;
+    client_approval_at: string | null;
+    client_approval_name: string | null;
+  };
+  const initialHead: LiveHead = {
+    final_pack_sent_at: props.finalPackSentAt,
+    final_pack_confirmed_at: props.finalPackConfirmedAt,
+    final_pack_confirmed_name: props.finalPackConfirmedName,
+    client_approval_at: props.approvalAt,
+    client_approval_name: props.approvalName,
+  };
+  const liveHead = useLiveRow<LiveHead>(initialHead, {
+    table: "pch_cases",
+    filter: `case_id=eq.${props.caseId}`,
+    channel: `client-workspace-head-${props.caseId}`,
+    map: (row, prev) => ({
+      final_pack_sent_at:
+        row.final_pack_sent_at === undefined
+          ? prev.final_pack_sent_at
+          : (row.final_pack_sent_at as string | null),
+      final_pack_confirmed_at:
+        row.final_pack_confirmed_at === undefined
+          ? prev.final_pack_confirmed_at
+          : (row.final_pack_confirmed_at as string | null),
+      final_pack_confirmed_name:
+        row.final_pack_confirmed_name === undefined
+          ? prev.final_pack_confirmed_name
+          : (row.final_pack_confirmed_name as string | null),
+      client_approval_at:
+        row.client_approval_at === undefined
+          ? prev.client_approval_at
+          : (row.client_approval_at as string | null),
+      client_approval_name:
+        row.client_approval_name === undefined
+          ? prev.client_approval_name
+          : (row.client_approval_name as string | null),
+    }),
+  });
+  type LiveAddon = { id: string; description: string; amount_pence: number; status: string };
+  const liveAddonsAll = useLiveList<LiveAddon>(
+    props.pendingAddons.map((a) => ({ ...a, status: "pending_payment" })),
+    {
+      table: "case_addons",
+      filter: `case_id=eq.${props.caseId}`,
+      channel: `client-workspace-addons-${props.caseId}`,
+      map: (row) => {
+        const id = row.id;
+        const description = row.description;
+        const amount_pence = row.amount_pence;
+        const addonStatus = row.status;
+        if (typeof id !== "string" || typeof description !== "string"
+          || typeof amount_pence !== "number" || typeof addonStatus !== "string") return null;
+        return { id, description, amount_pence, status: addonStatus };
+      },
+    },
+  );
+  const liveAddons = liveAddonsAll.filter((a) => a.status === "pending_payment");
   // Intake (documents, income, expenses, vehicle) stays editable all the
   // way up to client_approval, including while the accountant has the
   // case (in_review / prepared). The accountant's review screen reads
@@ -213,23 +266,23 @@ export function PchClientWorkspace(props: {
         </p>
       </div>
 
-      {awaitingApproval && props.engineSnapshot && !props.approvalAt ? (
+      {awaitingApproval && props.engineSnapshot && !liveHead.client_approval_at ? (
         <ApprovalView
           caseId={props.caseId}
           snapshot={props.engineSnapshot}
           snapshotAt={props.engineSnapshotAt}
-          approvalAt={props.approvalAt}
-          approvalName={props.approvalName}
+          approvalAt={liveHead.client_approval_at}
+          approvalName={liveHead.client_approval_name}
         />
-      ) : awaitingApproval && props.finalPackSentAt ? (
+      ) : awaitingApproval && liveHead.final_pack_sent_at ? (
         <FinalPackReview
           caseId={props.caseId}
-          sentAt={props.finalPackSentAt}
-          confirmedAt={props.finalPackConfirmedAt}
-          confirmedName={props.finalPackConfirmedName}
-          prefillName={(props.head?.cl_name as string | undefined) ?? props.approvalName ?? ""}
+          sentAt={liveHead.final_pack_sent_at}
+          confirmedAt={liveHead.final_pack_confirmed_at}
+          confirmedName={liveHead.final_pack_confirmed_name}
+          prefillName={(props.head?.cl_name as string | undefined) ?? liveHead.client_approval_name ?? ""}
         />
-      ) : awaitingApproval && props.approvalAt ? (
+      ) : awaitingApproval && liveHead.client_approval_at ? (
         <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
           <div
             className="text-[11px] font-semibold uppercase tracking-widest text-slate-700"
@@ -238,7 +291,7 @@ export function PchClientWorkspace(props: {
             Awaiting final pack from your accountant
           </div>
           <h2 className="mt-1 text-base font-semibold text-ink">
-            Figures approved on {new Date(props.approvalAt).toLocaleString("en-GB")}
+            Figures approved on {new Date(liveHead.client_approval_at).toLocaleString("en-GB")}
           </h2>
           <p className="mt-1 text-xs text-slate-700">
             Your accountant is preparing the final accounts pack. You&apos;ll be prompted to review and confirm it here once it&apos;s ready.
@@ -247,8 +300,8 @@ export function PchClientWorkspace(props: {
       ) : filed && props.engineSnapshot ? (
         <FiledView
           snapshot={props.engineSnapshot}
-          approvalAt={props.approvalAt}
-          approvalName={props.approvalName}
+          approvalAt={liveHead.client_approval_at}
+          approvalName={liveHead.client_approval_name}
         />
       ) : (
         <>
@@ -256,8 +309,8 @@ export function PchClientWorkspace(props: {
             <WithAccountantBanner />
           ) : null}
 
-          {props.pendingAddons.length > 0
-            ? props.pendingAddons.map((a) => (
+          {liveAddons.length > 0
+            ? liveAddons.map((a) => (
                 <AddonPayBanner
                   key={a.id}
                   addonId={a.id}

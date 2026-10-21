@@ -17,7 +17,6 @@ import {
 } from "@/components/case/case-messages-panel";
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 
 // Dynamic so a brand new extraction row (populated in a Next after()
 // callback after an upload) is visible on the very next page load,
@@ -172,45 +171,31 @@ export default async function PchClientPage({
       | "high" | "medium" | "low" | "missing" | null,
   }));
 
+  // No page-level RealtimeRefresh here anymore. The workspace now
+  // live-merges the only cross-party updates that matter during an
+  // active client session:
+  //   - cases.status (useLiveRow in PchClientWorkspace)
+  //   - pch_cases head: final_pack_sent_at, final_pack_confirmed_at
+  //     + name, client_approval_at + name (useLiveRow in
+  //     PchClientWorkspace)
+  //   - case_addons: new addon raised by the accountant (useLiveList
+  //     in PchClientWorkspace, drives the Pay banner)
+  //   - case_messages (live-merge inside CaseMessagesPanel)
+  //   - case_documents (nothing to live-merge for the client, their
+  //     own uploads are updated locally; the server-side docs list
+  //     isn't rendered here)
+  // Dropped from the subscription list (self-driven writes updated
+  // locally the moment the client makes them, so they didn't need
+  // another route in from Supabase):
+  //   - pch_check_status (interview commits by client)
+  //   - pch_doc_extractions (own uploads' extraction state is tracked
+  //     on the extraction review card itself)
+  //   - pch_bank_transactions (streams in after own upload; ingest
+  //     calls router-free local-state updates on the ledger section)
+  //   - pch_income_lines / pch_expense_lines / pch_vehicle (own
+  //     writes via AI interview + extraction auto-apply)
   return (
     <>
-      <RealtimeRefresh
-        channel={`client-pch-${id}-${me.id}`}
-        subscriptions={[
-          // Status transitions: accountant takes the case (submitted
-          // -> in_review), sends for approval (-> client_approval),
-          // confirms filing (-> filed). The client workspace swaps
-          // sections based on status, so this is the headline source.
-          { table: "cases", filter: `id=eq.${id}` },
-          // Head updates: accountant edits head fields, bookkeeping
-          // confirm, final_pack_sent_at (lets the client see the pack
-          // as soon as it's dispatched).
-          { table: "pch_cases", filter: `case_id=eq.${id}` },
-          // 33-check status: when an interview answer commits via the
-          // AI chat, the row flips to Done; show that instantly.
-          { table: "pch_check_status", filter: `case_id=eq.${id}` },
-          // Extraction progress: an uploaded doc takes 10 to 60s to
-          // process, and the client needs to see the review card land.
-          { table: "pch_doc_extractions", filter: `case_id=eq.${id}` },
-          // Bank statement ingest produces N transactions async; show
-          // them in the ledger as they land.
-          { table: "pch_bank_transactions", filter: `case_id=eq.${id}` },
-          // Chat (case_messages) is live-merged inside CaseMessagesPanel
-          // already (see components/case/case-messages-panel.tsx), so
-          // it's deliberately not watched here, firing the "new updates"
-          // banner on top of the live merge would double-notify.
-          // Add-on raised by the accountant lands on the client as a
-          // Pay banner.
-          { table: "case_addons", filter: `case_id=eq.${id}` },
-          // AI-interview commits and extraction auto-apply write these
-          // directly; without a subscription, a figure entered via the
-          // AI chat (or auto-applied from a confirmed document field)
-          // only shows up after the next unrelated refresh.
-          { table: "pch_income_lines", filter: `case_id=eq.${id}` },
-          { table: "pch_expense_lines", filter: `case_id=eq.${id}` },
-          { table: "pch_vehicle", filter: `case_id=eq.${id}` },
-        ]}
-      />
       <PchClientWorkspace
       caseId={id}
       caseStatus={caseRow.status}
