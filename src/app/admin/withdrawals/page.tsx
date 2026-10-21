@@ -1,25 +1,18 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { AdminSearchFilter } from "@/components/admin/admin-search-filter";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import {
   markWithdrawalPaidAction,
   getReceiptSignedUrl,
   revealWithdrawalBankAction,
 } from "@/app/admin/actions";
-import { PayoutForm } from "./payout-form";
-import { ReceiptLink } from "@/app/accountant/wallet/receipt-link";
-import { formatDateTime } from "@/lib/format";
-import { RevealBankButton } from "./reveal-bank-button";
-import { maskAccountNumber } from "./mask";
 import Link from "next/link";
+import {
+  AdminWithdrawalsLive,
+  type WithdrawalRow,
+} from "./admin-withdrawals-live";
 
 export const dynamic = "force-dynamic";
-
-function formatMoney(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
-}
 
 export default async function AdminWithdrawalsPage() {
   await requireRole("admin");
@@ -32,16 +25,14 @@ export default async function AdminWithdrawalsPage() {
     )
     .order("requested_at", { ascending: false });
 
-  const accIds = Array.from(
-    new Set((reqs ?? []).map((r) => r.accountant_id)),
-  );
+  const all = (reqs ?? []) as WithdrawalRow[];
+  const accIds = Array.from(new Set(all.map((r) => r.accountant_id)));
   const { data: users } = accIds.length
     ? await admin.from("users").select("id, email").in("id", accIds)
     : { data: [] as { id: string; email: string }[] };
-  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
-
-  const pending = (reqs ?? []).filter((r) => r.status === "pending");
-  const paid = (reqs ?? []).filter((r) => r.status === "paid");
+  const emailById: Record<string, string> = Object.fromEntries(
+    (users ?? []).map((u) => [u.id, u.email as string]),
+  );
 
   const markPaid = async (requestId: string, fd: FormData) => {
     "use server";
@@ -58,10 +49,6 @@ export default async function AdminWithdrawalsPage() {
 
   return (
     <>
-      <RealtimeRefresh
-        channel="admin-withdrawals"
-        subscriptions={[{ table: "withdrawal_requests" }]}
-      />
       <AdminPageHeader
         eyebrow="Admin console"
         title="Withdrawal requests"
@@ -72,100 +59,15 @@ export default async function AdminWithdrawalsPage() {
           href="/admin/withdrawals/reveals"
           className="font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
         >
-          View reveal audit log →
+          View reveal audit log to
         </Link>
       </div>
-      <AdminSearchFilter
-        placeholder="Search by email, account name or sort code"
-        ariaLabel="Search withdrawal requests"
-        groups={[
-          {
-            key: "pending",
-            title: "Pending",
-            emptyLine: "No pending requests.",
-            items: pending.map((r) => ({
-              searchText: [
-                emailById.get(r.accountant_id),
-                r.account_name,
-                r.sort_code,
-              ]
-                .filter(Boolean)
-                .join(" "),
-              node: (
-                <li key={r.id} className="card-sl p-5">
-                  <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
-                    <div>
-                      <div className="text-base font-semibold text-ink">
-                        {formatMoney(r.amount_pence)} &middot; {emailById.get(r.accountant_id) ?? r.accountant_id}
-                      </div>
-                      <dl className="mt-2 text-xs text-slate">
-                        <div>
-                          <span className="font-semibold text-ink">
-                            {r.account_name}
-                          </span>
-                        </div>
-                        <RevealBankButton
-                          requestId={r.id}
-                          maskedAccountNumber={maskAccountNumber(r.account_number)}
-                          sortCode={r.sort_code}
-                          reveal={revealBank}
-                        />
-                        <div className="mt-1">
-                          Requested {formatDateTime(r.requested_at)}
-                        </div>
-                      </dl>
-                    </div>
-                    <PayoutForm requestId={r.id} markPaid={markPaid} />
-                  </div>
-                </li>
-              ),
-            })),
-          },
-          {
-            key: "paid",
-            title: "Paid",
-            emptyLine: "No completed payouts yet.",
-            items: paid.map((r) => ({
-              searchText: [
-                emailById.get(r.accountant_id),
-                r.account_name,
-                r.sort_code,
-              ]
-                .filter(Boolean)
-                .join(" "),
-              node: (
-                <li
-                  key={r.id}
-                  className="card-sl flex items-center justify-between p-5 text-sm"
-                >
-                  <div>
-                    <div className="font-semibold text-ink">
-                      {formatMoney(r.amount_pence)} &middot; {emailById.get(r.accountant_id) ?? r.accountant_id}
-                    </div>
-                    <div className="text-xs text-slate">
-                      {r.account_name} &middot; {r.sort_code} &middot;{" "}
-                      <span className="font-mono">
-                        {maskAccountNumber(r.account_number)}
-                      </span>
-                      {r.paid_at ? <> &middot; Paid {formatDateTime(r.paid_at)}</> : null}
-                    </div>
-                    <div className="mt-1">
-                      <RevealBankButton
-                        requestId={r.id}
-                        maskedAccountNumber={maskAccountNumber(r.account_number)}
-                        sortCode={r.sort_code}
-                        reveal={revealBank}
-                      />
-                    </div>
-                  </div>
-                  {r.receipt_path ? (
-                    <ReceiptLink path={r.receipt_path} sign={signReceipt} />
-                  ) : null}
-                </li>
-              ),
-            })),
-          },
-        ]}
+      <AdminWithdrawalsLive
+        initial={all}
+        emailById={emailById}
+        markPaid={markPaid}
+        signReceipt={signReceipt}
+        revealBank={revealBank}
       />
     </>
   );

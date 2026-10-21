@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -6,15 +5,12 @@ import {
   rejectAddonAction,
 } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { AdminSearchFilter } from "@/components/admin/admin-search-filter";
-import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
-import { formatDateTime } from "@/lib/format";
-import { ReviewActions } from "@/app/admin/profile-changes/review-actions";
+import {
+  AdminAddonRequestsLive,
+  type AddonRow,
+} from "./admin-addon-requests-live";
 
 export const dynamic = "force-dynamic";
-
-const money = (pence: number) => `£${(pence / 100).toFixed(2)}`;
 
 export default async function AdminAddonRequestsPage() {
   await requireRole("admin");
@@ -31,9 +27,7 @@ export default async function AdminAddonRequestsPage() {
     .eq("kind", "custom")
     .order("created_at", { ascending: false });
 
-  const all = rows ?? [];
-  const pending = all.filter((r) => r.status === "pending_admin");
-  const reviewed = all.filter((r) => r.status !== "pending_admin");
+  const all = (rows ?? []) as AddonRow[];
 
   // Fetch accountant emails so the queue is readable at a glance.
   const accountantIds = Array.from(
@@ -42,7 +36,9 @@ export default async function AdminAddonRequestsPage() {
   const { data: accountants } = accountantIds.length
     ? await admin.from("users").select("id, email").in("id", accountantIds)
     : { data: [] as { id: string; email: string }[] };
-  const accEmail = new Map((accountants ?? []).map((a) => [a.id, a.email]));
+  const accEmail: Record<string, string> = Object.fromEntries(
+    (accountants ?? []).map((a) => [a.id, a.email as string]),
+  );
 
   const approve = async (id: string, note: string | null) => {
     "use server";
@@ -55,103 +51,17 @@ export default async function AdminAddonRequestsPage() {
 
   return (
     <>
-      <RealtimeRefresh
-        channel="admin-addon-requests"
-        subscriptions={[{ table: "case_addons" }]}
-      />
       <AdminPageHeader
         eyebrow="Admin console"
         title="Add-on requests"
         description="Custom add-ons that need approval before the client sees them. Preset add-ons skip review and go straight to the client."
       />
-      <AdminSearchFilter
-        placeholder="Search by accountant email or description"
-        ariaLabel="Search add-on requests"
-        groups={[
-          {
-            key: "pending",
-            title: "Pending",
-            emptyLine: "No pending add-on requests.",
-            items: pending.map((r) => ({
-              searchText: [accEmail.get(r.accountant_id), r.description]
-                .filter(Boolean)
-                .join(" "),
-              node: (
-                <li key={r.id} className="card-sl p-5">
-                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-semibold text-ink">
-                      {accEmail.get(r.accountant_id) ?? r.accountant_id}
-                    </span>
-                    <span
-                      className="text-lg font-bold text-ink"
-                      style={{ fontFamily: "var(--font-heading)" }}
-                    >
-                      {money(r.amount_pence)}
-                    </span>
-                    <Link
-                      href={`/admin/cases/${r.case_id}`}
-                      className="text-xs font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
-                    >
-                      View case
-                    </Link>
-                    <span className="ml-auto text-xs text-slate">
-                      requested {formatDateTime(r.created_at)}
-                    </span>
-                  </div>
-                  <p className="rounded-lg border border-line bg-cloud/40 p-3 text-sm text-ink">
-                    {r.description}
-                  </p>
-                  <div className="mt-4">
-                    <ReviewActions id={r.id} approve={approve} reject={reject} />
-                  </div>
-                </li>
-              ),
-            })),
-          },
-          {
-            key: "reviewed",
-            title: "Reviewed",
-            emptyLine: "Nothing reviewed yet.",
-            items: reviewed.slice(0, 30).map((r) => ({
-              searchText: [accEmail.get(r.accountant_id), r.description]
-                .filter(Boolean)
-                .join(" "),
-              node: (
-                <li
-                  key={r.id}
-                  className="card-sl flex items-center justify-between gap-3 p-4 text-sm"
-                >
-                  <div className="min-w-0">
-                    <div className="font-semibold text-ink">
-                      {money(r.amount_pence)} ·{" "}
-                      {accEmail.get(r.accountant_id) ?? r.accountant_id}
-                    </div>
-                    <div className="truncate text-xs text-slate">
-                      {r.description}
-                    </div>
-                    <div className="text-[11px] text-slate">
-                      reviewed{" "}
-                      {r.reviewed_at ? formatDateTime(r.reviewed_at) : "."}
-                      {r.review_note ? <> · &ldquo;{r.review_note}&rdquo;</> : null}
-                    </div>
-                  </div>
-                  <StatusPill status={r.status} />
-                </li>
-              ),
-            })),
-          },
-        ]}
+      <AdminAddonRequestsLive
+        initial={all}
+        accEmail={accEmail}
+        approve={approve}
+        reject={reject}
       />
     </>
   );
-}
-
-function StatusPill({ status }: { status: string }) {
-  const map: Record<string, { label: string; tone: AdminPillTone }> = {
-    pending_payment: { label: "Approved", tone: "green" },
-    paid: { label: "Paid", tone: "blue" },
-    rejected: { label: "Rejected", tone: "red" },
-  };
-  const cfg = map[status] ?? { label: status, tone: "grey" as const };
-  return <AdminPill tone={cfg.tone} label={cfg.label} />;
 }
