@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
+import { createClient } from "@/lib/supabase/client";
 import {
   setPchDocStatusAction,
   uploadPchDocumentAction,
@@ -128,7 +129,36 @@ export function PchClientWorkspace(props: {
 }) {
   const h2 = "text-lg font-bold mt-10 mb-3 border-b border-slate-200 pb-2";
   const card = "rounded-lg border border-slate-200 bg-white p-4";
-  const status = props.caseStatus;
+  // Status is live-tracked rather than read directly from the prop so
+  // the workspace swaps modes (submitted / in_review / client_approval /
+  // filed) the instant the DB row flips, without needing the viewer to
+  // click "Refresh now" on the generic RealtimeRefresh banner. The
+  // page-level banner is left in place for other cases.* field changes
+  // (accountant_id reassign etc) that the workspace doesn't track
+  // explicitly.
+  const supabase = useMemo(() => createClient(), []);
+  const [status, setStatus] = useState(props.caseStatus);
+  useEffect(() => {
+    const channel = supabase
+      .channel(`client-workspace-status-${props.caseId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "cases",
+          filter: `id=eq.${props.caseId}`,
+        },
+        (payload) => {
+          const newStatus = (payload.new as { status?: string })?.status;
+          if (typeof newStatus === "string" && newStatus.length > 0) {
+            setStatus(newStatus);
+          }
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [supabase, props.caseId]);
   // Intake (documents, income, expenses, vehicle) stays editable all the
   // way up to client_approval, including while the accountant has the
   // case (in_review / prepared). The accountant's review screen reads

@@ -323,14 +323,20 @@ export default async function PchAccountantPage({
           // 33-check status + client interview answers landing (an
           // interview commit flips the row to Done).
           { table: "pch_check_status", filter: `case_id=eq.${id}` },
-          // Client uploads a new file post-submit, or AI extraction
-          // writes against an existing one.
-          { table: "case_documents", filter: `case_id=eq.${id}` },
+          // AI extraction writes against a doc the client already uploaded.
+          // case_documents (fresh client uploads) is live-merged in
+          // DocumentsPanel directly, see note below.
           { table: "pch_doc_extractions", filter: `case_id=eq.${id}` },
           // Client flags "I don't have this document" (AwaitingAccountantPanel).
           { table: "pch_doc_status", filter: `case_id=eq.${id}` },
-          // Chat.
-          { table: "case_messages", filter: `case_id=eq.${id}` },
+          // Chat (case_messages) is live-merged inside CaseMessagesPanel
+          // already (see components/case/case-messages-panel.tsx), so it's
+          // deliberately not watched here, firing the "new updates" banner
+          // on top of the live merge would double-notify.
+          // case_documents is live-merged inside DocumentsPanel (new
+          // client uploads land in the list without a reload), so it's
+          // also not here. Both panels filter the viewer's own writes
+          // via realtime-self-mutation + author-id checks.
           // Add-on paid / rejected flips.
           { table: "case_addons", filter: `case_id=eq.${id}` },
           // Bank ingest results stream in after an upload (async job).

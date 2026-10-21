@@ -16,9 +16,11 @@
 // Signed URLs come from getDocSignedUrlForAccountant (see page.tsx);
 // RLS already restricts storage access to the assigned accountant.
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { formatDateTime } from "@/lib/format";
 import type { ActionResult } from "@/lib/action-result";
+import { createClient } from "@/lib/supabase/client";
+import { recentLocalMutation } from "@/lib/realtime-self-mutation";
 
 export type DocumentRow = {
   id: string;
@@ -35,6 +37,7 @@ export type SlotMeta = {
 };
 
 type Props = {
+  caseId: string;
   docs: DocumentRow[];
   slotMeta: SlotMeta[];
   signUrl: (path: string) => Promise<ActionResult<string>>;
@@ -42,10 +45,22 @@ type Props = {
 
 const UNKNOWN_SECTION = "Other";
 
-export function DocumentsPanel({ docs, slotMeta, signUrl }: Props) {
+export function DocumentsPanel({ caseId, docs, slotMeta, signUrl }: Props) {
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
+  // Live-merge new uploads so the client posting a doc shows up in
+  // the list without a page reload. The server-rendered `docs` prop
+  // is the baseline from page load; `liveDocs` is any INSERT that's
+  // landed since this component mounted. We dedupe by id in case a
+  // page revalidation ships a fresh `docs` prop that already includes
+  // the row we optimistically merged.
+  const supabase = useMemo(() => createClient(), []);
+  const [liveDocs, setLiveDocs] = useState<DocumentRow[]>([]);
+  const allDocs = useMemo(() => {
+    const seen = new Set(docs.map((d) => d.id));
+    return [...liveDocs.filter((d) => !seen.has(d.id)), ...docs];
+  }, [docs, liveDocs]);
 
   const slotByCode = useMemo(() => {
     const m = new Map<string, SlotMeta>();
@@ -53,9 +68,55 @@ export function DocumentsPanel({ docs, slotMeta, signUrl }: Props) {
     return m;
   }, [slotMeta]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel(`documents-panel-${caseId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "case_documents",
+          filter: `case_id=eq.${caseId}`,
+        },
+        (payload) => {
+          // Skip the viewer's own uploads landing back through the
+          // subscription. The accountant can upload (e.g. prepared
+          // Annual Accounts on an LC case) so this isn't theoretical;
+          // the write path calls markLocalMutation.
+          if (recentLocalMutation()) return;
+          const row = payload.new as {
+            id?: string;
+            file_name?: string;
+            file_url?: string;
+            uploaded_at?: string;
+            requirement_key?: string | null;
+          };
+          if (!row.id || !row.file_name || !row.file_url || !row.uploaded_at) return;
+          setLiveDocs((prev) => {
+            if (prev.some((d) => d.id === row.id)) return prev;
+            return [
+              {
+                id: row.id!,
+                file_name: row.file_name!,
+                file_url: row.file_url!,
+                uploaded_at: row.uploaded_at!,
+                requirement_key: row.requirement_key ?? null,
+              },
+              ...prev,
+            ];
+          });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, caseId]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, DocumentRow[]>();
-    for (const d of docs) {
+    for (const d of allDocs) {
       const slot = d.requirement_key ? slotByCode.get(d.requirement_key) : null;
       const section = slot?.section ?? UNKNOWN_SECTION;
       const arr = map.get(section) ?? [];
@@ -66,7 +127,7 @@ export function DocumentsPanel({ docs, slotMeta, signUrl }: Props) {
       arr.sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at));
     }
     return map;
-  }, [docs, slotByCode]);
+  }, [allDocs, slotByCode]);
 
   const sections = Array.from(grouped.keys()).sort((a, b) => {
     const order = ["Identity", "Earnings", "Expenses", "Vehicle", UNKNOWN_SECTION];
@@ -101,13 +162,13 @@ export function DocumentsPanel({ docs, slotMeta, signUrl }: Props) {
         <h2 className="text-sm font-semibold text-slate-900">
           Client documents{" "}
           <span className="text-xs font-normal text-slate-500">
-            ({docs.length})
+            ({allDocs.length})
           </span>
         </h2>
         <span className="text-xs text-slate-500">{expanded ? "Hide" : "Show"}</span>
       </button>
       {expanded ? (
-        docs.length === 0 ? (
+        allDocs.length === 0 ? (
           <p className="mt-3 rounded border border-dashed border-slate-200 p-3 text-center text-xs text-slate-500">
             The client hasn&apos;t uploaded anything yet.
           </p>

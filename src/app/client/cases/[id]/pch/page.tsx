@@ -195,8 +195,10 @@ export default async function PchClientPage({
           // Bank statement ingest produces N transactions async; show
           // them in the ledger as they land.
           { table: "pch_bank_transactions", filter: `case_id=eq.${id}` },
-          // Chat.
-          { table: "case_messages", filter: `case_id=eq.${id}` },
+          // Chat (case_messages) is live-merged inside CaseMessagesPanel
+          // already (see components/case/case-messages-panel.tsx), so
+          // it's deliberately not watched here, firing the "new updates"
+          // banner on top of the live merge would double-notify.
           // Add-on raised by the accountant lands on the client as a
           // Pay banner.
           { table: "case_addons", filter: `case_id=eq.${id}` },

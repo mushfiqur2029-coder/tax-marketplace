@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
+import { createClient } from "@/lib/supabase/client";
 import {
   requestClientFilingAction,
   applyPchOverrideAction,
@@ -100,6 +101,34 @@ export function PchAccountantView(props: {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  // Live-tracked status so the view updates when the case flips to
+  // client_approval / filed / complete etc without a full reload.
+  // page-level RealtimeRefresh still watches `cases` for everything
+  // else on that row (accountant_id reassignments by admin, flags we
+  // don't track explicitly) and shows its manual banner.
+  const supabase = useMemo(() => createClient(), []);
+  const [caseStatus, setCaseStatus] = useState(props.caseStatus);
+  useEffect(() => {
+    const channel = supabase
+      .channel(`accountant-view-status-${props.caseId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "cases",
+          filter: `id=eq.${props.caseId}`,
+        },
+        (payload) => {
+          const newStatus = (payload.new as { status?: string })?.status;
+          if (typeof newStatus === "string" && newStatus.length > 0) {
+            setCaseStatus(newStatus);
+          }
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [supabase, props.caseId]);
 
   // Advance-to-approval gate: every positive-amount expense line must
   // carry an evidence method. Mirrors the server-side canRequestFiling
@@ -125,7 +154,7 @@ export function PchAccountantView(props: {
         <div>
           <h1 className="text-2xl font-bold">PCH automated, accountant review</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Case {props.caseId.slice(0, 8)}. Status <strong>{props.caseStatus}</strong>.
+            Case {props.caseId.slice(0, 8)}. Status <strong>{caseStatus}</strong>.
           </p>
         </div>
         {props.snapshot ? (
@@ -142,7 +171,7 @@ export function PchAccountantView(props: {
             >
               Download Excel
             </a>
-            {props.caseStatus === "filed" || props.caseStatus === "complete" ? (
+            {caseStatus === "filed" || caseStatus === "complete" ? (
               <a
                 href={`/accountant/cases/${props.caseId}/pch/export/capium`}
                 className="rounded border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
@@ -158,6 +187,7 @@ export function PchAccountantView(props: {
       <IdentityPanel {...props.identity} />
 
       <DocumentsPanel
+        caseId={props.caseId}
         docs={props.documents}
         slotMeta={props.documentSlotMeta}
         signUrl={props.signDocUrl}
@@ -225,7 +255,7 @@ export function PchAccountantView(props: {
 
       {/* Engine snapshot with inline overrides */}
       <h2 className="text-lg font-bold mb-3">Engine snapshot</h2>
-      {props.snapshot && props.editsSinceSnapshot > 0 && props.caseStatus === "in_review" ? (
+      {props.snapshot && props.editsSinceSnapshot > 0 && caseStatus === "in_review" ? (
         <StaleSnapshotBanner
           caseId={props.caseId}
           editsSinceSnapshot={props.editsSinceSnapshot}
@@ -275,7 +305,7 @@ export function PchAccountantView(props: {
           finalPackSentAt={props.finalPackSentAt}
           finalPackConfirmedAt={props.finalPackConfirmedAt}
           finalPackConfirmedName={props.finalPackConfirmedName}
-          caseStatus={props.caseStatus}
+          caseStatus={caseStatus}
         />
       </div>
 
