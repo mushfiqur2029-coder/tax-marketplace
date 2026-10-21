@@ -167,9 +167,19 @@ export function CaseMessagesPanel({
       const fd = new FormData();
       fd.set("body", body);
       for (const f of attachments) fd.append("file", f);
-      const r = await sendCaseMessageAction(caseId, fd);
-      if (!r.ok) { setErr(r.error); return; }
+      // Fire before the request goes out, not just after it resolves:
+      // the realtime push for this write (case_messages, a watched
+      // table) can reach the browser before this action's own HTTP
+      // response does, especially with attachments uploading, so
+      // marking only on success can lose that race and trigger an
+      // unwanted RealtimeRefresh reload for the viewer's own message.
       markLocalMutation();
+      const r = await sendCaseMessageAction(caseId, fd);
+      // Refresh the mark now that the write is confirmed: a slow
+      // request (attachments) can otherwise outrun the fixed
+      // suppression window counted from the mark above.
+      markLocalMutation();
+      if (!r.ok) { setErr(r.error); return; }
       setLocalMessages((prev) => [
         ...prev,
         {

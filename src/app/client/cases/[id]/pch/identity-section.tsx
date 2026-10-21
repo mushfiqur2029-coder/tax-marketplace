@@ -78,6 +78,10 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
       cl_utr: utrChanged ? utr : undefined,
       cl_nino: ninoChanged ? nino : undefined,
     });
+    // Refresh the mark now that the write is confirmed: a slow request
+    // can otherwise outrun the fixed suppression window counted from
+    // the mark above.
+    markLocalMutation();
     if (r.ok) {
       setMsg("Saved");
       setSavedHead((prev) => ({ ...prev, cl_utr: nextUtr, cl_nino: nextNino }));

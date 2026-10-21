@@ -263,6 +263,10 @@ function TransactionRow({
       // can lose the race against this write's own realtime push.
       markLocalMutation();
       const r = await setBankTransactionCategoryAction(caseId, txn.id, next);
+      // Refresh the mark now that the write is confirmed: a slow
+      // request can otherwise outrun the fixed suppression window
+      // counted from the mark above.
+      markLocalMutation();
       if (!r.ok) {
         setErr(r.error);
         return;

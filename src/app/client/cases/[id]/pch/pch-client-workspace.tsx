@@ -475,6 +475,12 @@ function SingleAnswerSection({
     setSkipErr(null);
     markLocalMutation();
     const r = await markPchChecklistNotApplicableAction(caseId, checklistItems);
+    // Mark again now that the write is confirmed, not just when it was
+    // fired: a slow action (cold start, several DB round trips) can run
+    // past the fixed suppression window counted from the first mark, so
+    // refreshing it here guarantees the window covers the moment the
+    // realtime echo for this exact write actually arrives.
+    markLocalMutation();
     if (!r.ok) {
       setSkipErr(r.error);
       return;
@@ -740,6 +746,9 @@ function ReliefsSection({
     setSkipErr(null);
     markLocalMutation();
     const r = await markPchChecklistNotApplicableAction(caseId, [19]);
+    // See SingleAnswerSection's matching comment: refresh the mark once
+    // the write is confirmed so a slow request can't outrun the window.
+    markLocalMutation();
     if (!r.ok) {
       setSkipErr(r.error);
       return;
@@ -901,8 +910,22 @@ function SubmitForReviewSection({
     // extraction-review.tsx's run() for why marking only on success
     // can lose the race against this write's own realtime push on
     // pch_cases, a watched table.
+    //
+    // This action is the slow one in the whole PCH flow: it hydrates
+    // every intake table, runs the full tax engine, then writes the
+    // snapshot, which under a cold serverless start can comfortably run
+    // past a few seconds. The fixed suppression window counted from the
+    // mark above was landing before the realtime echo for this exact
+    // write arrived, so RealtimeRefresh treated the viewer's own submit
+    // as someone else's change and reloaded the page a couple of
+    // seconds after the "Submitted" message appeared, resetting this
+    // component's local state and bringing the button straight back.
+    // Marking again right as the write is confirmed restarts the window
+    // from the moment that matters, regardless of how long the request
+    // took to get there.
     markLocalMutation();
     const r = await submitForReviewAction(caseId);
+    markLocalMutation();
     if (!r.ok) {
       setErr(r.error);
       return;
@@ -1352,6 +1375,9 @@ function PhotoIdSection({
       // pch_cases, a watched table.
       markLocalMutation();
       const r = await setPchPhotoIdKindAction(caseId, next);
+      // Refresh the mark now that the write is confirmed: see the
+      // matching comment on SubmitForReviewSection's submit().
+      markLocalMutation();
       setBusy(false);
       if (!r.ok) {
         setErr(r.error);
@@ -1748,6 +1774,9 @@ function ApprovalSection({
     markLocalMutation();
     const trimmed = name.trim();
     const r = await recordClientApprovalAction(caseId, trimmed);
+    // Refresh the mark now that the write is confirmed: see the
+    // matching comment on SubmitForReviewSection's submit().
+    markLocalMutation();
     if (!r.ok) {
       setErr(r.error);
       return;

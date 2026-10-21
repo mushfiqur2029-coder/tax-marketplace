@@ -85,6 +85,11 @@ export function VehicleSection({ caseId, vehicle: initialVehicle, editable = tru
     setSkipErr(null);
     markLocalMutation();
     const r = await markNoVehicleAction(caseId);
+    // Refresh the mark now that the write is confirmed: a slow request
+    // can otherwise outrun the fixed suppression window counted from
+    // the mark above. See SubmitForReviewSection's matching comment in
+    // pch-client-workspace.tsx.
+    markLocalMutation();
     if (!r.ok) {
       setSkipErr(r.error);
       return;
@@ -212,6 +217,9 @@ function DisposalSubpanel({
     setErr(null);
     markLocalMutation();
     const r = await markNoVehicleDisposalAction(caseId);
+    // Refresh the mark now that the write is confirmed: see the
+    // matching comment on skipCard above.
+    markLocalMutation();
     if (!r.ok) {
       setErr(r.error);
       return;

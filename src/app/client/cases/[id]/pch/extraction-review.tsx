@@ -290,6 +290,10 @@ function FieldRow({ extractionId, fieldKey, label, field, state, onStateChanged,
     start(async () => {
       markLocalMutation();
       const r = await fn();
+      // Refresh the mark now that the write is confirmed: a slow
+      // request can otherwise outrun the fixed suppression window
+      // counted from the mark above.
+      markLocalMutation();
       if (r.ok) {
         if (after) after();
         onStateChanged(nextState);

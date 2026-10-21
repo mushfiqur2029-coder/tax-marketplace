@@ -183,6 +183,10 @@ export function AiInterviewPanel({
       // does, so marking only on success can lose that race.
       if (notApplicable.onConfirmed) markLocalMutation();
       const r = await notApplicable.action();
+      // Refresh the mark now that the write is confirmed: a slow
+      // request can otherwise outrun the fixed suppression window
+      // counted from the mark above.
+      if (notApplicable.onConfirmed) markLocalMutation();
       if (!r.ok) {
         setErr(r.error);
         return;

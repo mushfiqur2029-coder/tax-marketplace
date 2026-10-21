@@ -116,6 +116,11 @@ export function BankClarifyChat({ caseId, initialPendingCount, onAnswered }: Pro
       // RealtimeRefresh reload for the viewer's own answer.
       markLocalMutation();
       const r = await recordBankClarifyAnswerAction(caseId, txnId, body);
+      // Refresh the mark now that the write is confirmed: a slow
+      // request (this one runs the categoriser again) can otherwise
+      // outrun the fixed suppression window counted from the mark
+      // above.
+      markLocalMutation();
       if (!r.ok) {
         setErr(r.error);
         return;
