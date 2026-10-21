@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 import {
   requestClientFilingAction,
   applyPchOverrideAction,
@@ -706,7 +707,6 @@ function Sa302Reconciliation({
   overrideHistory: OverrideRow[];
   saved: Sa302Comparison | null;
 }) {
-  const router = useRouter();
   // Local state: software values, keyed by SA302 field key.
   const [pasted, setPasted] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -718,6 +718,19 @@ function Sa302Reconciliation({
     }
     return initial;
   });
+  // "Last saved" timestamp is the server-provided baseline until the
+  // user saves locally, then we switch to our own freshly-set value.
+  // Same pattern as Identity's savedHead (task #14): we never rely on
+  // router.refresh() to tell us what to show, we know what we wrote
+  // and we display it ourselves the instant the server confirms
+  // success. This also stops the self-mutation race, savePch writes
+  // to pch_cases, this page's RealtimeRefresh watches pch_cases, and
+  // without a markLocalMutation call the viewer's own save fires the
+  // "new updates" notice + a window.location.reload() right on top
+  // of a plain router.refresh() the save itself triggered.
+  const [savedAt, setSavedAt] = useState<string | null>(
+    typeof saved?.recorded_at === "string" ? saved.recorded_at : null,
+  );
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -756,10 +769,26 @@ function Sa302Reconciliation({
       values[f.key] = raw === undefined || raw === ""
         ? null : Number(raw);
     }
+    // Fire before the request goes out, not after it resolves. The
+    // Supabase realtime push for this write can reach the browser
+    // before the server action's own response does; marking only on
+    // success loses that race and RealtimeRefresh treats this save
+    // as someone else's and fires its "new updates" reload. See the
+    // matching comment chain in identity-section.tsx and
+    // extraction-review.tsx.
+    markLocalMutation();
     const r = await savePchSa302ComparisonAction(caseId, values);
+    // Refresh the mark now the write is confirmed: a slow request can
+    // otherwise outrun the fixed suppression window counted from above.
+    markLocalMutation();
     if (!r.ok) { setErr(r.error); setMsg(null); return; }
     setErr(null); setMsg("Saved");
-    router.refresh();
+    // Local-state update instead of router.refresh(): we know the
+    // server accepted exactly the pasted map, so we don't need to
+    // re-fetch to know what to show. The display reads savedAt, so
+    // bumping it is sufficient and avoids both the stale-RSC-payload
+    // problem (task #14) and the duplicate reload race.
+    setSavedAt(new Date().toISOString());
   });
 
   const groups: Sa302Group[] = ["SA103S boxes", "SA302 totals"];
@@ -769,9 +798,9 @@ function Sa302Reconciliation({
         {mismatches.length === 0 && allPopulatedMatch && <span className="mr-1">✓</span>}
         {mismatches.length > 0 && <span className="mr-1">!</span>}
         {bannerText}
-        {saved?.recorded_at && (
+        {savedAt && (
           <span className="float-right text-xs opacity-70">
-            Last saved {new Date(String(saved.recorded_at)).toLocaleString()}
+            Last saved {new Date(savedAt).toLocaleString()}
           </span>
         )}
       </div>
