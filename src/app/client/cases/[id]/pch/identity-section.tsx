@@ -20,6 +20,7 @@
 // summary are gone with the Phase 6 bookkeeping redesign.
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { savePchIdentityFieldsAction } from "@/app/client/pch/actions";
 import { validateUtr, validateNino } from "@/lib/pch/validation";
 
@@ -39,6 +40,7 @@ type Props = {
 };
 
 export function IdentitySection({ caseId, head, editable = true }: Props) {
+  const router = useRouter();
   const [utr, setUtr] = useState(head.cl_utr ?? "");
   const [nino, setNino] = useState(head.cl_nino ?? "");
   const [pending, start] = useTransition();
@@ -60,7 +62,13 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
     });
     if (r.ok) {
       setMsg("Saved");
-      window.location.reload();
+      // TEMP (live A/B test, task #14): router.refresh() instead of a hard
+      // reload, to confirm whether it actually merges fresh RSC data here
+      // under a single clean action (prior "it silently fails" conclusion
+      // may have been confounded by a rapid-fire multi-upload test storm).
+      // Called inside the same transition the mutation ran in, per Next's
+      // docs for merging without losing client state.
+      router.refresh();
     } else {
       setMsg(r.error);
     }
