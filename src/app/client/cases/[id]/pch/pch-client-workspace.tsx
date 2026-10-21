@@ -731,17 +731,69 @@ function findInterviewExpenseLines(lines: ExpenseRow[]): ExpenseRow[] {
   );
 }
 
+// Three quick-entry boxes covering the opening questions of the
+// EXPENSE_INTERVIEW flow (phone/data, vehicle cleaning, congestion/
+// ULEZ/parking). Typing numbers into a row is quicker than composing a
+// chat sentence; the composed line is sent in as the client's first
+// reply (see autoFirstReply on AiInterviewPanel), so the AI moves
+// straight on to insurance, licences, and "anything else to declare".
+function QuickFigureInput({
+  label, value, onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex-1 min-w-[140px] text-xs text-slate-700">
+      <div className="mb-1 font-medium">{label}</div>
+      <div className="flex items-center rounded border border-slate-300 bg-white px-2 py-1">
+        <span className="mr-1 text-slate-400">£</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="1"
+          placeholder="0"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full text-sm outline-none"
+        />
+      </div>
+    </label>
+  );
+}
+
 function ExpenseInterviewSection({
   caseId, interviewLines,
 }: {
   caseId: string;
   interviewLines: ExpenseRow[];
 }) {
-  const [open, setOpen] = useState(false);
+  const [stage, setStage] = useState<"closed" | "quick" | "chat">("closed");
+  const [phone, setPhone] = useState("");
+  const [cleaning, setCleaning] = useState("");
+  const [parking, setParking] = useState("");
   const captured = interviewLines.length > 0;
   const fmt = (p: number) =>
     "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const total = interviewLines.reduce((n, l) => n + l.amount_paid_pence, 0);
+
+  const figureOrNone = (v: string) => {
+    const n = Number(v);
+    return v.trim().length > 0 && Number.isFinite(n) && n > 0 ? `£${n}` : "none";
+  };
+  const composedFirstReply =
+    `Phone and data: ${figureOrNone(phone)}. ` +
+    `Vehicle cleaning / valeting: ${figureOrNone(cleaning)}. ` +
+    `Congestion, ULEZ and parking (not fines or penalties): ${figureOrNone(parking)}.`;
+
+  const closeAndReset = () => {
+    setStage("closed");
+    setPhone("");
+    setCleaning("");
+    setParking("");
+  };
 
   return (
     <div className="space-y-3">
@@ -775,18 +827,50 @@ function ExpenseInterviewSection({
           under Documents above.
         </div>
       )}
-      {!open ? (
+      {stage === "closed" ? (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => setStage("quick")}
           className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
         >
           {captured ? "Update my expenses" : "Walk through it with the AI"}
         </button>
+      ) : stage === "quick" ? (
+        <div className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+          <div className="text-xs font-medium text-slate-900">
+            Three to start, rough yearly figures, leave blank for none
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <QuickFigureInput label="Phone & data (year)" value={phone} onChange={setPhone} />
+            <QuickFigureInput label="Vehicle cleaning / valeting" value={cleaning} onChange={setCleaning} />
+            <QuickFigureInput label="Congestion, ULEZ & parking" value={parking} onChange={setParking} />
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Not fines or penalties, those aren&apos;t claimable. After this
+            the AI will ask about insurance, licences, and anything else
+            to declare.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={closeAndReset}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => setStage("chat")}
+              className="rounded bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+            >
+              Continue to chat
+            </button>
+          </div>
+        </div>
       ) : (
         <AiInterviewPanel
           caseId={caseId}
-          onClose={() => setOpen(false)}
+          onClose={closeAndReset}
           flowLabel="Capture your business expenses by chat"
           flowSubtitle="Rough yearly figures: phone, cleaning, parking, insurance, subs, other"
           finishedMessage="Thanks, saving your expenses now."
@@ -795,6 +879,7 @@ function ExpenseInterviewSection({
           start={startPchExpenseInterviewAction}
           advance={advancePchExpenseInterviewAction}
           commit={commitPchExpenseInterviewAction}
+          autoFirstReply={composedFirstReply}
         />
       )}
     </div>

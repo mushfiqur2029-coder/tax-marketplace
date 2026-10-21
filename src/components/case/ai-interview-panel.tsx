@@ -49,6 +49,12 @@ type Props = {
   // Placeholder for the chat input textarea.
   inputPlaceholder?: string;
 
+  // Optional composed first reply (e.g. built from a small number-entry
+  // form shown above the chat) sent automatically as soon as the opener
+  // arrives, instead of waiting for the client to type it themselves.
+  // The chat then continues normally from the AI's next turn.
+  autoFirstReply?: string;
+
   start: (caseId: string) => Promise<StartResult>;
   advance: (caseId: string, transcript: InterviewMessage[]) => Promise<AdvanceResult>;
   commit: (caseId: string, transcript: InterviewMessage[]) => Promise<CommitResult>;
@@ -86,6 +92,7 @@ export function AiInterviewPanel({
   commitButtonLabel,
   commitPendingLabel,
   inputPlaceholder,
+  autoFirstReply,
   start: startAction,
   advance: advanceAction,
   commit: commitAction,
@@ -99,37 +106,14 @@ export function AiInterviewPanel({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    start(async () => {
-      setErr(null);
-      const r = await startAction(caseId);
-      if (cancelled) return;
-      if (!r.ok) {
-        setErr(r.error);
-        return;
-      }
-      setTranscript([r.opener]);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally mount-only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [transcript, pending]);
-
-  const send = () => {
-    const body = draft.trim();
-    if (body.length === 0 || finished) return;
+  // Shared submit path for both a manually-typed reply (send, below)
+  // and an auto-sent one (the number-row quick-entry case): advances
+  // the transcript with the given body and applies the AI's next turn.
+  const submitReply = (body: string, base: InterviewMessage[]) => {
     start(async () => {
       setErr(null);
       const next: InterviewMessage[] = [
-        ...transcript,
+        ...base,
         { role: "user", content: body },
       ];
       setTranscript(next);
@@ -150,6 +134,38 @@ export function AiInterviewPanel({
       ]);
       setFinished(true);
     });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    start(async () => {
+      setErr(null);
+      const r = await startAction(caseId);
+      if (cancelled) return;
+      if (!r.ok) {
+        setErr(r.error);
+        return;
+      }
+      setTranscript([r.opener]);
+      const auto = autoFirstReply?.trim();
+      if (auto) submitReply(auto, [r.opener]);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally mount-only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [transcript, pending]);
+
+  const send = () => {
+    const body = draft.trim();
+    if (body.length === 0 || finished) return;
+    submitReply(body, transcript);
   };
 
   const commit = () => {
