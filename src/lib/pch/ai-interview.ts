@@ -67,6 +67,17 @@ type InterviewFlow = {
   // extraction-apply can route the values into the intake tables with
   // no additional mapping work.
   fields: FieldSpec[];
+  // Most flows (VEHICLE_CA, RELIEFS, FILING_DETAILS, ...) deal with
+  // figures the client has a document or a precise answer for, so the
+  // default system prompt pushes back on a vague number until the
+  // client confirms an exact one. INCOME_INTERVIEW and EXPENSE_INTERVIEW
+  // exist specifically for the opposite case: a driver with no bank
+  // statement who only knows roughly what came in, what went out, and
+  // what they paid in penalties, fines, or other costs. For those two
+  // flows this is set true so the system prompt accepts a rounded,
+  // approximate figure at face value instead of chasing precision the
+  // client doesn't have.
+  toleratesRoughFigures?: boolean;
 };
 
 const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
@@ -291,7 +302,7 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
     title: "Capture your income by chat",
     resultLabel: "AI interview: income reconstruction",
     opener:
-      "Quick income capture, no bank statement needed. Two things to start: (1) which platforms did you drive for this year? (Uber, Bolt, Addison Lee, etc, name all of them). (2) What's your total gross income across all platforms for the year, BEFORE platform fees? If you only know a weekly / monthly figure, give me the average and the weeks you worked and I'll multiply it out with you.",
+      "Quick income capture, no bank statement needed. Just two things, roughly is fine: (1) which platforms did you drive for this year? (Uber, Bolt, Addison Lee, etc, name all of them). (2) About how much did you take home in total across all platforms for the year, before platform fees, and roughly how much went on platform fees? A ballpark figure is fine, you don't need to work it out exactly.",
     fields: [
       {
         key: "platforms_summary",
@@ -303,21 +314,16 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
         key: "total_gross_gbp",
         label: "Total gross income (GBP)",
         description:
-          "Numeric GBP. Total gross across every platform BEFORE fees. If given weekly / monthly, multiply out and have the client confirm the annual figure. Confidence 'medium' for client-confirmed arithmetic. Mark missing if they cannot land on a figure.",
+          "Numeric GBP. Total gross across every platform BEFORE fees. A rounded, ballpark annual figure the client is confident in is enough; do not push for exact pence or make them work out a precise multiplication. Confidence 'medium' for a rough/estimated figure. Mark missing if they genuinely cannot land on even an approximate figure.",
       },
       {
         key: "total_fees_gbp",
         label: "Total platform fees (GBP)",
         description:
-          "Numeric GBP. Total service fees across the year. Ask in the same turn as total_on_trip_miles ('and your platform fees + on-trip miles for the year?'). Mark missing if they don't track fees separately.",
-      },
-      {
-        key: "total_on_trip_miles",
-        label: "Total on-trip miles",
-        description:
-          "Integer miles. Business miles ON TRIP (passenger in car), not dead miles. Ask in the same turn as total_fees_gbp. Weekly average x weeks worked is fine. Mark missing if genuinely unknown.",
+          "Numeric GBP. Rough total service fees across the year, ask in the same turn as total_gross_gbp. An estimate is fine. Mark missing if they don't track fees separately or don't know, roughly is still fine if they have any sense of it.",
       },
     ],
+    toleratesRoughFigures: true,
   },
 
   // ------------------------------------------------------------------
@@ -345,43 +351,43 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
     title: "Capture your business expenses by chat",
     resultLabel: "AI interview: expense reconstruction",
     opener:
-      "Quick walkthrough of your business expenses. Give me an annual total for each category you have, say 'none' or 'skip' for any that don't apply. Let's do three at once: (1) phone and data for the year (business portion only), (2) vehicle cleaning / valeting, (3) congestion, ULEZ and parking (not fines). What are those three?",
+      "Quick walkthrough of your business costs, roughly is fine for all of these, no need to work anything out exactly. Give me a ballpark annual figure for each you have, and say 'none' or 'don't know' for anything that doesn't apply. Three to start: (1) phone and data for the year, roughly, (2) vehicle cleaning / valeting, roughly, (3) congestion, ULEZ and parking (not fines or penalties, those aren't claimable), roughly. What are those three, roughly?",
     fields: [
       {
         key: "phone_data_gbp",
         label: "Phone and data, annual business portion (GBP)",
         description:
-          "Numeric GBP. Annual spend on mobile + data, business portion only. If monthly, multiply out and confirm. Mark missing if 'none' or 'don't know'.",
+          "Numeric GBP. Rough annual spend on mobile + data, business portion only. A ballpark figure is fine, do not ask the client to work out an exact figure or multiply out a monthly amount. Mark missing if 'none' or 'don't know'.",
       },
       {
         key: "cleaning_gbp",
         label: "Vehicle cleaning / valeting, annual (GBP)",
         description:
-          "Numeric GBP. Annual spend on vehicle cleaning. Mark missing if 'none' or 'don't know'.",
+          "Numeric GBP. Rough annual spend on vehicle cleaning. A ballpark figure is fine. Mark missing if 'none' or 'don't know'.",
       },
       {
         key: "parking_tolls_gbp",
         label: "Congestion, ULEZ, parking, annual (GBP)",
         description:
-          "Numeric GBP. Annual legitimate parking + congestion / ULEZ. Fines and PCNs NOT claimable. Mark missing if 'none' or 'don't know'.",
+          "Numeric GBP. Rough annual legitimate parking + congestion / ULEZ, a ballpark figure is fine. Fines and PCNs are not claimable, if the client only has a fines/penalties figure to give, note it in 'note' but mark this field missing rather than recording it as an expense. Mark missing if 'none' or 'don't know'.",
       },
       {
         key: "insurance_gbp",
         label: "Insurance, annual (GBP)",
         description:
-          "Numeric GBP. Annual vehicle insurance (hire + reward is typical PHV). Ask this in the SAME turn as subs_fees_gbp and other_business_gbp, as a mini-list: 'insurance, licences/subscriptions, and anything else?' Mark missing if 'none' or 'don't know'.",
+          "Numeric GBP. Rough annual vehicle insurance (hire + reward is typical PHV), a ballpark figure is fine. Ask this in the SAME turn as subs_fees_gbp and other_business_gbp, as a mini-list: 'roughly, insurance, licences/subscriptions, and anything else?' Mark missing if 'none' or 'don't know'.",
       },
       {
         key: "subs_fees_gbp",
         label: "Licences and subscriptions, annual (GBP)",
         description:
-          "Numeric GBP. Annual total for PHV driver licence, DBS, medical, breakdown, trade body subs. Ask in the same turn as insurance_gbp. Mark missing if 'none' or 'don't know'.",
+          "Numeric GBP. Rough annual total for PHV driver licence, DBS, medical, breakdown, trade body subs, a ballpark figure is fine. Ask in the same turn as insurance_gbp. Mark missing if 'none' or 'don't know'.",
       },
       {
         key: "other_business_gbp",
         label: "Any other allowable business cost, annual (GBP)",
         description:
-          "Numeric GBP. One figure for anything else business-related. Ask in the same turn as insurance_gbp. If the client says 'nothing else', mark missing and skip other_business_label too. If they give a figure, ask them to name it in the same message (e.g. 'and what was that for?').",
+          "Numeric GBP. One rough figure for anything else business-related, including any other costs they bring up. Ask in the same turn as insurance_gbp. If the client says 'nothing else', mark missing and skip other_business_label too. If they give a figure, ask them to name it in the same message (e.g. 'and what was that roughly for?'); a ballpark figure is fine.",
       },
       {
         key: "other_business_label",
@@ -390,6 +396,7 @@ const INTERVIEW_FLOWS: Record<string, InterviewFlow> = {
           "Short free text naming the 'other' cost (e.g. 'Dashcam'). Mark missing when other_business_gbp is missing or 0. When other_business_gbp > 0, you can usually extract the label from the same reply (e.g. 'about £120 on a dashcam' => value=120, label='Dashcam'); only ask again if the client gave a figure without naming it.",
       },
     ],
+    toleratesRoughFigures: true,
   },
 
   // ------------------------------------------------------------------
@@ -456,17 +463,20 @@ function systemPrompt(flow: InterviewFlow): string {
   const fieldList = flow.fields
     .map((f) => `  - "${f.key}" (${f.label}): ${f.description}`)
     .join("\n");
+  const precisionRule = flow.toleratesRoughFigures
+    ? "5. This client only tracks these figures roughly, not to the penny. When they give a rounded, ballpark number ('about 24k', 'roughly 6 grand', 'maybe 500'), accept it at confidence 'medium' and move straight on, do NOT ask them to recalculate or confirm an exact figure. Only go back for a number if they gave no figure at all (e.g. 'a few thousand, dunno exactly'), and even then ask once, gently, and accept whatever rough answer comes back or mark it missing."
+    : "5. Only numeric values go into numeric fields. If the client says 'about forty-eight grand', ask them to confirm the exact figure or say 'I don't know' before you record it.";
   return [
     "You are a friendly UK accountant helping a private-hire driver fill their Self Assessment in a short chat. Drivers are busy, often replying on a phone between jobs; make every turn earn its keep.",
     "",
     "RULES, non-negotiable:",
-    "1. Never invent, estimate, or round up a figure the client did not explicitly confirm. If the client doesn't know, that field is 'missing' and null; do not guess.",
+    "1. Never invent a figure the client did not say in some form. If the client doesn't know at all, that field is 'missing' and null; do not guess.",
     "2. BATCH questions aggressively. Ask multiple linked fields in ONE turn whenever that reads naturally (e.g. 'make, model and reg?' as one sentence; 'phone, cleaning, and parking totals?' as a mini-list). Do NOT ask one field per turn when the client could answer three in the same breath. The goal is the fewest turns possible.",
     "3. Skip anything you can safely default or infer. If a field has an obvious default stated in its description, use the default without asking. If one answer makes another field N/A (e.g. 'no vehicle' makes fuel type irrelevant), mark the dependent field missing and move on.",
     "4. Do not ask for things we already have. Scan the whole transcript before asking.",
-    "5. Only numeric values go into numeric fields. If the client says 'about forty-eight grand', ask them to confirm the exact figure or say 'I don't know' before you record it.",
+    precisionRule,
     "6. Confirm with a quick single-line summary at the end before finalising, not by repeating each field. One line, like 'Got it, saving your answers now.' Then finalise.",
-    "7. End as soon as every field has either a confirmed value or a 'missing' marker from the client. Do NOT keep going for the sake of it.",
+    "7. End as soon as every field has either a confirmed value or a 'missing' marker from the client. Do NOT keep going for the sake of it, and never press the client a third time on the same figure, take their best answer and move on.",
     "",
     "You have exactly two tools. Pick one every turn:",
     "- `ask_followup`: continue the conversation. Batch as many fields as you can in one message.",
@@ -477,7 +487,7 @@ function systemPrompt(flow: InterviewFlow): string {
     "",
     "For every field use the standard shape: { value, confidence, note }.",
     "  value: the number or string the client told you. Numbers unquoted. null when the client said they didn't know.",
-    "  confidence: 'high' when the client stated the exact figure; 'medium' when derived from arithmetic the client confirmed (e.g. gross minus net = fees) OR when you applied a stated default without the client objecting; 'missing' when the client said 'I don't know' or the field is not applicable. Never 'low'; if you'd want 'low', ask one more question or mark it missing.",
+    "  confidence: 'high' when the client stated the exact figure; 'medium' when derived from arithmetic the client confirmed (e.g. gross minus net = fees), a rounded/estimated figure the client is confident enough in, or when you applied a stated default without the client objecting; 'missing' when the client said 'I don't know' or the field is not applicable. Never 'low'; if you'd want 'low', ask one more question or mark it missing.",
     "  note: a one-sentence record of what the client said, so the accountant knows the provenance. Max 100 chars.",
     "",
     "overallConfidence: 'high' if every field is high; 'medium' if any field is medium; 'missing' if any field is missing; 'low' never.",

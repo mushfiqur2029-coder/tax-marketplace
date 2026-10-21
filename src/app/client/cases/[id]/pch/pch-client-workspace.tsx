@@ -581,8 +581,9 @@ function IncomeInterviewSection({
     <div className="space-y-3">
       <div className="text-sm font-medium text-slate-900">Capture your income by chat</div>
       <p className="text-xs text-slate-600">
-        No bank statement to upload? We&apos;ll walk through your platforms, gross
-        income, fees, and on-trip miles together. Takes a few minutes.
+        No bank statement to upload? We&apos;ll walk through your platforms and
+        roughly what came in together. Takes a couple of minutes, ballpark
+        figures are fine.
       </p>
       {captured ? (
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-0.5">
@@ -590,7 +591,6 @@ function IncomeInterviewSection({
           <div>Platforms: <strong>{platforms || "Driver-reported"}</strong></div>
           <div>Gross: <strong>{fmt(interviewLine.gross_takings_pence)}</strong></div>
           <div>Platform fees: <strong>{fmt(interviewLine.platform_fee_pence)}</strong></div>
-          <div>On-trip miles: <strong>{interviewLine.on_trip_miles.toLocaleString("en-GB")}</strong></div>
         </div>
       ) : (
         <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
@@ -611,7 +611,7 @@ function IncomeInterviewSection({
           caseId={caseId}
           onClose={() => setOpen(false)}
           flowLabel="Capture your income by chat"
-          flowSubtitle="Platforms, gross, fees, on-trip miles"
+          flowSubtitle="Platforms, rough gross, rough fees"
           finishedMessage="Thanks, saving your income now."
           commitButtonLabel="Save my income"
           commitPendingLabel="Saving your income..."
@@ -653,9 +653,10 @@ function ExpenseInterviewSection({
       <div className="text-sm font-medium text-slate-900">Capture your business expenses by chat</div>
       <p className="text-xs text-slate-600">
         Phone, cleaning, parking and tolls, insurance, licences, anything
-        else. Every category is optional, say &quot;none&quot; or &quot;don&apos;t know&quot;
-        for anything that doesn&apos;t apply and we&apos;ll skip it. Vehicle running
-        costs (fuel, repairs, finance) are already covered in section 4.
+        else, rough yearly figures are fine for all of these. Every category
+        is optional, say &quot;none&quot; or &quot;don&apos;t know&quot; for anything that
+        doesn&apos;t apply and we&apos;ll skip it. Vehicle running costs (fuel,
+        repairs, finance) are already covered in section 4.
       </p>
       {captured ? (
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-0.5">
@@ -692,7 +693,7 @@ function ExpenseInterviewSection({
           caseId={caseId}
           onClose={() => setOpen(false)}
           flowLabel="Capture your business expenses by chat"
-          flowSubtitle="Phone, cleaning, parking, insurance, subs, other"
+          flowSubtitle="Rough yearly figures: phone, cleaning, parking, insurance, subs, other"
           finishedMessage="Thanks, saving your expenses now."
           commitButtonLabel="Save my expenses"
           commitPendingLabel="Saving your expenses..."
