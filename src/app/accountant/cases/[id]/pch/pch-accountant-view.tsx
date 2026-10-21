@@ -202,34 +202,62 @@ export function PchAccountantView(props: {
         />
       </div>
 
-      {/* Pre-filing readiness band */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4 mb-6">
-        <h2 className="text-sm font-bold mb-3">Ready to hand back to client?</h2>
-        {props.approvalAt ? (
-          <ul className="text-sm space-y-1">
-            <li>
-              <span className="text-emerald-700">✓</span>{" "}
-              Client approval signed: {props.approvalName} on{" "}
-              {new Date(props.approvalAt).toLocaleString()}
-            </li>
-          </ul>
-        ) : null}
-        <div className="mt-4 flex items-center gap-3">
-          <button type="button"
-            onClick={requestFiling}
-            disabled={pending}
-            className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
-            {pending ? "Requesting..." : "Advance to client approval"}
-          </button>
-          {err && <span className="text-red-600 text-xs">{err}</span>}
-        </div>
-        <p className="text-xs text-slate-500 mt-2">
-          Status will move to <code>client_approval</code>. The client sees the
-          figures for the first time and clicks &quot;Approve figures&quot;;
-          after that you send the final pack, the client confirms, and you
-          mark it filed with HMRC from the panel below.
-        </p>
-      </div>
+      {/* Pre-filing readiness band.
+          Button + explanation only render while the case is still in
+          the accountant's hands (in_review / prepared). Once it's past
+          that gate (client_approval, filed, complete, or any time
+          props.approvalAt has been stamped), the row would just throw
+          the server-side "status is X; must be in_review or prepared"
+          error if the button were clicked again, so hide it. The
+          confirmation line stays as the single source of truth for
+          what's already happened. */}
+      {(() => {
+        const alreadyAdvanced =
+          !!props.approvalAt
+          || caseStatus === "client_approval"
+          || caseStatus === "filed"
+          || caseStatus === "complete";
+        return (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 mb-6">
+            <h2 className="text-sm font-bold mb-3">
+              {alreadyAdvanced ? "Handed back to client" : "Ready to hand back to client?"}
+            </h2>
+            {props.approvalAt ? (
+              <ul className="text-sm space-y-1">
+                <li>
+                  <span className="text-emerald-700">✓</span>{" "}
+                  Client approval signed: {props.approvalName} on{" "}
+                  {new Date(props.approvalAt).toLocaleString()}
+                </li>
+              </ul>
+            ) : alreadyAdvanced ? (
+              <p className="text-sm text-slate-700">
+                Case is at <strong>{caseStatus}</strong>. The client has
+                the figures; nothing to do here until they sign.
+              </p>
+            ) : null}
+            {alreadyAdvanced ? null : (
+              <>
+                <div className="mt-4 flex items-center gap-3">
+                  <button type="button"
+                    onClick={requestFiling}
+                    disabled={pending}
+                    className="rounded bg-slate-900 px-4 py-1.5 text-white text-sm disabled:opacity-50">
+                    {pending ? "Requesting..." : "Advance to client approval"}
+                  </button>
+                  {err && <span className="text-red-600 text-xs">{err}</span>}
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Status will move to <code>client_approval</code>. The client sees the
+                  figures for the first time and clicks &quot;Approve figures&quot;;
+                  after that you send the final pack, the client confirms, and you
+                  mark it filed with HMRC from the panel below.
+                </p>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Engine snapshot with inline overrides */}
       <h2 className="text-lg font-bold mb-3">Engine snapshot</h2>
