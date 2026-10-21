@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
   setPchDocStatusAction,
@@ -948,6 +948,24 @@ function DocSection({
     extractionsBySlot.set(e.slotCode, list);
   }
   const sections = Array.from(new Set(slots.map((s) => s.section)));
+
+  // One shared reload scheduler for every slot in this section, instead
+  // of each slot calling window.location.reload() the instant its own
+  // upload resolves. Two uploads fired close together (classic case: a
+  // licence's front and back, picked one after the other) used to race:
+  // whichever upload's onChanged() landed first reloaded the page
+  // immediately, and that hard navigation aborted the other upload's
+  // still-in-flight request, so it silently never saved. Debouncing to a
+  // single reload after everything quiets down lets every in-flight
+  // upload in this section finish before the page actually reloads.
+  const reloadTimer = useRef<number | null>(null);
+  const scheduleReload = () => {
+    if (reloadTimer.current !== null) window.clearTimeout(reloadTimer.current);
+    reloadTimer.current = window.setTimeout(() => {
+      window.location.reload();
+    }, 1200);
+  };
+
   return (
     <div className="space-y-6">
       {sections.map((section) => (
@@ -965,7 +983,7 @@ function DocSection({
                   extractions={extractionsBySlot.get(s.code) ?? []}
                   canEdit={editable}
                   photoIdKind={photoIdKind}
-                  onChanged={() => window.location.reload()}
+                  onChanged={scheduleReload}
                 />
               ) : (
                 <DocRow
@@ -976,7 +994,7 @@ function DocSection({
                   uploaded={uploadedByKey.get(s.code) ?? []}
                   extractions={extractionsBySlot.get(s.code) ?? []}
                   canEdit={editable}
-                  onChanged={() => window.location.reload()}
+                  onChanged={scheduleReload}
                 />
               )
             ))}
@@ -1046,12 +1064,15 @@ function DocRow({
       setBusy(true); setErr(null);
       setProgress({ done: 0, total: files.length });
       try {
+  let anySucceeded = false;
         for (let i = 0; i < files.length; i++) {
           const fd = new FormData();
           fd.set("file", files[i]);
           try {
             const r = await uploadPchDocumentAction(caseId, slot.code, fd);
             if (!r.ok) { setErr(r.error); break; }
+            anySucceeded = true;
+            markLocalMutation();
           } catch (e) {
             setErr(
               e instanceof Error
@@ -1062,6 +1083,11 @@ function DocRow({
           }
           setProgress({ done: i + 1, total: files.length });
         }
+        // Show "Uploaded" the instant the request(s) succeed rather than
+        // leaving the badge on its old value for the ~1s the debounced
+        // reload (see scheduleReload in the parent) takes to actually
+        // bring in the fresh server data.
+        if (anySucceeded) setLocalStatus("Uploaded");
       } finally {
         setBusy(false);
         setProgress(null);
@@ -1447,11 +1473,19 @@ function PhotoIdUploadTile({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Task #14: show the just-uploaded file immediately from the action's
+  // own return value (id/file_name/uploaded_at, all known the moment the
+  // insert succeeds) instead of waiting out the debounced reload (see
+  // scheduleReload in DocSection). Front and back are two independent
+  // tiles; without this, each sat on its old "Not uploaded yet" state
+  // for the ~1s reload delay, which read as the upload having failed.
+  const [localUploaded, setLocalUploaded] = useState<UploadedDoc | null>(uploaded);
   // See DocRow's matching comment: wrap in a transition so the uploaded
   // doc's refreshed page actually reaches the screen without a manual
   // reload.
   const [, startActionTransition] = useTransition();
   const inputId = `up-pch24-${side ?? "passport"}`;
+  const effectiveUploaded = localUploaded ?? uploaded;
 
   const upload = (file: File) => {
     startActionTransition(async () => {
@@ -1461,7 +1495,18 @@ function PhotoIdUploadTile({
       if (side) fd.set("photo_id_side", side);
       try {
         const r = await uploadPchDocumentAction(caseId, "PCH-24", fd);
-        if (!r.ok) setErr(r.error);
+        if (!r.ok) {
+          setErr(r.error);
+        } else {
+          markLocalMutation();
+          setLocalUploaded({
+            id: r.id,
+            file_name: r.file_name,
+            uploaded_at: r.uploaded_at,
+            requirement_key: "PCH-24",
+            photo_id_side: side,
+          });
+        }
       } catch (e) {
         setErr(e instanceof Error ? "Upload failed: " + e.message : "Upload failed. Try again.");
       } finally {
@@ -1474,11 +1519,11 @@ function PhotoIdUploadTile({
   return (
     <div className="rounded border border-slate-200 bg-slate-50/40 p-3">
       <div className="text-xs font-semibold text-slate-800">{label}</div>
-      {uploaded ? (
+      {effectiveUploaded ? (
         <div className="mt-1 text-xs text-slate-600">
-          <span className="text-emerald-700 font-medium">Uploaded:</span> {uploaded.file_name}
+          <span className="text-emerald-700 font-medium">Uploaded:</span> {effectiveUploaded.file_name}
           {" "}
-          <span className="text-slate-400">({new Date(uploaded.uploaded_at).toLocaleDateString()})</span>
+          <span className="text-slate-400">({new Date(effectiveUploaded.uploaded_at).toLocaleDateString()})</span>
         </div>
       ) : (
         <div className="mt-1 text-xs text-amber-700">Not uploaded yet.</div>
@@ -1503,7 +1548,7 @@ function PhotoIdUploadTile({
             + (busy || !canEdit ? "opacity-50 cursor-not-allowed" : "")
           }
         >
-          {busy ? "Uploading..." : uploaded ? "Replace" : "Upload"}
+          {busy ? "Uploading..." : effectiveUploaded ? "Replace" : "Upload"}
         </label>
         {canEdit ? (
           <button

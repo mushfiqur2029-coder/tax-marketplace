@@ -90,6 +90,33 @@ export async function takeCaseAction(caseId: string): Promise<ActionResult> {
     assertNotSuspended(me.status, "take new cases");
     const supabase = await createClient();
 
+    // PCH (automated) cases only become takeable once the client has
+    // explicitly clicked "Submit for review" (pch_cases.engine_snapshot_at
+    // set). Personal/Limited Company cases have no such gate: they're
+    // manual-prep work, visible and takeable immediately on payment, same
+    // as the open queue list filters. This check mirrors that rule here so
+    // a direct call (bypassing the "Take this case" button, which the UI
+    // already hides pre-submission) can't take a PCH case early either.
+    const { data: tierRow } = await supabase
+      .from("cases")
+      .select("tier")
+      .eq("id", caseId)
+      .maybeSingle();
+    if (tierRow?.tier === "uber_phv_automated") {
+      const { data: head } = await supabase
+        .from("pch_cases")
+        .select("engine_snapshot_at")
+        .eq("case_id", caseId)
+        .maybeSingle();
+      if (!head?.engine_snapshot_at) {
+        return {
+          ok: false,
+          error:
+            "Not ready to take yet. The client hasn't submitted their intake for review.",
+        };
+      }
+    }
+
     const { data, error } = await supabase
       .from("cases")
       .update({

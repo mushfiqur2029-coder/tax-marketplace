@@ -135,13 +135,19 @@ export default async function PchAccountantPage({
             </dd>
           </dl>
           {!intakeComplete ? (
+            // Automated (PCH) cases only become takeable once the client
+            // has explicitly submitted their intake for review (same rule
+            // the open queue list filters on). Reaching this page early
+            // (direct link, back button, a stale notification) must not
+            // offer a way around that gate, so no TakeCaseForm here.
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              The client paid but hasn&apos;t finished the intake. You can
-              still take the case to help them finish via chat; the figures
-              you&apos;ll see are from whatever they&apos;ve entered so far.
+              Not ready to take yet. The client has paid but hasn&apos;t
+              clicked &quot;Submit for review&quot; on their intake, so this
+              case isn&apos;t open for pickup. Check back once they&apos;ve
+              submitted; it will then show as available here and in the
+              queue.
             </p>
-          ) : null}
-          {approved.status !== "suspended" ? (
+          ) : approved.status !== "suspended" ? (
             <TakeCaseForm take={take} />
           ) : (
             <p className="text-sm text-slate">

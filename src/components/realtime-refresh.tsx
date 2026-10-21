@@ -25,8 +25,17 @@ export type RealtimeSubscription = {
 // it out from under someone mid-task (typing into a field, say) the
 // moment any other party touches an unrelated row is a worse
 // regression than the hard-refresh-on-every-click problem this app is
-// being fixed for. So instead we surface a small, dismissible "new
-// activity" notice and let the person choose when to reload.
+// being fixed for. So instead we surface a small "new activity" notice
+// first.
+//
+// recentLocalMutation() already filters out the viewer's own actions
+// landing back through this same subscription (see
+// realtime-self-mutation.ts), so by the time a notice actually shows,
+// it's someone (or something) else's change. There's nothing left for
+// the person to decide, so the notice applies itself a couple of
+// seconds later rather than sitting there waiting to be clicked;
+// Dismiss is there for the rare case someone notices it and wants to
+// finish what they're doing on the current view first.
 //
 // Mount this once per page that needs to stay fresh when another user's
 // action changes the DB. The notification bell handles its own
@@ -44,6 +53,7 @@ export function RealtimeRefresh({
 }) {
   const supabase = useMemo(() => createClient(), []);
   const pending = useRef<number | null>(null);
+  const autoTimer = useRef<number | null>(null);
   const [hasUpdate, setHasUpdate] = useState(false);
   // Stabilise the subscriptions prop for the effect so the channel
   // isn't torn down and rebuilt on every render.
@@ -62,6 +72,17 @@ export function RealtimeRefresh({
         // the row's author here).
         if (recentLocalMutation()) return;
         setHasUpdate(true);
+        // Having already filtered out the viewer's own actions above,
+        // every notice that does show is, by construction, someone (or
+        // something) else's change, so apply it on its own after a
+        // short grace period rather than making the person notice the
+        // banner and click Refresh themselves. Dismiss still cancels
+        // this if they're mid-task and want to keep their current view
+        // a little longer.
+        if (autoTimer.current !== null) window.clearTimeout(autoTimer.current);
+        autoTimer.current = window.setTimeout(() => {
+          window.location.reload();
+        }, 2500);
       }, 400);
     };
 
@@ -81,6 +102,7 @@ export function RealtimeRefresh({
     const ref = ch.subscribe();
     return () => {
       if (pending.current !== null) window.clearTimeout(pending.current);
+      if (autoTimer.current !== null) window.clearTimeout(autoTimer.current);
       void supabase.removeChannel(ref);
     };
     // subscriptionsKey captures the array shape; we don't want the
@@ -96,12 +118,15 @@ export function RealtimeRefresh({
       className="fixed inset-x-2 bottom-4 z-[70] mx-auto flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border border-line bg-paper px-4 py-2.5 shadow-xl sm:inset-x-auto sm:right-4"
     >
       <p className="text-xs font-medium text-ink">
-        This page has new updates.
+        New updates, refreshing…
       </p>
       <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
-          onClick={() => setHasUpdate(false)}
+          onClick={() => {
+            if (autoTimer.current !== null) window.clearTimeout(autoTimer.current);
+            setHasUpdate(false);
+          }}
           className="text-xs font-semibold text-slate hover:text-ink"
         >
           Dismiss
@@ -112,7 +137,7 @@ export function RealtimeRefresh({
           className="rounded-lg px-3 py-1 text-xs font-semibold text-white"
           style={{ background: "linear-gradient(135deg, var(--sky), var(--mint))" }}
         >
-          Refresh
+          Refresh now
         </button>
       </div>
     </div>
