@@ -97,13 +97,21 @@ export async function takeCaseAction(caseId: string): Promise<ActionResult> {
     // as the open queue list filters. This check mirrors that rule here so
     // a direct call (bypassing the "Take this case" button, which the UI
     // already hides pre-submission) can't take a PCH case early either.
-    const { data: tierRow } = await supabase
+    //
+    // Use the service-role admin client for the pch_cases read: the
+    // RLS policy on pch_cases (migration 0080) only lets the ASSIGNED
+    // accountant SELECT, which the queue accountant isn't yet. The
+    // session client would come back empty for every queued PCH case
+    // and this gate would reject every legitimate take. Same scope as
+    // the accountant/page.tsx queue filter fix in de3622a.
+    const admin = createAdminClient();
+    const { data: tierRow } = await admin
       .from("cases")
       .select("tier")
       .eq("id", caseId)
       .maybeSingle();
     if (tierRow?.tier === "uber_phv_automated") {
-      const { data: head } = await supabase
+      const { data: head } = await admin
         .from("pch_cases")
         .select("engine_snapshot_at")
         .eq("case_id", caseId)
