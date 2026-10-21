@@ -25,6 +25,7 @@ import {
   advancePchDisposalInterviewAction,
   commitPchDisposalInterviewAction,
 } from "@/app/client/pch/vehicle-interview-actions";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 export type VehicleSummary = {
   status: string | null;
@@ -83,6 +84,7 @@ export function VehicleSection({ caseId, vehicle: initialVehicle, editable = tru
       setSkipErr(r.error);
       return;
     }
+    markLocalMutation();
     setVehicle((prev) => ({
       ...(prev ?? EMPTY_VEHICLE),
       status: "No vehicle",
@@ -209,6 +211,7 @@ function DisposalSubpanel({
       setErr(r.error);
       return;
     }
+    markLocalMutation();
     onMarkedNotDisposed();
   });
 

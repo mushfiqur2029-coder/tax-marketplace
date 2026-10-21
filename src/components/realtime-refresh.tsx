@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { recentLocalMutation } from "@/lib/realtime-self-mutation";
 
 export type RealtimeSubscription = {
   /** Postgres table name (schema is always `public`). */
@@ -55,6 +56,11 @@ export function RealtimeRefresh({
       if (pending.current !== null) return;
       pending.current = window.setTimeout(() => {
         pending.current = null;
+        // Skip the notice if this change is almost certainly the
+        // viewer's own action landing back through the subscription
+        // (see realtime-self-mutation.ts for why we can't just check
+        // the row's author here).
+        if (recentLocalMutation()) return;
         setHasUpdate(true);
       }, 400);
     };

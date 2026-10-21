@@ -17,6 +17,7 @@
 
 import { useState, useTransition } from "react";
 import { confirmFinalPackAction } from "@/app/client/pch/actions";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 type Props = {
   caseId: string;
@@ -50,6 +51,7 @@ export function FinalPackReview({
       setErr(r.error);
       return;
     }
+    markLocalMutation();
     setConfirmedAt(new Date().toISOString());
     setConfirmedName(trimmed);
   });

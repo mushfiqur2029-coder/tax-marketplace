@@ -18,6 +18,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { setBankTransactionCategoryAction } from "@/app/client/pch/bank-actions";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 export type BankTransactionView = {
   id: string;
@@ -262,6 +263,7 @@ function TransactionRow({
         setErr(r.error);
         return;
       }
+      markLocalMutation();
       setEditing(false);
       onCategoryChanged(txn.id, next);
     });

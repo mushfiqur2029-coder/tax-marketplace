@@ -6,6 +6,7 @@ import {
   editPchExtractionFieldAction,
   rejectPchExtractionFieldAction,
 } from "@/app/client/pch/extraction-actions";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 // Per-document review panel. Lives next to the Upload button in the
 // client workspace. Renders every field the AI extracted, with its
@@ -204,6 +205,22 @@ function SourceBadge({ source }: { source: ExtractionSource }) {
   );
 }
 
+function CheckIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function SkippedIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
 function ConfidenceBadge({ value }: { value: ExtractionFieldPayload["confidence"] }) {
   const map: Record<string, { label: string; className: string }> = {
     high: { label: "High confidence", className: "bg-emerald-100 text-emerald-800 border-emerald-200" },
@@ -247,6 +264,7 @@ function FieldRow({ extractionId, fieldKey, label, field, state, onStateChanged,
     start(async () => {
       const r = await fn();
       if (r.ok) {
+        markLocalMutation();
         if (after) after();
         onStateChanged(nextState);
       } else {
@@ -265,17 +283,22 @@ function FieldRow({ extractionId, fieldKey, label, field, state, onStateChanged,
     "bg-slate-200 text-slate-700";
   const statusLabel =
     state.status === "accepted" ? "Confirmed" :
-    state.status === "edited" ? "Edited" :
+    state.status === "edited" ? "Saved" :
     state.status === "rejected" ? "Skipped" :
     "Not reviewed";
+  // Once a field has been acted on, the action row below stops showing
+  // the same Confirm/Edit/Skip trio (which reads as "still pending")
+  // and instead shows a settled, done state with a small way to change
+  // your mind. Editing always reopens the input regardless of prior
+  // status.
+  const reviewed = state.status !== "proposed";
 
   return (
-    <li className="rounded border border-slate-200 bg-white p-2">
+    <li className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-slate-800">{label}</span>
-            <span className={"rounded px-1.5 py-0.5 text-[10px] font-medium " + statusChip}>{statusLabel}</span>
             {!targetable ? (
               <span className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600">
                 Informational
@@ -284,13 +307,14 @@ function FieldRow({ extractionId, fieldKey, label, field, state, onStateChanged,
           </div>
           {editing ? (
             <input
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
+              className="mt-1.5 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Enter the correct value"
+              autoFocus
             />
           ) : (
-            <div className="mt-1 text-slate-700">{effectiveDisplay}</div>
+            <div className="mt-1 text-sm text-slate-700">{effectiveDisplay}</div>
           )}
           {field.note ? <div className="mt-1 text-[11px] italic text-slate-500">{field.note}</div> : null}
         </div>
@@ -300,60 +324,85 @@ function FieldRow({ extractionId, fieldKey, label, field, state, onStateChanged,
       </div>
 
       {canEdit && targetable ? (
-        <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-          {editing ? (
-            <>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  const next: string | number | null =
-                    draft === "" ? null :
-                    isFinite(Number(draft)) && draft.match(/^-?\d/) ? Number(draft) : draft;
-                  run(
-                    () => editPchExtractionFieldAction(extractionId, fieldKey, next),
-                    { status: "edited", overrideValue: next, actedAt: new Date().toISOString() },
-                    () => setEditing(false),
-                  );
-                }}
-                className="rounded bg-sky-600 px-2 py-1 text-white disabled:opacity-50"
-              >Save edit</button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => setEditing(false)}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700"
-              >Cancel</button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                disabled={pending || field.confidence === "missing" || field.value == null}
-                onClick={() => run(
-                  () => acceptPchExtractionFieldAction(extractionId, fieldKey),
-                  { status: "accepted", overrideValue: undefined, actedAt: new Date().toISOString() },
-                )}
-                className="rounded bg-emerald-600 px-2 py-1 text-white disabled:opacity-50"
-              >Confirm</button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => setEditing(true)}
-                className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-sky-800"
-              >Edit</button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => run(
-                  () => rejectPchExtractionFieldAction(extractionId, fieldKey),
-                  { status: "rejected", overrideValue: undefined, actedAt: new Date().toISOString() },
-                )}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700"
-              >Skip</button>
-            </>
-          )}
-        </div>
+        editing ? (
+          <div className="mt-2.5 flex flex-wrap gap-2 text-[11px]">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                const next: string | number | null =
+                  draft === "" ? null :
+                  isFinite(Number(draft)) && draft.match(/^-?\d/) ? Number(draft) : draft;
+                run(
+                  () => editPchExtractionFieldAction(extractionId, fieldKey, next),
+                  { status: "edited", overrideValue: next, actedAt: new Date().toISOString() },
+                  () => setEditing(false),
+                );
+              }}
+              className="rounded-full bg-sky-600 px-3 py-1.5 font-semibold text-white transition hover:bg-sky-700 disabled:opacity-50"
+            >
+              {pending ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setEditing(false)}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+            >Cancel</button>
+          </div>
+        ) : reviewed ? (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px]">
+            <span
+              className={
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold " + statusChip
+              }
+            >
+              {state.status === "rejected" ? (
+                <SkippedIcon />
+              ) : (
+                <CheckIcon />
+              )}
+              {statusLabel}
+            </span>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setEditing(true)}
+              className="rounded-full px-2.5 py-1 font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900 disabled:opacity-50"
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <div className="mt-2.5 flex flex-wrap gap-2 text-[11px]">
+            <button
+              type="button"
+              disabled={pending || field.confidence === "missing" || field.value == null}
+              onClick={() => run(
+                () => acceptPchExtractionFieldAction(extractionId, fieldKey),
+                { status: "accepted", overrideValue: undefined, actedAt: new Date().toISOString() },
+              )}
+              className="rounded-full bg-emerald-600 px-3 py-1.5 font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {pending ? "Confirming…" : "Confirm"}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setEditing(true)}
+              className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-50"
+            >Edit</button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => run(
+                () => rejectPchExtractionFieldAction(extractionId, fieldKey),
+                { status: "rejected", overrideValue: undefined, actedAt: new Date().toISOString() },
+              )}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >Skip</button>
+          </div>
+        )
       ) : null}
     </li>
   );

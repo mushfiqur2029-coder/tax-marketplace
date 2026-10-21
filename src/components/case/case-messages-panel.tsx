@@ -17,6 +17,7 @@ import {
   getCaseMessageAttachmentUrlAction,
 } from "@/app/case-messages/actions";
 import { createClient } from "@/lib/supabase/client";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 export type CaseMessageAttachment = {
   path: string;
@@ -168,6 +169,7 @@ export function CaseMessagesPanel({
       for (const f of attachments) fd.append("file", f);
       const r = await sendCaseMessageAction(caseId, fd);
       if (!r.ok) { setErr(r.error); return; }
+      markLocalMutation();
       setLocalMessages((prev) => [
         ...prev,
         {

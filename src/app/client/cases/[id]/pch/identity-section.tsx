@@ -22,6 +22,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { savePchIdentityFieldsAction } from "@/app/client/pch/actions";
 import { validateUtr, validateNino } from "@/lib/pch/validation";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 export type IdentityHead = {
   cl_name: string | null;
@@ -71,6 +72,7 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
       cl_nino: ninoChanged ? nino : undefined,
     });
     if (r.ok) {
+      markLocalMutation();
       setMsg("Saved");
       setSavedHead((prev) => ({ ...prev, cl_utr: nextUtr, cl_nino: nextNino }));
     } else {

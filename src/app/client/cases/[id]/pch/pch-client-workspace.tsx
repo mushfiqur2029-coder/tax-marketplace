@@ -51,6 +51,7 @@ import {
 } from "./prior-year-prompt";
 import { ExtractionSummaryPanel } from "./extraction-summary";
 import { canRunDraft } from "@/lib/pch/validation";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 // Status-aware workspace for the automated PCH flow.
 //
@@ -459,6 +460,7 @@ function SingleAnswerSection({
       setSkipErr(r.error);
       return;
     }
+    markLocalMutation();
     setSkipped(true);
   });
   return (
@@ -521,7 +523,10 @@ function SingleAnswerSection({
           notApplicable={{
             label: "Not applicable",
             action: () => markPchChecklistNotApplicableAction(caseId, checklistItems),
-            onConfirmed: () => setSkipped(true),
+            onConfirmed: () => {
+              markLocalMutation();
+              setSkipped(true);
+            },
           }}
         />
       )}
@@ -717,6 +722,7 @@ function ReliefsSection({
       setSkipErr(r.error);
       return;
     }
+    markLocalMutation();
     setSkipped(true);
   });
   return (
@@ -778,7 +784,10 @@ function ReliefsSection({
           notApplicable={{
             label: "None of these apply",
             action: () => markPchChecklistNotApplicableAction(caseId, [19]),
-            onConfirmed: () => setSkipped(true),
+            onConfirmed: () => {
+              markLocalMutation();
+              setSkipped(true);
+            },
           }}
         />
       )}
@@ -871,6 +880,7 @@ function SubmitForReviewSection({
       return;
     }
     setErr(null);
+    markLocalMutation();
     setSubmitted(true);
   });
   return (
@@ -1281,6 +1291,7 @@ function PhotoIdSection({
         setErr(r.error);
         return;
       }
+      markLocalMutation();
       setPhotoIdKind(next);
     });
   };
@@ -1645,6 +1656,7 @@ function ApprovalSection({
       return;
     }
     setErr(null);
+    markLocalMutation();
     setLocalApproval({ at: new Date().toISOString(), name: trimmed });
   });
   return (

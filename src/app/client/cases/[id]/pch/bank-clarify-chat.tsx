@@ -25,6 +25,7 @@ import {
   recordBankClarifyAnswerAction,
   type ClarifyTarget,
 } from "@/app/client/pch/bank-actions";
+import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 type Props = {
   caseId: string;
@@ -121,6 +122,7 @@ export function BankClarifyChat({ caseId, initialPendingCount, onAnswered }: Pro
         },
       ]);
       setRemaining((n) => Math.max(0, n - 1));
+      markLocalMutation();
       onAnswered(txnId, r.newCategory, r.newConfidence);
       loadNext();
     });
