@@ -102,7 +102,7 @@ export function FinalPackReview({
 
       <div className="mt-3 flex flex-wrap gap-2">
         <a
-          href={`/accountant/cases/${caseId}/pch/export/pdf`}
+          href={`/client/cases/${caseId}/pch/export/pdf`}
           target="_blank"
           rel="noreferrer"
           className="inline-block rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
@@ -110,7 +110,7 @@ export function FinalPackReview({
           Download PDF
         </a>
         <a
-          href={`/accountant/cases/${caseId}/pch/export/xlsx`}
+          href={`/client/cases/${caseId}/pch/export/xlsx`}
           target="_blank"
           rel="noreferrer"
           className="inline-block rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
