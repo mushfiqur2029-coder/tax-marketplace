@@ -56,25 +56,39 @@ export default async function EngagementPage({
     redirect(`/client/cases/${id}/checkout`);
   }
 
-  const tier = await getTier(caseRow.tier);
+  const admin = createAdminClient();
+  const accountantId = (caseRow as unknown as { accountant_id: string | null })
+    .accountant_id;
+
+  // These reads don't depend on each other (only on caseRow, already
+  // in hand), so run them together instead of one after another. This
+  // page used to take them sequentially, four round-trips end to end,
+  // which was a chunk of the visible delay between submitting Step 3
+  // and landing here.
+  const [tier, caseData, profileRes, accProfileRes] = await Promise.all([
+    getTier(caseRow.tier),
+    loadClientCase(id),
+    admin
+      .from("client_profiles")
+      .select("name, contact_number")
+      .eq("user_id", me.id)
+      .maybeSingle(),
+    accountantId
+      ? admin
+          .from("accountant_profiles")
+          .select("legal_name, legal_company_number, trading_name")
+          .eq("user_id", accountantId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
   if (!tier) notFound();
   const isCompany = caseRow.segment === "limited_company_vat";
   if (isCompany && tier.group !== "company") notFound();
   if (!isCompany && tier.group !== "personal") notFound();
 
-  // Load the step tracker data alongside the engagement payload. This
-  // runs the standard progress calc so both Personal and LC see the
-  // same four-step chain (engagement -> pay -> onboarding -> submitted).
-  const caseData = await loadClientCase(id);
-
   // Pull the profile for the on-screen preview so the letter the client
   // signs shows their real name/phone, not placeholders.
-  const admin = createAdminClient();
-  const { data: profile } = await admin
-    .from("client_profiles")
-    .select("name, contact_number")
-    .eq("user_id", me.id)
-    .maybeSingle();
+  const profile = profileRes.data;
   const clientName = (profile?.name ?? me.name ?? me.email).trim();
   const clientPhone = (profile?.contact_number ?? "").trim();
 
@@ -112,23 +126,12 @@ export default async function EngagementPage({
   // (engagement-actions.ts). Null fields fall back to the hardcoded
   // Shann / NAFH values inside the template so legacy / unassigned
   // cases still render.
-  let accountantLegalName: string | null = null;
-  let accountantCompanyNumber: string | null = null;
-  let accountantTradingName: string | null = null;
-  const accountantId = (caseRow as unknown as { accountant_id: string | null })
-    .accountant_id;
-  if (accountantId) {
-    const { data: accProfile } = await admin
-      .from("accountant_profiles")
-      .select("legal_name, legal_company_number, trading_name")
-      .eq("user_id", accountantId)
-      .maybeSingle();
-    if (accProfile) {
-      accountantLegalName = accProfile.legal_name;
-      accountantCompanyNumber = accProfile.legal_company_number;
-      accountantTradingName = accProfile.trading_name;
-    }
-  }
+  const accProfile = accProfileRes.data;
+  const accountantLegalName: string | null = accProfile?.legal_name ?? null;
+  const accountantCompanyNumber: string | null =
+    accProfile?.legal_company_number ?? null;
+  const accountantTradingName: string | null =
+    accProfile?.trading_name ?? null;
 
   const previewHtml = renderEngagementLetterHtml({
     effectiveDate: todayLong,

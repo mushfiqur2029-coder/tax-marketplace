@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -174,16 +175,23 @@ export async function createCaseAction(
 
     if (error || !data) throw new Error(error?.message ?? "Could not create case.");
 
-    // Admin visibility on new case. Fire-and-forget - a notification
-    // failure must not block the client from reaching the engagement
-    // letter.
-    await insertCaseCreatedAdminNotification({
-      caseId: data.id,
-      clientEmail: me.email ?? "A client",
-      tierTitle: tierDef.title,
-      feeLabel: `£${(liveFeePence / 100).toFixed(0)}`,
-      isBespoke: false,
-    });
+    // Admin visibility on new case. This was actually being awaited
+    // here despite the comment, adding a real, visible delay (an extra
+    // admin-lookup query + insert) between the client submitting Step
+    // 3 and landing on the engagement letter. after() genuinely defers
+    // it past the response/redirect, same pattern as the case-message
+    // notification in case-messages/actions.ts, so a notification
+    // failure still can't block the client from reaching the letter,
+    // and now it can't slow them down either.
+    after(() =>
+      insertCaseCreatedAdminNotification({
+        caseId: data.id,
+        clientEmail: me.email ?? "A client",
+        tierTitle: tierDef.title,
+        feeLabel: `£${(liveFeePence / 100).toFixed(0)}`,
+        isBespoke: false,
+      }),
+    );
 
     revalidatePath("/client");
     // Both Personal and Limited Company go through the engagement letter
