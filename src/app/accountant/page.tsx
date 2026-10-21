@@ -1,49 +1,21 @@
-import Link from "next/link";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getSegment } from "@/lib/segments";
 import { getAllTiers } from "@/lib/service-catalog";
-import type { PlanTier } from "@/lib/plans";
-import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
-import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { PortalPageHeader } from "@/components/portal-page-header";
-import { EmptyState } from "@/components/empty-state";
-import { StatusPill } from "@/components/case/status-pill";
-import { DeadlinePill } from "@/components/case/deadline-pill";
-import { UrgentPill } from "@/components/case/urgent-pill";
 import {
-  AccountantCasesFilter,
-  type CasesView,
-  type UrgencyFilter,
-  type FeeFilter,
-  type DateFilter,
-  type ViewCounts,
+  AccountantDashboardLive,
+  type Row,
+} from "./accountant-dashboard-live";
+import type {
+  CasesView,
+  UrgencyFilter,
+  FeeFilter,
+  DateFilter,
 } from "./cases-filter";
 import { AccountantSuspensionBanner } from "./suspension-banner";
-import { formatDate, formatDateTime } from "@/lib/format";
-import { deadlinesForYear } from "@/lib/tax-engine";
 
 export const dynamic = "force-dynamic";
-
-type Row = {
-  id: string;
-  segment: string;
-  tier: string;
-  status: string;
-  stripe_payment_status: string;
-  submitted_at: string | null;
-  created_at: string;
-  accountant_id: string | null;
-  deadline: string | null;
-  is_urgent: boolean;
-  onboarding_submitted_at: string | null;
-  intake_answers: Record<string, string> | null;
-  custom_fee_pence: number | null;
-};
-
-// "Live" = cases actively being worked on right now.
-const LIVE_STATUSES = new Set(["in_review", "prepared", "filed"]);
 
 export default async function AccountantDashboard({
   searchParams,
@@ -112,28 +84,8 @@ export default async function AccountantDashboard({
   let queue = (queueRes.data ?? []) as Row[];
   const mine = (mineRes.data ?? []) as Row[];
 
-  // Pre-fetch every tier (including retired/admin-only/inactive) into
-  // a Map so the sync filter + render callbacks below can look prices +
-  // titles up without introducing per-row await.
-  const tierMap = new Map(
-    (
-      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
-    ).map((t) => [t.id as string, t]),
-  );
-
-  const live = mine.filter((c) => LIVE_STATUSES.has(c.status));
-  const completed = mine.filter((c) => c.status === "complete");
-  // "Pending" from the accountant's POV = returned to client for approval,
-  // now waiting on the client to sign off.
-  const pendingCases = mine.filter((c) => c.status === "client_approval");
-  // "Assigned" = admin pre-assigned (bespoke flow) and the case
-  // hasn't entered the active work status yet. Mostly bespoke cases
-  // in `draft` (client still to sign + pay) or `submitted` (paid,
-  // not yet moved to in_review). Visible immediately so the
-  // accountant can see what's coming + help the client via chat.
-  const assigned = mine.filter(
-    (c) => c.status === "draft" || c.status === "submitted",
-  );
+  const tiers = await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true });
+  const tierEntries = tiers.map((t) => [t.id as string, t] as const);
 
   // Effective-deadline map used for the urgency sort below. For PCH
   // automated cases the HMRC filing deadline comes from the engine's
@@ -148,8 +100,8 @@ export default async function AccountantDashboard({
   const pchIds = [...queue, ...mine]
     .filter((c) => c.tier === "uber_phv_automated")
     .map((c) => c.id);
-  const pchTaxYearById = new Map<string, string>();
-  const pchIntakeReadyById = new Map<string, boolean>();
+  const pchTaxYearEntries: Array<[string, string]> = [];
+  const pchIntakeReadyEntries: Array<[string, boolean]> = [];
   if (pchIds.length > 0) {
     // Use the service-role client here. The RLS policy on pch_cases
     // (migration 0080) only lets an accountant SELECT when they are
@@ -166,8 +118,8 @@ export default async function AccountantDashboard({
       .select("case_id, tax_year, engine_snapshot_at")
       .in("case_id", pchIds);
     for (const h of pchHeads ?? []) {
-      if (h.tax_year) pchTaxYearById.set(h.case_id, h.tax_year);
-      pchIntakeReadyById.set(h.case_id, !!h.engine_snapshot_at);
+      if (h.tax_year) pchTaxYearEntries.push([h.case_id as string, h.tax_year as string]);
+      pchIntakeReadyEntries.push([h.case_id as string, !!h.engine_snapshot_at]);
     }
   }
   // A PCH case hits status='submitted' the moment Stripe confirms
@@ -185,91 +137,10 @@ export default async function AccountantDashboard({
   // needs the accountant's help filling in the checklist itself, so
   // those cases stay visible in the open queue the moment payment
   // lands, same as before, regardless of onboarding_submitted_at.
+  const pchIntakeReadyMap = new Map(pchIntakeReadyEntries);
   queue = queue.filter(
-    (c) => c.tier !== "uber_phv_automated" || pchIntakeReadyById.get(c.id),
+    (c) => c.tier !== "uber_phv_automated" || pchIntakeReadyMap.get(c.id),
   );
-  const FAR_FUTURE = Number.MAX_SAFE_INTEGER;
-  const effectiveDeadline = (c: Row): number => {
-    if (c.tier === "uber_phv_automated") {
-      const ty = pchTaxYearById.get(c.id);
-      if (ty) {
-        try {
-          return deadlinesForYear(ty).filingDeadline.getTime();
-        } catch { /* fall through */ }
-      }
-    }
-    return c.deadline ? new Date(c.deadline).getTime() : FAR_FUTURE;
-  };
-  // Sort each pool: nearest deadline first (overdue cases bubble to
-  // the top because their timestamp is in the past). Tiebreaker:
-  // oldest submitted_at first so a case stuck in the queue longer
-  // doesn't get buried behind a same-deadline sibling.
-  const byDeadline = (a: Row, b: Row): number => {
-    const da = effectiveDeadline(a);
-    const db = effectiveDeadline(b);
-    if (da !== db) return da - db;
-    const sa = a.submitted_at ? new Date(a.submitted_at).getTime() : new Date(a.created_at).getTime();
-    const sb = b.submitted_at ? new Date(b.submitted_at).getTime() : new Date(b.created_at).getTime();
-    return sa - sb;
-  };
-  queue.sort(byDeadline);
-  live.sort(byDeadline);
-  pendingCases.sort(byDeadline);
-  assigned.sort(byDeadline);
-  // Completed cases keep newest-first so recently-closed work is
-  // easy to find without scrolling; sorting by deadline on a closed
-  // list doesn't carry the same "work this next" signal.
-
-  const viewCounts: ViewCounts = {
-    live: live.length,
-    queue: queue.length,
-    assigned: assigned.length,
-    completed: completed.length,
-    pending: pendingCases.length,
-  };
-
-  const pool =
-    view === "queue"
-      ? queue
-      : view === "assigned"
-        ? assigned
-        : view === "completed"
-          ? completed
-          : view === "pending"
-            ? pendingCases
-            : live;
-
-  const filtered = pool.filter((c) => {
-    if (fee !== "all") {
-      // Resolve to the actual quoted £ fee (prefers the per-case
-      // custom_fee_pence snapshot over the catalogue list price so
-      // bespoke engagements bucket correctly). Tiers that resolve to
-      // 0 (unknown id, or truly 0-priced placeholder) are excluded
-      // from every specific fee filter.
-      const pricePence = effectiveFeePence(c, tierMap.get(c.tier) ?? null);
-      if (pricePence <= 0) return false;
-      const priceGbp = pricePence / 100;
-      if (fee === "under_300" && priceGbp >= 300) return false;
-      if (fee === "300_to_600" && (priceGbp < 300 || priceGbp > 600)) return false;
-      if (fee === "over_600" && priceGbp <= 600) return false;
-    }
-    if (urgency !== "all") {
-      if (!c.deadline) return false;
-      const days = Math.round(
-        (new Date(c.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-      );
-      if (urgency === "urgent" && days > 3) return false;
-      if (urgency === "soon" && (days <= 3 || days > 14)) return false;
-      if (urgency === "safe" && days <= 14) return false;
-    }
-    if (date !== "all") {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - (date === "7d" ? 7 : date === "30d" ? 30 : 90));
-      const stamp = new Date(c.created_at).getTime();
-      if (stamp < cutoff.getTime()) return false;
-    }
-    return true;
-  });
 
   return (
     <>
@@ -279,161 +150,18 @@ export default async function AccountantDashboard({
         description="Pick up new cases from the queue and track everything you're working on."
       />
       <AccountantSuspensionBanner />
-      {/* Dashboard list refreshes on navigation. Live-merging the queue
-          would require a client wrapper over AccountantCasesFilter + list
-          with useLiveList on cases + case_addons; the dashboard is a
-          jumping-off point rather than a dwell page, so stale-on-next-
-          click is a fair tradeoff for now. */}
-      <AccountantCasesFilter view={view} urgency={urgency} fee={fee} date={date} counts={viewCounts} />
-
-      {filtered.length === 0 ? (
-        pool.length === 0 ? (
-          <EmptyState
-            title="Nothing to show here."
-            hint={
-              view === "queue"
-                ? "No paid cases waiting to be picked up. The bell will ping you when one lands."
-                : view === "live"
-                  ? "No cases are actively being worked on right now."
-                  : view === "pending"
-                    ? "No cases are waiting on the client to approve."
-                    : "No completed cases yet."
-            }
-          />
-        ) : (
-          <div className="card-sl border-dashed p-8 text-center sm:p-10">
-            <p className="text-lg font-semibold text-ink">
-              {pool.length} case{pool.length === 1 ? "" : "s"} hidden by filters.
-            </p>
-            <p className="mt-2 text-sm text-slate">
-              Loosen a filter to see them again.
-            </p>
-            <Link
-              href={`/accountant?view=${view}`}
-              className="mt-4 inline-flex items-center gap-2 rounded-full bg-navy-deep px-4 py-1.5 text-sm font-semibold text-white transition hover:opacity-90"
-            >
-              Clear filters
-            </Link>
-          </div>
-        )
-      ) : (
-        <ul className="grid gap-3">
-          {filtered.map((c) => (
-            <li key={c.id}>
-              {renderCard(
-                c,
-                tierMap.get(c.tier) ?? null,
-                c.tier === "uber_phv_automated"
-                  ? pchIntakeReadyById.get(c.id) ?? false
-                  : null,
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AccountantDashboardLive
+        meId={me.id}
+        initialMine={mine}
+        initialQueue={queue}
+        pchTaxYears={pchTaxYearEntries}
+        pchIntakeReady={pchIntakeReadyEntries}
+        tierEntries={tierEntries as Array<[string, typeof tiers[number]]>}
+        view={view}
+        urgency={urgency}
+        fee={fee}
+        date={date}
+      />
     </>
-  );
-}
-
-function renderCard(c: Row, tier: PlanTier | null, pchIntakeReady: boolean | null) {
-  const seg = getSegment(c.segment);
-  const isMine = !!c.accountant_id;
-  const companyName = companyNameFromAnswers(c.intake_answers, c.segment);
-  // Cases hit the queue the moment payment lands, not after the client
-  // submits onboarding, so some entries will still be mid-checklist.
-  // Flag that visibly so the accountant knows whether they're picking
-  // up a complete submission or stepping in to help a client who's
-  // partway through. Applies to both Personal and Limited Company
-  // *manual* flows: PCH automated tracks its own progress via
-  // engine_snapshot_at (see pchIntakeInProgress below) and never
-  // populates onboarding_submitted_at, so without a tier exclude the
-  // badge would stay on forever for every PCH case. The status gate
-  // keeps the badge off cases that have already moved on past the
-  // onboarding window regardless of segment.
-  const onboardingInProgress =
-    (c.segment === "limited_company_vat" || c.segment === "personal") &&
-    c.tier !== "uber_phv_automated" &&
-    !c.onboarding_submitted_at &&
-    (c.status === "draft" || c.status === "submitted");
-  // PCH queue cards get a parallel "intake in progress" nudge when the
-  // client has paid but not yet clicked Submit for review (no engine
-  // snapshot yet). pchIntakeReady is null for non-PCH tiers.
-  const pchIntakeInProgress = pchIntakeReady === false;
-  return (
-    <Link
-      href={`/accountant/cases/${c.id}`}
-      className="card-sl group flex items-center gap-4 p-5 transition hover:border-sky/40 hover:-translate-y-0.5"
-    >
-      <div
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
-        style={{
-          background: "linear-gradient(135deg, var(--navy), var(--sky))",
-        }}
-        aria-hidden="true"
-      >
-        {seg?.numeral ?? "."}
-      </div>
-      <div className="min-w-0 flex-1">
-        {companyName ? (
-          <div className="truncate text-sm font-semibold text-ink">
-            {companyName}
-          </div>
-        ) : null}
-        <div
-          className={
-            "flex flex-wrap items-center gap-2 " +
-            (companyName ? "mt-0.5" : "")
-          }
-        >
-          <span
-            className={
-              companyName
-                ? "text-xs text-slate"
-                : "text-sm font-semibold text-ink"
-            }
-          >
-            {seg?.title ?? c.segment}
-          </span>
-          <span className="text-xs text-slate">.</span>
-          <span className="text-xs text-slate">
-            {tier?.title ?? c.tier}. {formatFeeGbp(effectiveFeePence(c, tier))}
-          </span>
-        </div>
-        <div className="mt-1 text-xs text-slate">
-          {isMine
-            ? `Started ${formatDate(c.created_at)}`
-            : `Submitted ${c.submitted_at ? formatDateTime(c.submitted_at) : "."}`}
-        </div>
-        {onboardingInProgress ? (
-          <div
-            className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-            style={{
-              background: "rgba(217, 159, 25, 0.14)",
-              color: "#B57E12",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            Onboarding in progress · client may need help
-          </div>
-        ) : null}
-        {pchIntakeInProgress ? (
-          <div
-            className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-            style={{
-              background: "rgba(217, 159, 25, 0.14)",
-              color: "#B57E12",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            Intake in progress · client still filling in
-          </div>
-        ) : null}
-      </div>
-      <div className="flex flex-col items-end gap-1">
-        <StatusPill status={c.status} />
-        {c.is_urgent ? <UrgentPill size="sm" /> : null}
-        {c.deadline ? <DeadlinePill deadline={c.deadline} size="sm" /> : null}
-      </div>
-    </Link>
   );
 }

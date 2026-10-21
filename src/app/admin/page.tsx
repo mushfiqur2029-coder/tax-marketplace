@@ -4,24 +4,13 @@ import {
   isPrimaryAdmin,
 } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getSegment } from "@/lib/segments";
 import { getAllTiers } from "@/lib/service-catalog";
-import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
-import { companyNameFromAnswers } from "@/lib/case/company-label";
-import { EmptyState } from "@/components/empty-state";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { StatusPill } from "@/components/case/status-pill";
-import { DeadlinePill } from "@/components/case/deadline-pill";
-import { UrgentPill } from "@/components/case/urgent-pill";
 import { Avatar } from "@/components/avatar";
-import {
-  AdminCasesFilter,
-  type AdminCaseView,
-  type AdminCaseCounts,
-} from "./cases-filter";
+import { type AdminCaseView, type AdminCaseCounts } from "./cases-filter";
 import { deleteStaleDraftCaseAction } from "@/app/admin/actions";
 import { STALE_DRAFT_DAYS } from "@/app/admin/constants";
-import { DeleteStaleDraftButton } from "./delete-stale-draft-button";
+import { AdminDashboardLive, type Row } from "./admin-dashboard-live";
 
 export const dynamic = "force-dynamic";
 
@@ -93,22 +82,13 @@ export default async function AdminDashboard({
       .not("accountant_id", "is", null),
   ]);
 
-  const allCases = cases ?? [];
-  // Stale drafts: eligibility for the primary-admin-only delete flow.
-  // Mirrors the server-side STALE_DRAFT_DAYS threshold; the server
-  // action re-checks before actually deleting, so this is purely a
-  // display filter.
+  const allCases = (cases ?? []) as Row[];
+  // Mirrors admin-dashboard-live's IN_PROGRESS_STATUSES. The server-side
+  // count query uses the same list; the client wrapper derives its live
+  // tab counts from the capped list.
   // eslint-disable-next-line react-hooks/purity -- server component; one Date.now per request is fine.
   const staleCutoffMs = Date.now() - STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
   const staleCutoffIso = new Date(staleCutoffMs).toISOString();
-  const isStaleDraft = (c: {
-    status: string;
-    stripe_payment_status: string;
-    created_at: string;
-  }) =>
-    c.status === "draft" &&
-    c.stripe_payment_status !== "succeeded" &&
-    new Date(c.created_at).getTime() < staleCutoffMs;
 
   // Count queries hit COUNT indexes directly - no row payload, so
   // these stay fast even as the cases table grows past the dashboard
@@ -190,20 +170,8 @@ export default async function AdminDashboard({
     stale_drafts: staleDraftsCount ?? 0,
   };
 
-  const tierMap = new Map(
-    (
-      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
-    ).map((t) => [t.id as string, t]),
-  );
-
-  const filteredCases = allCases.filter((c) => {
-    if (view === "all") return true;
-    if (view === "in_progress") return IN_PROGRESS_STATUSES.has(c.status);
-    if (view === "completed") return c.status === "complete";
-    if (view === "pending") return c.status === "draft";
-    if (view === "stale_drafts") return isStaleDraft(c);
-    return true;
-  });
+  const tiers = await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true });
+  const tierEntries = tiers.map((t) => [t.id as string, t] as const);
 
   const relevantUserIds = Array.from(
     new Set([
@@ -214,7 +182,9 @@ export default async function AdminDashboard({
   const { data: users } = relevantUserIds.length
     ? await admin.from("users").select("id, email").in("id", relevantUserIds)
     : { data: [] as { id: string; email: string }[] };
-  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
+  const emailById: Record<string, string> = Object.fromEntries(
+    (users ?? []).map((u) => [u.id, u.email as string]),
+  );
 
   const nameById = new Map(
     (accountantProfiles ?? []).map((p) => [p.user_id, p.name]),
@@ -300,15 +270,15 @@ export default async function AdminDashboard({
                     <Avatar
                       path={avatarById.get(id) ?? null}
                       name={nameById.get(id) ?? null}
-                      email={emailById.get(id) ?? null}
+                      email={emailById[id] ?? null}
                       size={40}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-ink">
-                        {nameById.get(id) ?? emailById.get(id) ?? "."}
+                        {nameById.get(id) ?? emailById[id] ?? "."}
                       </div>
                       <div className="text-xs text-slate">
-                        {emailById.get(id) ?? id.slice(0, 8)}
+                        {emailById[id] ?? id.slice(0, 8)}
                       </div>
                     </div>
                     <div className="text-right">
@@ -336,232 +306,23 @@ export default async function AdminDashboard({
             className="text-sm font-semibold uppercase tracking-wider text-slate"
             style={{ fontFamily: "var(--font-mono)" }}
           >
-            Cases ({filteredCases.length})
+            Cases
           </h2>
         </div>
-        {/* Dashboard refreshes on navigation. Live-merging the case
-            list would need a client wrapper over AdminCasesFilter; low
-            payoff for a snapshot view. */}
-        <AdminCasesFilter active={view} counts={caseCounts} />
-        {view === "stale_drafts" ? (
-          <StaleDraftIntro callerIsPrimary={callerIsPrimary} />
-        ) : null}
-        {filteredCases.length === 0 ? (
-          <EmptyState
-            title={
-              totalCases === 0
-                ? "No cases yet."
-                : view === "stale_drafts"
-                  ? "No stale drafts."
-                  : "Nothing to show in this view."
-            }
-            hint={
-              totalCases === 0
-                ? "Cases will appear here as clients submit them."
-                : view === "stale_drafts"
-                  ? `Clients' draft cases that sit unpaid for more than ${STALE_DRAFT_DAYS} days will show up here.`
-                  : "Switch tabs above to see cases in other states."
-            }
-          />
-        ) : view === "stale_drafts" ? (
-          <ul className="grid gap-3">
-            {filteredCases.map((c) => {
-              const seg = getSegment(c.segment);
-              const tier = tierMap.get(c.tier) ?? null;
-              const companyName = companyNameFromAnswers(
-                c.intake_answers,
-                c.segment,
-              );
-              const ageDays = (
-                // eslint-disable-next-line react-hooks/purity -- server component; one Date.now per request is fine.
-                (Date.now() - new Date(c.created_at).getTime()) /
-                (1000 * 60 * 60 * 24)
-              ).toFixed(1);
-              const deleteCase = async (id: string) => {
-                "use server";
-                return deleteStaleDraftCaseAction(id);
-              };
-              return (
-                <li key={c.id}>
-                  <div className="card-sl flex items-center gap-4 p-5">
-                    <div
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, var(--navy), var(--sky))",
-                      }}
-                      aria-hidden="true"
-                    >
-                      {seg?.numeral ?? "•"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {companyName ? (
-                        <div className="truncate text-sm font-semibold text-ink">
-                          {companyName}
-                        </div>
-                      ) : null}
-                      <div
-                        className={
-                          "flex flex-wrap items-center gap-2 " +
-                          (companyName ? "mt-0.5" : "")
-                        }
-                      >
-                        <span
-                          className={
-                            companyName
-                              ? "text-xs text-slate"
-                              : "text-sm font-semibold text-ink"
-                          }
-                        >
-                          {seg?.title ?? c.segment}
-                        </span>
-                        <span className="text-xs text-slate">·</span>
-                        <span className="text-xs text-slate">
-                          {tier?.title ?? c.tier} ·{" "}
-                          {formatFeeGbp(effectiveFeePence(c, tier))}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-slate">
-                        Client {emailById.get(c.client_id) ?? "."}
-                        {" · "}
-                        <span className="text-ink">{ageDays} days old</span>
-                        {" · "}
-                        <Link
-                          href={`/admin/cases/${c.id}`}
-                          className="font-semibold text-navy-deep underline underline-offset-4 hover:text-sky"
-                        >
-                          Open case
-                        </Link>
-                      </div>
-                    </div>
-                    {callerIsPrimary ? (
-                      <DeleteStaleDraftButton
-                        caseId={c.id}
-                        deleteCase={deleteCase}
-                      />
-                    ) : (
-                      <span
-                        className="text-[11px] italic text-slate"
-                        style={{ fontFamily: "var(--font-mono)" }}
-                      >
-                        Primary admin only
-                      </span>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <ul className="grid gap-3">
-            {filteredCases.map((c) => {
-              const seg = getSegment(c.segment);
-              const tier = tierMap.get(c.tier) ?? null;
-              const companyName = companyNameFromAnswers(
-                c.intake_answers,
-                c.segment,
-              );
-              return (
-                <li key={c.id}>
-                  <Link
-                    href={`/admin/cases/${c.id}`}
-                    className="card-sl group flex items-center gap-4 p-5 transition hover:border-sky/40 hover:-translate-y-0.5"
-                  >
-                    <div
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
-                      style={{
-                        background: "linear-gradient(135deg, var(--navy), var(--sky))",
-                      }}
-                      aria-hidden="true"
-                    >
-                      {seg?.numeral ?? "•"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {companyName ? (
-                        <div className="truncate text-sm font-semibold text-ink">
-                          {companyName}
-                        </div>
-                      ) : null}
-                      <div
-                        className={
-                          "flex flex-wrap items-center gap-2 " +
-                          (companyName ? "mt-0.5" : "")
-                        }
-                      >
-                        <span
-                          className={
-                            companyName
-                              ? "text-xs text-slate"
-                              : "text-sm font-semibold text-ink"
-                          }
-                        >
-                          {seg?.title ?? c.segment}
-                        </span>
-                        <span className="text-xs text-slate">·</span>
-                        <span className="text-xs text-slate">
-                          {tier?.title ?? c.tier} · {formatFeeGbp(effectiveFeePence(c, tier))}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-slate">
-                        Client {emailById.get(c.client_id) ?? "."}
-                        {c.accountant_id ? (
-                          <>
-                            {" · Accountant "}
-                            {emailById.get(c.accountant_id) ?? "."}
-                          </>
-                        ) : (
-                          " · Unassigned"
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <StatusPill status={c.status} />
-                      {c.is_urgent ? <UrgentPill size="sm" /> : null}
-                      {c.deadline ? (
-                        <DeadlinePill deadline={c.deadline} size="sm" />
-                      ) : null}
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <AdminDashboardLive
+          initial={allCases}
+          initialCounts={caseCounts}
+          view={view}
+          callerIsPrimary={callerIsPrimary}
+          tierEntries={tierEntries as Array<[string, typeof tiers[number]]>}
+          emailById={emailById}
+          deleteStaleDraft={async (id: string) => {
+            "use server";
+            return deleteStaleDraftCaseAction(id);
+          }}
+        />
       </section>
     </>
-  );
-}
-
-// Short, context-setting panel shown at the top of the stale-drafts
-// view. Explains why they're flagged and who can act on them, so a
-// non-primary admin isn't left guessing why Delete is missing.
-function StaleDraftIntro({ callerIsPrimary }: { callerIsPrimary: boolean }) {
-  return (
-    <div
-      className="mb-4 rounded-xl border px-4 py-3 text-xs"
-      style={{
-        background: "rgba(217,159,25,0.08)",
-        borderColor: "rgba(217,159,25,0.35)",
-        color: "#8a5c05",
-      }}
-    >
-      <strong className="font-semibold">Stale drafts</strong>: cases started
-      more than {STALE_DRAFT_DAYS} days ago that never completed payment.
-      {callerIsPrimary ? (
-        <>
-          {" "}
-          You can permanently delete these. Deleting removes the case row
-          plus any documents uploaded against it, logged to the audit
-          trail.
-        </>
-      ) : (
-        <>
-          {" "}
-          Only the primary admin can delete these; everyone else sees them
-          here for visibility.
-        </>
-      )}
-    </div>
   );
 }
 

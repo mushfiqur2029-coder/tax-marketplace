@@ -1,18 +1,9 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getSegment } from "@/lib/segments";
 import { getAllTiers, getTier } from "@/lib/service-catalog";
-import { effectiveFeePence, formatFeeGbp } from "@/lib/case/pricing";
-import { companyNameFromAnswers } from "@/lib/case/company-label";
 import { PortalPageHeader } from "@/components/portal-page-header";
-import { EmptyState } from "@/components/empty-state";
 import { SLLink } from "@/components/sl-button";
-import { StatusPill } from "@/components/case/status-pill";
-import { DeadlinePill } from "@/components/case/deadline-pill";
-import { UrgentPill } from "@/components/case/urgent-pill";
-import { PchProgressTracker } from "@/components/case/pch-progress-tracker";
-import { ValidatedBadge } from "@/components/case/validated-badge";
 import { computeSa302ValidationState, type Sa302Comparison } from "@/lib/pch/sa302";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { deadlinesForYear } from "@/lib/tax-engine";
@@ -21,29 +12,16 @@ import {
   type DeadlineEntry,
 } from "@/components/case/deadline-countdown-card";
 import { formatDate } from "@/lib/format";
-import { ClientCasesFilter, type ClientCaseCounts } from "./client-cases-filter";
 import { ClientSuspensionBanner } from "./suspension-banner";
 import {
   UpcomingCallCard,
   type UpcomingBookingView,
 } from "@/components/booking/upcoming-call-card";
+import { ClientDashboardLive, type Row } from "./client-dashboard-live";
 
 export const dynamic = "force-dynamic";
 
 type View = "in_progress" | "completed" | "pending";
-
-// 'filed' is terminal from the client's HMRC perspective (return is
-// in with HMRC, nothing more for them to do), so it sits under the
-// Completed tab here. The accountant portal keeps 'filed' under Live
-// because they still have post-filing admin (mark complete, close
-// out), see src/app/accountant/page.tsx:46.
-const IN_PROGRESS = new Set([
-  "submitted",
-  "in_review",
-  "prepared",
-  "client_approval",
-]);
-const COMPLETED = new Set(["filed", "complete"]);
 
 export default async function ClientDashboard({
   searchParams,
@@ -105,7 +83,7 @@ export default async function ClientDashboard({
       .order("starts_at", { ascending: true }),
   ]);
 
-  const all = cases ?? [];
+  const all = (cases ?? []) as Row[];
 
   // PCH head rows: fetched once for both the Validated badge check and
   // the dashboard-level deadline countdown. Only cases whose client-
@@ -147,23 +125,8 @@ export default async function ClientDashboard({
     }
   }
 
-  const filtered = all.filter((c) => {
-    if (view === "completed") return COMPLETED.has(c.status);
-    if (view === "pending") return c.status === "draft";
-    return IN_PROGRESS.has(c.status);
-  });
-
-  const counts: ClientCaseCounts = {
-    in_progress: all.filter((c) => IN_PROGRESS.has(c.status)).length,
-    completed: all.filter((c) => COMPLETED.has(c.status)).length,
-    pending: all.filter((c) => c.status === "draft").length,
-  };
-
-  const tierMap = new Map(
-    (
-      await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true })
-    ).map((t) => [t.id as string, t]),
-  );
+  const tiers = await getAllTiers({ includeInactive: true, includeAdminCreateOnly: true });
+  const tierEntries = tiers.map((t) => [t.id as string, t] as const);
 
   // Index enquiries by id so bookings can resolve "is this enquiry
   // closed?" without a per-row DB round-trip. Index cases the same way
@@ -215,16 +178,12 @@ export default async function ClientDashboard({
         description="Track the status of your filings and chat with your accountant."
       />
       <ClientSuspensionBanner />
-      {/* Dashboard snapshot refreshes on navigation. The case workspaces
-          (where the client actually works) run live-merge internally for
-          the fields the client cares about mid-task. */}
 
       <UpcomingCalls bookings={upcomingBookings} />
 
       <DeadlineCountdownCard entries={deadlineEntries} />
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <ClientCasesFilter active={view} counts={counts} />
+      <div className="mb-6 flex items-center justify-end">
         {me.status !== "suspended" ? (
           <SLLink href="/client/new" variant="primary">
             Start a new return
@@ -235,97 +194,13 @@ export default async function ClientDashboard({
         ) : null}
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState
-          title={
-            all.length === 0
-              ? "Your cases will appear here."
-              : `Nothing ${view === "in_progress" ? "in progress" : view === "pending" ? "pending" : "completed"} right now.`
-          }
-          hint={
-            all.length === 0
-              ? "Click Start a new return above. Answer a few questions, upload documents, and pay to submit."
-              : "Switch tabs above to see cases in other states."
-          }
-        />
-      ) : (
-        <ul className="grid gap-3" data-dashboard-cases>
-          {filtered.map((c) => {
-            const seg = getSegment(c.segment);
-            const tier = tierMap.get(c.tier) ?? null;
-            const companyName = companyNameFromAnswers(
-              c.intake_answers,
-              c.segment,
-            );
-            return (
-              <li key={c.id}>
-                <Link
-                  href={`/client/cases/${c.id}`}
-                  className="card-sl group block p-5 transition hover:border-sky/40 hover:-translate-y-0.5"
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white text-lg"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, var(--navy), var(--sky))",
-                      }}
-                      aria-hidden="true"
-                    >
-                      {seg?.numeral ?? "•"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {companyName ? (
-                        <div className="truncate text-sm font-semibold text-ink">
-                          {companyName}
-                        </div>
-                      ) : null}
-                      <div
-                        className={
-                          "flex flex-wrap items-center gap-2 " +
-                          (companyName ? "mt-0.5" : "")
-                        }
-                      >
-                        <span
-                          className={
-                            companyName
-                              ? "text-xs text-slate"
-                              : "text-sm font-semibold text-ink"
-                          }
-                        >
-                          {seg?.title ?? c.segment}
-                        </span>
-                        <span className="text-xs text-slate">·</span>
-                        <span className="text-xs text-slate">
-                          {tier?.title ?? c.tier} · {formatFeeGbp(effectiveFeePence(c, tier))}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-slate">
-                        Started {formatDate(c.created_at)}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      {c.tier !== "uber_phv_automated" ? (
-                        <StatusPill status={c.status} />
-                      ) : null}
-                      {validatedCaseIds.has(c.id) ? <ValidatedBadge size="sm" /> : null}
-                      {c.is_urgent ? <UrgentPill size="sm" /> : null}
-                      {c.deadline ? (
-                        <DeadlinePill deadline={c.deadline} size="sm" />
-                      ) : null}
-                    </div>
-                  </div>
-                  {c.tier === "uber_phv_automated" && c.status !== "draft" ? (
-                    <div className="mt-4 border-t border-slate-100 pt-4">
-                      <PchProgressTracker status={c.status} compact />
-                    </div>
-                  ) : null}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ClientDashboardLive
+        clientId={me.id}
+        initial={all}
+        view={view}
+        tierEntries={tierEntries as Array<[string, typeof tiers[number]]>}
+        validatedCaseIds={Array.from(validatedCaseIds)}
+      />
 
       <EnquiriesHistory
         enquiries={enquiriesList.map((e) => ({
