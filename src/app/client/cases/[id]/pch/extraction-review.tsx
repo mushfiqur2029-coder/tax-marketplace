@@ -59,6 +59,18 @@ export function ExtractionReview({ ext, canEdit }: {
   ext: ExtractionReviewPayload;
   canEdit: boolean;
 }) {
+  // Task #14: no reload per click. Confirm/Edit/Skip each write a value
+  // we already know (the extracted value verbatim, or exactly what the
+  // client just typed), so this card owns its own copy of fieldStates
+  // and updates it directly, the summary counts below recompute from
+  // the same state so they stay in sync with each row's own display.
+  // (Sibling sections that read the server's head record, like the
+  // Identity summary, can lag until the next natural reload, same
+  // accepted trade-off as document uploads elsewhere in this app.)
+  const [fieldStates, setFieldStates] = useState(ext.fieldStates);
+  const setFieldState = (key: string, next: ExtractionFieldState) => {
+    setFieldStates((prev) => ({ ...prev, [key]: next }));
+  };
   if (ext.status === "pending") {
     return (
       <div className="mt-3 rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800">
@@ -88,16 +100,16 @@ export function ExtractionReview({ ext, canEdit }: {
   // the client should see them resolved in the summary chip count but
   // not have to Confirm/Edit/Skip each one by hand.
   const displayedKeys = targetableKeys.filter((k) => {
-    const s = ext.fieldStates[k];
+    const s = fieldStates[k];
     return !(s?.status === "rejected" && typeof s.actedBy === "string" && s.actedBy.startsWith("system:"));
   });
   const autoSkippedCount = targetableKeys.length - displayedKeys.length;
   const savedCount = targetableKeys.filter((k) => {
-    const s = ext.fieldStates[k];
+    const s = fieldStates[k];
     return s?.status === "accepted" || s?.status === "edited" || s?.status === "rejected";
   }).length;
   const pendingCount = displayedKeys.length - targetableKeys.filter((k) => {
-    const s = ext.fieldStates[k];
+    const s = fieldStates[k];
     return s?.status === "accepted" || s?.status === "edited";
   }).length;
 
@@ -145,7 +157,8 @@ export function ExtractionReview({ ext, canEdit }: {
             fieldKey={key}
             label={ext.labels[key] ?? key}
             field={ext.fields[key]}
-            state={ext.fieldStates[key] ?? { status: "proposed" }}
+            state={fieldStates[key] ?? { status: "proposed" }}
+            onStateChanged={(next) => setFieldState(key, next)}
             targetable={!!ext.targetable[key]}
             canEdit={canEdit}
           />
@@ -206,12 +219,13 @@ function ConfidenceBadge({ value }: { value: ExtractionFieldPayload["confidence"
   );
 }
 
-function FieldRow({ extractionId, fieldKey, label, field, state, targetable, canEdit }: {
+function FieldRow({ extractionId, fieldKey, label, field, state, onStateChanged, targetable, canEdit }: {
   extractionId: string;
   fieldKey: string;
   label: string;
   field: ExtractionFieldPayload;
   state: ExtractionFieldState;
+  onStateChanged: (next: ExtractionFieldState) => void;
   targetable: boolean;
   canEdit: boolean;
 }) {
@@ -222,14 +236,22 @@ function FieldRow({ extractionId, fieldKey, label, field, state, targetable, can
   );
   const [editing, setEditing] = useState(false);
 
+  // Task #14: no reload. Each action below writes a value we already
+  // know client-side, so on success we update this field's state
+  // directly (via the parent's fieldStates map) instead of reloading.
   const run = (
     fn: () => Promise<{ ok: boolean; error?: string }>,
+    nextState: ExtractionFieldState,
     after?: () => void,
   ) => {
     start(async () => {
       const r = await fn();
-      if (r.ok) { if (after) after(); window.location.reload(); }
-      else alert(r.error ?? "Action failed");
+      if (r.ok) {
+        if (after) after();
+        onStateChanged(nextState);
+      } else {
+        alert(r.error ?? "Action failed");
+      }
     });
   };
 
@@ -290,6 +312,7 @@ function FieldRow({ extractionId, fieldKey, label, field, state, targetable, can
                     isFinite(Number(draft)) && draft.match(/^-?\d/) ? Number(draft) : draft;
                   run(
                     () => editPchExtractionFieldAction(extractionId, fieldKey, next),
+                    { status: "edited", overrideValue: next, actedAt: new Date().toISOString() },
                     () => setEditing(false),
                   );
                 }}
@@ -307,7 +330,10 @@ function FieldRow({ extractionId, fieldKey, label, field, state, targetable, can
               <button
                 type="button"
                 disabled={pending || field.confidence === "missing" || field.value == null}
-                onClick={() => run(() => acceptPchExtractionFieldAction(extractionId, fieldKey))}
+                onClick={() => run(
+                  () => acceptPchExtractionFieldAction(extractionId, fieldKey),
+                  { status: "accepted", overrideValue: undefined, actedAt: new Date().toISOString() },
+                )}
                 className="rounded bg-emerald-600 px-2 py-1 text-white disabled:opacity-50"
               >Confirm</button>
               <button
@@ -319,7 +345,10 @@ function FieldRow({ extractionId, fieldKey, label, field, state, targetable, can
               <button
                 type="button"
                 disabled={pending}
-                onClick={() => run(() => rejectPchExtractionFieldAction(extractionId, fieldKey))}
+                onClick={() => run(
+                  () => rejectPchExtractionFieldAction(extractionId, fieldKey),
+                  { status: "rejected", overrideValue: undefined, actedAt: new Date().toISOString() },
+                )}
                 className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700"
               >Skip</button>
             </>
