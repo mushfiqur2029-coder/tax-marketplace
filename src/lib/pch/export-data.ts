@@ -94,6 +94,18 @@ export type PchExportPayload = {
     name: string | null;
     at: string | null;
   };
+
+  // The two dates that go on the signature lines (ACCOUNTANT'S REPORT
+  // + CLIENT'S APPROVAL on page 2, and the P&L sign-off on page 3).
+  // sentAt is when the accountant finalised and sent this pack
+  // (final_pack_sent_at); confirmedAt is when the client typed their
+  // name to confirm it (final_pack_confirmed_at). Either can be null
+  // (not reached that step yet), in which case the signature line
+  // falls back to a blank dotted line for manual dating.
+  finalPack: {
+    sentAt: string | null;
+    confirmedAt: string | null;
+  };
 };
 
 const SL_FALLBACK_FIRM_NAME = "Sterling Ledger";
@@ -150,7 +162,7 @@ export async function buildPchExportPayload(
   ] = await Promise.all([
     admin
       .from("pch_cases")
-      .select("tax_year, cl_name, cl_email, cl_utr, cl_nino, cl_address, cl_postcode, engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name")
+      .select("tax_year, cl_name, cl_email, cl_utr, cl_nino, cl_address, cl_postcode, engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name, final_pack_sent_at, final_pack_confirmed_at")
       .eq("case_id", caseId)
       .single(),
     admin
@@ -330,6 +342,10 @@ export async function buildPchExportPayload(
     approval: {
       name: head?.client_approval_name ?? null,
       at: head?.client_approval_at ?? null,
+    },
+    finalPack: {
+      sentAt: head?.final_pack_sent_at ?? null,
+      confirmedAt: head?.final_pack_confirmed_at ?? null,
     },
   };
 }

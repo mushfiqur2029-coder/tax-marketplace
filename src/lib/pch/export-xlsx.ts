@@ -16,6 +16,13 @@ import { SA103S_UI } from "./sa103s-labels";
 
 const SIGNATURE_DOTS = "………………………………………………........";
 
+// Same fallback as the PDF builder: a real date once that step has
+// actually happened, a blank dotted line beforehand.
+function sigDate(iso: string | null): string {
+  if (!iso) return SIGNATURE_DOTS;
+  return new Date(iso).toLocaleDateString("en-GB");
+}
+
 function newSheet(aoa: (string | number | null | undefined)[][]): XLSX.WorkSheet {
   return XLSX.utils.aoa_to_sheet(aoa as unknown as (string | number)[][]);
 }
@@ -67,7 +74,8 @@ export function renderPchExportXlsx(p: PchExportPayload): Uint8Array {
   XLSX.utils.book_append_sheet(wb, coverSheet, "Cover Page");
 
   // --- Accountant's Report & Client's Approval ---
-  const reportDate = `Date: ${SIGNATURE_DOTS}`;
+  const accountantReportDate = `Date: ${sigDate(p.finalPack.sentAt)}`;
+  const clientApprovalDate = `Date: ${sigDate(p.finalPack.confirmedAt)}`;
   const reportAoa: (string | null)[][] = [
     [], [],
     ["ACCOUNTANT'S REPORT"],
@@ -75,14 +83,14 @@ export function renderPchExportXlsx(p: PchExportPayload): Uint8Array {
     [`We have prepared without carrying out an audit the attached Profit and Loss Account for the period ended ${p.periodEndedPhrase}. These have been prepared from the information, accounting records and explanation received from the client named below.`],
   ];
   while (reportAoa.length < 14) reportAoa.push([]);
-  reportAoa.push([p.preparedBy.firmName, null, null, reportDate]);
+  reportAoa.push([p.preparedBy.firmName, null, null, accountantReportDate]);
   for (const line of p.preparedBy.addressLines) reportAoa.push([line]);
   while (reportAoa.length < 26) reportAoa.push([]);
   reportAoa.push(["CLIENT'S APPROVAL"]);
   reportAoa.push([]);
   reportAoa.push([`I have approved the attached Profit and Loss Account for the period ending ${p.periodEndedPhrase}. These have been prepared from the information, records and explanations given by me.`]);
   while (reportAoa.length < 38) reportAoa.push([]);
-  reportAoa.push([p.client.name, null, null, reportDate]);
+  reportAoa.push([p.client.name, null, null, clientApprovalDate]);
   const reportSheet = newSheet(reportAoa);
   reportSheet["!cols"] = [{ wch: 32 }, { wch: 20 }, { wch: 10 }, { wch: 44 }];
   // Widen row 4 (disclaimer) so the long paragraph wraps nicely in Excel.
@@ -112,7 +120,7 @@ export function renderPchExportXlsx(p: PchExportPayload): Uint8Array {
   headerRows.push(["Net Profit", null, null, null, null, Math.round(p.accountsPack.netProfit)]);
   headerRows.push([]);
   headerRows.push([]);
-  headerRows.push([p.client.name, null, null, reportDate]);
+  headerRows.push([p.client.name, null, null, clientApprovalDate]);
   const plSheet = newSheet(headerRows);
   plSheet["!cols"] = [{ wch: 28 }, { wch: 4 }, { wch: 4 }, { wch: 14 }, { wch: 4 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, plSheet, "P&L");

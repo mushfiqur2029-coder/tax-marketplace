@@ -17,6 +17,15 @@ const fmtMoneyWhole = (n: number) =>
 const fmtMoney2 = (n: number) =>
   (n ?? 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// A signature-line date: the real date once that step has actually
+// happened (accountant sent / client confirmed), a blank dotted line
+// beforehand so it still reads as a line to date by hand if printed
+// before that point.
+function sigDate(iso: string | null): string {
+  if (!iso) return SIGNATURE_DOTS;
+  return new Date(iso).toLocaleDateString("en-GB");
+}
+
 function esc(s: string | null | undefined): string {
   return (s ?? "")
     .replace(/&/g, "&amp;")
@@ -70,7 +79,7 @@ function buildHtml(p: PchExportPayload): string {
           ${addressLines(p.preparedBy.addressLines)}
         </div>
         <div class="sig-right">
-          Date: &nbsp;${SIGNATURE_DOTS}
+          Date: &nbsp;${sigDate(p.finalPack.sentAt)}
         </div>
       </div>
 
@@ -87,7 +96,7 @@ function buildHtml(p: PchExportPayload): string {
           <div class="sig-name"><strong>${esc(p.client.name)}</strong></div>
         </div>
         <div class="sig-right">
-          Date: &nbsp;${SIGNATURE_DOTS}
+          Date: &nbsp;${sigDate(p.finalPack.confirmedAt)}
         </div>
       </div>
     </section>`;
@@ -160,7 +169,7 @@ function buildHtml(p: PchExportPayload): string {
 
       <div class="pl-signoff">
         <div class="sig-left">${esc(p.client.name)}</div>
-        <div class="sig-right"><strong>Date:</strong> &nbsp;&nbsp;${SIGNATURE_DOTS}</div>
+        <div class="sig-right"><strong>Date:</strong> &nbsp;&nbsp;${sigDate(p.finalPack.confirmedAt)}</div>
       </div>
     </section>`;
 
@@ -207,7 +216,6 @@ function buildHtml(p: PchExportPayload): string {
 
   const workingPapersPages = `
     <section class="page wp">
-      <div class="wp-banner">Working papers &middot; not for filing</div>
       <h2 class="wp-head">Accountant working papers</h2>
       <div class="wp-meta">
         Client ${esc(p.client.name)} &nbsp;&middot;&nbsp; Case ${esc(p.caseId)} &nbsp;&middot;&nbsp;
@@ -327,8 +335,7 @@ function buildHtml(p: PchExportPayload): string {
   .pl-signoff .sig-right { display: table-cell; text-align: right; }
 
   /* --- Working papers --- */
-  .wp-banner { background: #fef3c7; color: #78350f; padding: 2mm 4mm; border-left: 3mm solid #d97706; font-weight: 700; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8mm; }
-  .wp-head { font-size: 16px; margin: 0 0 2mm; }
+  .wp-head { font-size: 16px; margin: 0 0 8mm; }
   .wp-meta { color: #64748b; font-size: 11px; margin-bottom: 8mm; }
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; }
   .wp-sub { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; margin: 0 0 3mm; border-bottom: 1px solid #e2e8f0; padding-bottom: 1mm; }
