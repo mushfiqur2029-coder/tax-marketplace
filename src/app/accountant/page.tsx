@@ -160,19 +160,27 @@ export default async function AccountantDashboard({
       pchIntakeReadyById.set(h.case_id, !!h.engine_snapshot_at);
     }
   }
-  // A PCH case hits status='submitted' the moment Stripe confirms
-  // payment, before the client has done anything beyond paying. It
-  // used to join the open queue immediately at that point (with an
-  // "Intake in progress" badge below), but that put unworked, half-
-  // empty cases in front of every accountant the second a client paid.
-  // Now the queue itself waits for the client's explicit "Submit for
-  // review" (which stamps engine_snapshot_at); until then the case is
-  // still visible on the client's own dashboard and editable as
-  // normal, it just doesn't show up here yet. Other tiers have no
-  // equivalent submit step, so they're untouched.
-  queue = queue.filter(
-    (c) => c.tier !== "uber_phv_automated" || pchIntakeReadyById.get(c.id),
-  );
+  // A case hits status='submitted' the moment Stripe confirms payment,
+  // before the client has done anything beyond paying. The open queue
+  // used to show these immediately (with an "in progress" badge below),
+  // but that put unworked, half-empty cases in front of every
+  // accountant the second a client paid, rather than after the client
+  // actually finished telling us about their situation. The queue now
+  // waits for that explicit client "submit for review" step on every
+  // segment: PCH (stamps pch_cases.engine_snapshot_at) and Personal /
+  // Limited Company (stamps cases.onboarding_submitted_at via the
+  // onboarding checklist). Admin-assigned bespoke cases go straight to
+  // "mine" below and never pass through this open queue, so they're
+  // unaffected. Until the client submits, the case is still visible
+  // and editable on their own dashboard as normal, it just doesn't
+  // show up here yet.
+  queue = queue.filter((c) => {
+    if (c.tier === "uber_phv_automated") return !!pchIntakeReadyById.get(c.id);
+    if (c.segment === "personal" || c.segment === "limited_company_vat") {
+      return !!c.onboarding_submitted_at;
+    }
+    return true;
+  });
   const FAR_FUTURE = Number.MAX_SAFE_INTEGER;
   const effectiveDeadline = (c: Row): number => {
     if (c.tier === "uber_phv_automated") {
@@ -332,11 +340,13 @@ function renderCard(c: Row, tier: PlanTier | null, pchIntakeReady: boolean | nul
   const seg = getSegment(c.segment);
   const isMine = !!c.accountant_id;
   const companyName = companyNameFromAnswers(c.intake_answers, c.segment);
-  // Cases hit the queue the moment payment lands, not after the client
-  // submits onboarding, so some entries will still be mid-checklist.
-  // Flag that visibly so the accountant knows whether they're picking
-  // up a complete submission or stepping in to help a client who's
-  // partway through. Applies to both Personal and Limited Company.
+  // The open queue (see the filter above) only ever shows Personal /
+  // Limited Company cases once onboarding_submitted_at is set, so this
+  // only fires here for an already-assigned (admin pre-assigned
+  // bespoke, or already-picked-up) case still mid-checklist. Flag that
+  // visibly so the accountant knows whether they're looking at a
+  // complete submission or stepping in to help a client who's partway
+  // through. Applies to both Personal and Limited Company.
   const onboardingInProgress =
     (c.segment === "limited_company_vat" || c.segment === "personal") &&
     !c.onboarding_submitted_at;
