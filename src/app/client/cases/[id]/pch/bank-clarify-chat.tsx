@@ -31,6 +31,12 @@ type Props = {
   // Initial queue size so the UI shows "N transactions still need your
   // input" without a round-trip. Loaded by the parent server component.
   initialPendingCount: number;
+  // Task #14: no reload. recordBankClarifyAnswerAction returns the new
+  // category straight away, so we hand it up to LedgerSection (the
+  // shared source of truth for the transaction list) instead of
+  // reloading the page, which also keeps the ledger table below in
+  // sync without a round-trip.
+  onAnswered: (txnId: string, category: string, confidence: string) => void;
 };
 
 type Turn =
@@ -38,7 +44,7 @@ type Turn =
   | { role: "user"; text: string }
   | { role: "status"; text: string };
 
-export function BankClarifyChat({ caseId, initialPendingCount }: Props) {
+export function BankClarifyChat({ caseId, initialPendingCount, onAnswered }: Props) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [current, setCurrent] = useState<ClarifyTarget | null>(null);
   const [draft, setDraft] = useState("");
@@ -115,7 +121,7 @@ export function BankClarifyChat({ caseId, initialPendingCount }: Props) {
         },
       ]);
       setRemaining((n) => Math.max(0, n - 1));
-      window.location.reload();
+      onAnswered(txnId, r.newCategory, r.newConfidence);
       loadNext();
     });
   };

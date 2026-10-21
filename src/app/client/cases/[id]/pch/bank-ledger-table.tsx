@@ -32,6 +32,11 @@ type Props = {
   caseId: string;
   transactions: BankTransactionView[];
   editable?: boolean;
+  // Task #14: owned by the parent (LedgerSection) so this table and
+  // BankClarifyChat share one source of truth for the transaction list,
+  // a clarify-chat answer and a ledger edit both stay in sync without a
+  // reload.
+  onCategoryChanged: (txnId: string, category: string) => void;
 };
 
 // Mirrors bank-categories.ts (client-safe copy of key, label, direction
@@ -97,19 +102,7 @@ function groupByCategory(txns: BankTransactionView[]): Group[] {
   });
 }
 
-export function BankLedgerTable({ caseId, transactions: initialTransactions, editable = true }: Props) {
-  // Task #14: no reload. Group totals are derived from this local copy of
-  // the transaction list, and a row's category edit updates its one entry
-  // here directly (we know exactly what the server just wrote, since we
-  // just sent it), so the totals recompute instantly without a round-trip.
-  const [transactions, setTransactions] = useState(initialTransactions);
-  const setCategory = (txnId: string, category: string) => {
-    // Matches setBankTransactionCategoryAction, which always stamps a
-    // manual edit as "high" confidence server-side.
-    setTransactions((prev) =>
-      prev.map((t) => (t.id === txnId ? { ...t, category, categoryConfidence: "high" } : t)),
-    );
-  };
+export function BankLedgerTable({ caseId, transactions, editable = true, onCategoryChanged }: Props) {
   const groups = useMemo(() => groupByCategory(transactions), [transactions]);
   const totals = useMemo(() => {
     let income = 0;
@@ -153,7 +146,7 @@ export function BankLedgerTable({ caseId, transactions: initialTransactions, edi
             caseId={caseId}
             group={g}
             editable={editable}
-            onCategoryChanged={setCategory}
+            onCategoryChanged={onCategoryChanged}
           />
         ))}
       </ul>

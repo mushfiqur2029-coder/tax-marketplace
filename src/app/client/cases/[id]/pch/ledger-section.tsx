@@ -12,9 +12,15 @@
 //   - BankLedgerTable: grouped view of every transaction, totals, and
 //     inline category edits.
 //
+// Task #14: this section is the shared source of truth for the
+// transaction list so a clarify-chat answer and a ledger-table edit
+// both update the same local state, no reload, no stale data between
+// the two sibling panels.
+//
 // Renders nothing when the client hasn't uploaded a bank statement
 // yet; the Documents section's bank slot has the upload prompt.
 
+import { useState } from "react";
 import { BankClarifyChat } from "./bank-clarify-chat";
 import {
   BankLedgerTable,
@@ -37,7 +43,25 @@ function countPending(transactions: BankTransactionView[]): number {
   return n;
 }
 
-export function LedgerSection({ caseId, transactions, editable = true }: Props) {
+const CONFIDENCE_VALUES = ["high", "medium", "low", "missing"] as const;
+function coerceConfidence(v: string): BankTransactionView["categoryConfidence"] {
+  return (CONFIDENCE_VALUES as readonly string[]).includes(v)
+    ? (v as BankTransactionView["categoryConfidence"])
+    : "high";
+}
+
+export function LedgerSection({ caseId, transactions: initialTransactions, editable = true }: Props) {
+  const [transactions, setTransactions] = useState(initialTransactions);
+  const setCategory = (
+    txnId: string,
+    category: string,
+    categoryConfidence: BankTransactionView["categoryConfidence"] | string = "high",
+  ) => {
+    const confidence = coerceConfidence(String(categoryConfidence));
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === txnId ? { ...t, category, categoryConfidence: confidence } : t)),
+    );
+  };
   if (transactions.length === 0) return null;
   const pending = countPending(transactions);
   return (
@@ -54,9 +78,18 @@ export function LedgerSection({ caseId, transactions, editable = true }: Props) 
         </div>
       </header>
       {editable ? (
-        <BankClarifyChat caseId={caseId} initialPendingCount={pending} />
+        <BankClarifyChat
+          caseId={caseId}
+          initialPendingCount={pending}
+          onAnswered={(txnId, category, confidence) => setCategory(txnId, category, confidence)}
+        />
       ) : null}
-      <BankLedgerTable caseId={caseId} transactions={transactions} editable={editable} />
+      <BankLedgerTable
+        caseId={caseId}
+        transactions={transactions}
+        editable={editable}
+        onCategoryChanged={setCategory}
+      />
     </div>
   );
 }
