@@ -1,7 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Bell } from "@/components/bell";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { AccountantShell } from "./accountant-shell";
 import { getAccountantNavCounts } from "./accountant-counts";
 
@@ -47,14 +46,12 @@ export default async function AccountantLayout({
       }}
       bell={<Bell userId={me.id} role={me.role} />}
     >
-      {/* Layout-level subscription keeps the sidebar queue / mine
-          badges fresh when other accountants take cases or the user's
-          own case progresses. Filtered subscriptions wouldn't help
-          here, any cases change may flip either count. */}
-      <RealtimeRefresh
-        channel={`accountant-layout-${me.id}`}
-        subscriptions={[{ table: "cases" }]}
-      />
+      {/* Sidebar queue / mine badge counts are rendered server-side via
+          getAccountantNavCounts and refresh on every navigation; live-
+          merging the counts would require a client wrapper over
+          AccountantShell. Accountant navigation is already route-heavy
+          (open case → work → back to list), so stale-until-next-click
+          is a reasonable tradeoff. */}
       {children}
     </AccountantShell>
   );

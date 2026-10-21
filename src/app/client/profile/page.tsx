@@ -6,7 +6,6 @@ import {
 } from "@/app/profile-actions";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { ClientProfileForm } from "./client-profile-form";
 import { ChangePasswordForm } from "@/components/change-password-form";
 
@@ -53,17 +52,10 @@ export default async function ClientAccountPage() {
         description="Update your personal details or change your password."
       />
       <ClientSuspensionBanner />
-      <RealtimeRefresh
-        channel={`client-profile-${me.id}`}
-        subscriptions={[
-          // Admin approves / rejects the pending change, the status
-          // field drives the "awaiting review" banner on this page.
-          {
-            table: "pending_profile_changes",
-            filter: `user_id=eq.${me.id}`,
-          },
-        ]}
-      />
+      {/* Admin approval of a pending profile change takes hours to days;
+          an F5 or navigation back to this page is a better fit than a
+          mounted realtime watcher that pays the connection cost just to
+          surface a slow-loop flip. */}
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"

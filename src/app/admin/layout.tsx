@@ -2,7 +2,6 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Bell } from "@/components/bell";
 import { AdminShell } from "@/components/admin/admin-sidebar";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { getAdminNavCounts } from "./admin-counts";
 
 // Nested layout for /admin/**. Owns the sidebar + main-area frame so
@@ -41,23 +40,12 @@ export default async function AdminLayout({
       }}
       bell={<Bell userId={me.id} role={me.role} />}
     >
-      {/* Layout-level subscription so sidebar badge counts refresh
-          when their source tables change (any admin page). The counts
-          come from Promise.all over these tables in admin-counts.ts;
-          adding more subscriptions here will keep them in sync.
-          Tables not yet in the realtime publication (users, accountant_
-          profiles) stale until next navigation, acceptable since
-          admins typically navigate to the page they want to action. */}
-      <RealtimeRefresh
-        channel={`admin-layout-${me.id}`}
-        subscriptions={[
-          { table: "withdrawal_requests" },
-          { table: "pending_profile_changes" },
-          { table: "case_addons" },
-          { table: "service_enquiries" },
-          { table: "support_threads" },
-        ]}
-      />
+      {/* Sidebar badge counts are rendered server-side via getAdminNavCounts
+          and refresh on every navigation. Live-merging the counts would
+          require a client-wrapper over AdminShell with a useLiveList per
+          watched table plus local count derivation; admin navigation is
+          already route-heavy, so stale-until-next-click is the better
+          tradeoff than paying for five mounted subscriptions page-wide. */}
       {children}
     </AdminShell>
   );

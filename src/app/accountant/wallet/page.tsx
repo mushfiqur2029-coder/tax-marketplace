@@ -8,7 +8,6 @@ import { ReceiptLink } from "./receipt-link";
 import { getReceiptSignedUrl } from "@/app/admin/actions";
 import { formatDateTime } from "@/lib/format";
 import { IncomeSubnav } from "./income-subnav";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -88,21 +87,9 @@ export default async function WalletPage({
         description="You earn 50% of each case fee. Request a withdrawal to your bank when you're ready."
       />
       <IncomeSubnav active={view} />
-      <RealtimeRefresh
-        channel={`accountant-wallet-${me.id}`}
-        subscriptions={[
-          // Commission posts on case complete + manual admin credits.
-          {
-            table: "wallet_transactions",
-            filter: `accountant_id=eq.${me.id}`,
-          },
-          // Admin approves / rejects / marks paid.
-          {
-            table: "withdrawal_requests",
-            filter: `accountant_id=eq.${me.id}`,
-          },
-        ]}
-      />
+      {/* Wallet credits and withdrawal state refresh on navigation. The
+          admin side flips are infrequent enough that mounting a realtime
+          watcher page-wide isn't worth the overhead. */}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <StatCard label="Available" pence={available} tone="mint" />

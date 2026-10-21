@@ -19,7 +19,6 @@ import {
 } from "@/lib/engagement/period-docs";
 import { AddonPayBanner } from "./addon-pay-banner";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import {
   sendMessageAction,
   uploadMessageAttachmentAction,
@@ -318,22 +317,8 @@ export default async function CaseDetailPage({
         }
       />
       <ClientSuspensionBanner />
-      <RealtimeRefresh
-        channel={`client-case-${data.row.id}`}
-        subscriptions={[
-          // Accountant status moves, admin reassigns, payment flips.
-          { table: "cases", filter: `id=eq.${data.row.id}` },
-          // Accountant adds / client pays an add-on; the status flip
-          // doesn't touch cases, so it needs its own subscription.
-          { table: "case_addons", filter: `case_id=eq.${data.row.id}` },
-          // Accountant uploads Annual Accounts + CT600 for approval,
-          // or VAT return PDFs, the file list on the case page needs
-          // to refresh so the client can open the new file.
-          { table: "case_documents", filter: `case_id=eq.${data.row.id}` },
-          // Accountant moves a VAT cycle (sets due date, marks filed).
-          { table: "vat_return_cycles", filter: `case_id=eq.${data.row.id}` },
-        ]}
-      />
+      {/* Non-PCH case view: documents + chat panels already live-merge
+          inside themselves. Status/addon flips refresh on navigation. */}
       {paid === "1" && data.progress.paid ? (
         <div
           role="status"

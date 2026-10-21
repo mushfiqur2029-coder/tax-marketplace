@@ -23,7 +23,6 @@ import {
 import { formatDate } from "@/lib/format";
 import { ClientCasesFilter, type ClientCaseCounts } from "./client-cases-filter";
 import { ClientSuspensionBanner } from "./suspension-banner";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import {
   UpcomingCallCard,
   type UpcomingBookingView,
@@ -216,23 +215,9 @@ export default async function ClientDashboard({
         description="Track the status of your filings and chat with your accountant."
       />
       <ClientSuspensionBanner />
-      <RealtimeRefresh
-        channel={`client-dashboard-${me.id}`}
-        subscriptions={[
-          { table: "cases", filter: `client_id=eq.${me.id}` },
-          // Covers add-on paid updates (status flip) so the "Payment required" badge disappears live.
-          { table: "case_addons" },
-          // Bookings for the upcoming-calls section; booking in a
-          // second tab or admin cancelling updates the first tab
-          // without a reload.
-          { table: "bookings", filter: `client_id=eq.${me.id}` },
-          // Enquiries: when admin flips the status (contacted / closed
-          // / converted-to-case) the upcoming-calls section hides any
-          // associated booking and the Enquiries history re-renders
-          // without a reload.
-          { table: "service_enquiries", filter: `client_id=eq.${me.id}` },
-        ]}
-      />
+      {/* Dashboard snapshot refreshes on navigation. The case workspaces
+          (where the client actually works) run live-merge internally for
+          the fields the client cares about mid-task. */}
 
       <UpcomingCalls bookings={upcomingBookings} />
 

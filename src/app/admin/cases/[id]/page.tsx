@@ -43,7 +43,6 @@ import {
   type VatApprovalPayload,
 } from "@/lib/vat/cycle";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { StatusPill } from "@/components/case/status-pill";
 import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -345,15 +344,9 @@ export default async function AdminCasePage({
 
   return (
     <>
-      <RealtimeRefresh
-        channel={`admin-case-${row.id}`}
-        subscriptions={[
-          { table: "cases", filter: `id=eq.${row.id}` },
-          { table: "case_addons", filter: `case_id=eq.${row.id}` },
-          { table: "case_documents", filter: `case_id=eq.${row.id}` },
-          { table: "vat_return_cycles", filter: `case_id=eq.${row.id}` },
-        ]}
-      />
+      {/* Admin case oversight is a snapshot view; the active live-merge
+          happens on the client's and accountant's own case pages. Admins
+          can F5 to see the latest. */}
       <AdminPageHeader
         eyebrow={caseEyebrow({
           segmentTitle: seg.title,

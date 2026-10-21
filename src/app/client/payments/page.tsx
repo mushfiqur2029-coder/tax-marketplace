@@ -7,7 +7,6 @@ import { effectiveFeePence } from "@/lib/case/pricing";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ClientSuspensionBanner } from "@/app/client/suspension-banner";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -44,13 +43,9 @@ export default async function ClientPaymentsPage() {
         description="Every case you've paid for, with the Stripe reference for your records."
       />
       <ClientSuspensionBanner />
-      <RealtimeRefresh
-        channel={`client-payments-${me.id}`}
-        subscriptions={[
-          { table: "cases", filter: `client_id=eq.${me.id}` },
-          { table: "case_addons" },
-        ]}
-      />
+      {/* Payment history refreshes on navigation; the per-case live
+          merges on the case workspaces already surface addon flips in
+          the active surface. */}
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
         <StatCard label="Payments made" value={String(cases?.length ?? 0)} />
         <StatCard label="Total paid" value={`£${(totalPence / 100).toFixed(2)}`} />

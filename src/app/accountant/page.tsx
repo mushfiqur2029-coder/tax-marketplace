@@ -20,7 +20,6 @@ import {
   type DateFilter,
   type ViewCounts,
 } from "./cases-filter";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { AccountantSuspensionBanner } from "./suspension-banner";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { deadlinesForYear } from "@/lib/tax-engine";
@@ -280,19 +279,11 @@ export default async function AccountantDashboard({
         description="Pick up new cases from the queue and track everything you're working on."
       />
       <AccountantSuspensionBanner />
-      <RealtimeRefresh
-        channel={`accountant-dashboard-${me.id}`}
-        subscriptions={[
-          // Any case anywhere could enter/leave this accountant's queue
-          // (new paid case joins, someone else takes it, assigned case
-          // status moves).
-          { table: "cases" },
-          // Add-on paid flips status without a cases.update, which is
-          // worth surfacing so a client's "paid add-on" badge appears
-          // without reload.
-          { table: "case_addons" },
-        ]}
-      />
+      {/* Dashboard list refreshes on navigation. Live-merging the queue
+          would require a client wrapper over AccountantCasesFilter + list
+          with useLiveList on cases + case_addons; the dashboard is a
+          jumping-off point rather than a dwell page, so stale-on-next-
+          click is a fair tradeoff for now. */}
       <AccountantCasesFilter view={view} urgency={urgency} fee={fee} date={date} counts={viewCounts} />
 
       {filtered.length === 0 ? (

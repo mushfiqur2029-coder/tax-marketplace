@@ -24,7 +24,6 @@ import {
   companyNameFromAnswers,
 } from "@/lib/case/company-label";
 import { AccountantSuspensionBanner } from "@/app/accountant/suspension-banner";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
@@ -523,20 +522,10 @@ export default async function AccountantCaseDetailPage({
         }
       />
       <AccountantSuspensionBanner />
-      <RealtimeRefresh
-        channel={`accountant-case-${data.row.id}`}
-        subscriptions={[
-          // Client signs engagement, pays, submits onboarding, submits
-          // period docs, approves and files. Admin reassigns.
-          { table: "cases", filter: `id=eq.${data.row.id}` },
-          // Client pays an add-on the accountant previously raised.
-          { table: "case_addons", filter: `case_id=eq.${data.row.id}` },
-          // Client uploads onboarding / period docs.
-          { table: "case_documents", filter: `case_id=eq.${data.row.id}` },
-          // Client submits a VAT cycle's docs or admin edits dates.
-          { table: "vat_return_cycles", filter: `case_id=eq.${data.row.id}` },
-        ]}
-      />
+      {/* Non-PCH case view: documents + chat panels already live-merge
+          internally (case_documents in DocumentsPanel, case_messages in
+          CaseMessagesPanel). Status flips and addon flips refresh on
+          navigation. */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={data.row.status} />
         {data.row.is_urgent ? <UrgentPill /> : null}

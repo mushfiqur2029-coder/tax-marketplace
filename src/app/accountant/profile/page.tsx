@@ -5,7 +5,6 @@ import {
   changePasswordAction,
 } from "@/app/profile-actions";
 import { PortalPageHeader } from "@/components/portal-page-header";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { AccountantProfileForm } from "./accountant-profile-form";
 import { ChangePasswordForm } from "@/components/change-password-form";
 
@@ -51,15 +50,9 @@ export default async function AccountantAccountPage() {
         title="Your account"
         description="Update your professional details or change your password."
       />
-      <RealtimeRefresh
-        channel={`accountant-profile-${me.id}`}
-        subscriptions={[
-          {
-            table: "pending_profile_changes",
-            filter: `user_id=eq.${me.id}`,
-          },
-        ]}
-      />
+      {/* Admin approval of a pending profile change takes hours to days;
+          an F5 or re-navigation is a better fit than a mounted realtime
+          watcher just to surface the slow-loop flip. */}
       <section className="mb-10">
         <h2
           className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate"

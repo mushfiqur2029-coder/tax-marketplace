@@ -19,7 +19,6 @@ import {
   type AdminCaseView,
   type AdminCaseCounts,
 } from "./cases-filter";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { deleteStaleDraftCaseAction } from "@/app/admin/actions";
 import { STALE_DRAFT_DAYS } from "@/app/admin/constants";
 import { DeleteStaleDraftButton } from "./delete-stale-draft-button";
@@ -340,10 +339,9 @@ export default async function AdminDashboard({
             Cases ({filteredCases.length})
           </h2>
         </div>
-        <RealtimeRefresh
-          channel="admin-dashboard"
-          subscriptions={[{ table: "cases" }, { table: "case_addons" }]}
-        />
+        {/* Dashboard refreshes on navigation. Live-merging the case
+            list would need a client wrapper over AdminCasesFilter; low
+            payoff for a snapshot view. */}
         <AdminCasesFilter active={view} counts={caseCounts} />
         {view === "stale_drafts" ? (
           <StaleDraftIntro callerIsPrimary={callerIsPrimary} />
