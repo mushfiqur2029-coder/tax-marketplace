@@ -343,10 +343,18 @@ function renderCard(c: Row, tier: PlanTier | null, pchIntakeReady: boolean | nul
   // submits onboarding, so some entries will still be mid-checklist.
   // Flag that visibly so the accountant knows whether they're picking
   // up a complete submission or stepping in to help a client who's
-  // partway through. Applies to both Personal and Limited Company.
+  // partway through. Applies to both Personal and Limited Company
+  // *manual* flows: PCH automated tracks its own progress via
+  // engine_snapshot_at (see pchIntakeInProgress below) and never
+  // populates onboarding_submitted_at, so without a tier exclude the
+  // badge would stay on forever for every PCH case. The status gate
+  // keeps the badge off cases that have already moved on past the
+  // onboarding window regardless of segment.
   const onboardingInProgress =
     (c.segment === "limited_company_vat" || c.segment === "personal") &&
-    !c.onboarding_submitted_at;
+    c.tier !== "uber_phv_automated" &&
+    !c.onboarding_submitted_at &&
+    (c.status === "draft" || c.status === "submitted");
   // PCH queue cards get a parallel "intake in progress" nudge when the
   // client has paid but not yet clicked Submit for review (no engine
   // snapshot yet). pchIntakeReady is null for non-PCH tiers.
