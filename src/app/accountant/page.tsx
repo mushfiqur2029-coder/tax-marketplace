@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getSegment } from "@/lib/segments";
 import { getAllTiers } from "@/lib/service-catalog";
 import type { PlanTier } from "@/lib/plans";
@@ -151,7 +152,17 @@ export default async function AccountantDashboard({
   const pchTaxYearById = new Map<string, string>();
   const pchIntakeReadyById = new Map<string, boolean>();
   if (pchIds.length > 0) {
-    const { data: pchHeads } = await supabase
+    // Use the service-role client here. The RLS policy on pch_cases
+    // (migration 0080) only lets an accountant SELECT when they are
+    // ALREADY the assigned accountant (or the client). Queue cases are
+    // by definition unassigned, so the session-authenticated client
+    // would come back empty for every queued PCH id and the filter
+    // below would drop every queued PCH case from view (silent empty
+    // queue, no error). We only read two derived flags here (tax_year
+    // for deadline sort, engine_snapshot_at for the submit-for-review
+    // gate), so bypassing RLS for this lookup is scoped and safe.
+    const admin = createAdminClient();
+    const { data: pchHeads } = await admin
       .from("pch_cases")
       .select("case_id, tax_year, engine_snapshot_at")
       .in("case_id", pchIds);
