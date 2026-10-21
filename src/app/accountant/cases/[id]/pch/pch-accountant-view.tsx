@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
-import { createClient } from "@/lib/supabase/client";
+import { useLiveRow, useLiveList } from "@/lib/realtime-live-merge";
 import {
   requestClientFilingAction,
   applyPchOverrideAction,
@@ -101,34 +101,82 @@ export function PchAccountantView(props: {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+
   // Live-tracked status so the view updates when the case flips to
-  // client_approval / filed / complete etc without a full reload.
-  // page-level RealtimeRefresh still watches `cases` for everything
-  // else on that row (accountant_id reassignments by admin, flags we
-  // don't track explicitly) and shows its manual banner.
-  const supabase = useMemo(() => createClient(), []);
-  const [caseStatus, setCaseStatus] = useState(props.caseStatus);
-  useEffect(() => {
-    const channel = supabase
-      .channel(`accountant-view-status-${props.caseId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "cases",
-          filter: `id=eq.${props.caseId}`,
-        },
-        (payload) => {
-          const newStatus = (payload.new as { status?: string })?.status;
-          if (typeof newStatus === "string" && newStatus.length > 0) {
-            setCaseStatus(newStatus);
-          }
-        },
-      )
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [supabase, props.caseId]);
+  // client_approval / filed / complete etc without a page reload.
+  const caseStatus = useLiveRow(props.caseStatus, {
+    table: "cases",
+    filter: `id=eq.${props.caseId}`,
+    channel: `accountant-view-status-${props.caseId}`,
+    map: (row, prev) => {
+      const s = row.status;
+      return typeof s === "string" && s.length > 0 ? s : prev;
+    },
+  });
+
+  // Live-tracked pch_cases head fields the view actually reads:
+  // client approval signature, bookkeeping confirm (name only via
+  // userDisplayNames lookup), final-pack flow timestamps + name. The
+  // engine snapshot itself + overrideHistory + sa302Comparison stay on
+  // props (they mostly change from the viewer's own writes).
+  type LiveHead = {
+    client_approval_at: string | null;
+    client_approval_name: string | null;
+    bookkeeping_confirmed_at: string | null;
+    bookkeeping_confirmed_by: string | null;
+    final_pack_sent_at: string | null;
+    final_pack_confirmed_at: string | null;
+    final_pack_confirmed_name: string | null;
+  };
+  const liveHead = useLiveRow<LiveHead>(
+    {
+      client_approval_at: props.approvalAt,
+      client_approval_name: props.approvalName,
+      bookkeeping_confirmed_at: props.bookkeepingConfirmedAt,
+      bookkeeping_confirmed_by: null,
+      final_pack_sent_at: props.finalPackSentAt,
+      final_pack_confirmed_at: props.finalPackConfirmedAt,
+      final_pack_confirmed_name: props.finalPackConfirmedName,
+    },
+    {
+      table: "pch_cases",
+      filter: `case_id=eq.${props.caseId}`,
+      channel: `accountant-view-head-${props.caseId}`,
+      map: (row, prev) => ({
+        client_approval_at: (row.client_approval_at as string | null) ?? prev.client_approval_at,
+        client_approval_name: (row.client_approval_name as string | null) ?? prev.client_approval_name,
+        bookkeeping_confirmed_at: (row.bookkeeping_confirmed_at as string | null) ?? prev.bookkeeping_confirmed_at,
+        bookkeeping_confirmed_by: (row.bookkeeping_confirmed_by as string | null) ?? prev.bookkeeping_confirmed_by,
+        final_pack_sent_at: (row.final_pack_sent_at as string | null) ?? prev.final_pack_sent_at,
+        final_pack_confirmed_at: (row.final_pack_confirmed_at as string | null) ?? prev.final_pack_confirmed_at,
+        final_pack_confirmed_name: (row.final_pack_confirmed_name as string | null) ?? prev.final_pack_confirmed_name,
+      }),
+    },
+  );
+
+  // Live-tracked add-ons list so admin approvals, client payments, and
+  // the viewer's own new requests appear without a reload. Filter
+  // 'rejected' client-side to match the server query.
+  const liveAddonsAll = useLiveList<AddonRow>(props.addons, {
+    table: "case_addons",
+    filter: `case_id=eq.${props.caseId}`,
+    channel: `accountant-view-addons-${props.caseId}`,
+    map: (row) => ({
+      id: row.id as string,
+      description: row.description as string,
+      amount_pence: Number(row.amount_pence ?? 0),
+      status: row.status as AddonRow["status"],
+      created_at: row.created_at as string,
+    }),
+  });
+  const liveAddons = useMemo(
+    () => liveAddonsAll.filter((a) => a.status !== "rejected"),
+    [liveAddonsAll],
+  );
+
+  const bookkeepingConfirmedByLabel = liveHead.bookkeeping_confirmed_by
+    ? props.userDisplayNames[liveHead.bookkeeping_confirmed_by] ?? null
+    : props.bookkeepingConfirmedByLabel;
 
   const requestFiling = () => start(async () => {
     const r = await requestClientFilingAction(props.caseId);
@@ -197,8 +245,8 @@ export function PchAccountantView(props: {
           caseId={props.caseId}
           incomeLines={props.incomeLines}
           expenseLines={props.expenseLines}
-          confirmedAt={props.bookkeepingConfirmedAt}
-          confirmedByLabel={props.bookkeepingConfirmedByLabel}
+          confirmedAt={liveHead.bookkeeping_confirmed_at}
+          confirmedByLabel={bookkeepingConfirmedByLabel}
         />
       </div>
 
@@ -213,7 +261,7 @@ export function PchAccountantView(props: {
           what's already happened. */}
       {(() => {
         const alreadyAdvanced =
-          !!props.approvalAt
+          !!liveHead.client_approval_at
           || caseStatus === "client_approval"
           || caseStatus === "filed"
           || caseStatus === "complete";
@@ -222,12 +270,12 @@ export function PchAccountantView(props: {
             <h2 className="text-sm font-bold mb-3">
               {alreadyAdvanced ? "Handed back to client" : "Ready to hand back to client?"}
             </h2>
-            {props.approvalAt ? (
+            {liveHead.client_approval_at ? (
               <ul className="text-sm space-y-1">
                 <li>
                   <span className="text-emerald-700">✓</span>{" "}
-                  Client approval signed: {props.approvalName} on{" "}
-                  {new Date(props.approvalAt).toLocaleString()}
+                  Client approval signed: {liveHead.client_approval_name} on{" "}
+                  {new Date(liveHead.client_approval_at).toLocaleString()}
                 </li>
               </ul>
             ) : alreadyAdvanced ? (
@@ -306,17 +354,17 @@ export function PchAccountantView(props: {
       <div className="mt-10">
         <FinalSignoffPanel
           caseId={props.caseId}
-          clientApprovalAt={props.clientApprovalAt}
-          clientApprovalName={props.clientApprovalName}
-          finalPackSentAt={props.finalPackSentAt}
-          finalPackConfirmedAt={props.finalPackConfirmedAt}
-          finalPackConfirmedName={props.finalPackConfirmedName}
+          clientApprovalAt={liveHead.client_approval_at}
+          clientApprovalName={liveHead.client_approval_name}
+          finalPackSentAt={liveHead.final_pack_sent_at}
+          finalPackConfirmedAt={liveHead.final_pack_confirmed_at}
+          finalPackConfirmedName={liveHead.final_pack_confirmed_name}
           caseStatus={caseStatus}
         />
       </div>
 
       <div className="mt-10">
-        <AddonRequestWidget caseId={props.caseId} addons={props.addons} />
+        <AddonRequestWidget caseId={props.caseId} addons={liveAddons} />
       </div>
 
       <div className="mt-10">{props.messagesPanel}</div>

@@ -14,7 +14,6 @@ import { deriveChecklistPrefills, type ChecklistPrefill } from "@/lib/pch/checkl
 import { takeCaseAction, getDocSignedUrlForAccountant } from "@/app/accountant/actions";
 import { TakeCaseForm } from "../take-case-form";
 import { PortalPageHeader } from "@/components/portal-page-header";
-import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { formatDateTime } from "@/lib/format";
 
 // Phase 2a accountant surface: 33-check review + read-only engine
@@ -308,44 +307,20 @@ export default async function PchAccountantPage({
     displayName: s.display_name as string,
   }));
 
+  // Live merges on this page (see pch-accountant-view.tsx):
+  //   cases          -> useLiveRow for caseStatus
+  //   pch_cases      -> useLiveRow for client_approval_* / bookkeeping_* / final_pack_*
+  //   case_addons    -> useLiveList for the Add-on request widget
+  //   case_messages  -> useLiveList inside CaseMessagesPanel
+  //   case_documents -> useLiveList inside DocumentsPanel
+  // Deliberately dropped (accept F5 until re-visited): pch_check_status,
+  // pch_doc_extractions, pch_doc_status, pch_bank_transactions, pch_overrides.
+  // Those were on the banner-refresh plan originally; most of their
+  // writes are either the viewer's own or infrequent enough that a
+  // reload-on-reopen is a better tradeoff than keeping a page-wide
+  // "new updates available" banner over everything else.
   return (
     <>
-      <RealtimeRefresh
-        channel={`accountant-pch-${id}-${me.id}`}
-        subscriptions={[
-          // Status transitions (client_approval, filed, complete) and
-          // admin reassignment.
-          { table: "cases", filter: `id=eq.${id}` },
-          // Head updates: engine snapshot refresh, client_approval_at,
-          // bookkeeping confirm, final_pack confirm, override of head
-          // fields.
-          { table: "pch_cases", filter: `case_id=eq.${id}` },
-          // 33-check status + client interview answers landing (an
-          // interview commit flips the row to Done).
-          { table: "pch_check_status", filter: `case_id=eq.${id}` },
-          // AI extraction writes against a doc the client already uploaded.
-          // case_documents (fresh client uploads) is live-merged in
-          // DocumentsPanel directly, see note below.
-          { table: "pch_doc_extractions", filter: `case_id=eq.${id}` },
-          // Client flags "I don't have this document" (AwaitingAccountantPanel).
-          { table: "pch_doc_status", filter: `case_id=eq.${id}` },
-          // Chat (case_messages) is live-merged inside CaseMessagesPanel
-          // already (see components/case/case-messages-panel.tsx), so it's
-          // deliberately not watched here, firing the "new updates" banner
-          // on top of the live merge would double-notify.
-          // case_documents is live-merged inside DocumentsPanel (new
-          // client uploads land in the list without a reload), so it's
-          // also not here. Both panels filter the viewer's own writes
-          // via realtime-self-mutation + author-id checks.
-          // Add-on paid / rejected flips.
-          { table: "case_addons", filter: `case_id=eq.${id}` },
-          // Bank ingest results stream in after an upload (async job).
-          { table: "pch_bank_transactions", filter: `case_id=eq.${id}` },
-          // Overrides from a second-browser tab (own case, two
-          // devices) land here.
-          { table: "pch_overrides", filter: `case_id=eq.${id}` },
-        ]}
-      />
       <PchAccountantView
       caseId={id}
       caseStatus={caseRow.status}
