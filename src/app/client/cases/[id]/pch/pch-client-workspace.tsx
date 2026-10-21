@@ -774,6 +774,8 @@ function ExpenseInterviewSection({
   const [phone, setPhone] = useState("");
   const [cleaning, setCleaning] = useState("");
   const [parking, setParking] = useState("");
+  const [insurance, setInsurance] = useState("");
+  const [licenceFee, setLicenceFee] = useState("");
   const captured = interviewLines.length > 0;
   const fmt = (p: number) =>
     "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -783,16 +785,26 @@ function ExpenseInterviewSection({
     const n = Number(v);
     return v.trim().length > 0 && Number.isFinite(n) && n > 0 ? `£${n}` : "none";
   };
+  // Mirrors the five annual-total rows most PHV drivers already keep on
+  // their own running expense sheet (mobile, cleaning, parking,
+  // insurance, licence fee), so they can copy straight across instead
+  // of composing a chat sentence. Fuel, repairs, road tax and MOT stay
+  // out of scope here, those are vehicle running costs covered by
+  // section 4 / the bank statement, not this flow.
   const composedFirstReply =
     `Phone and data: ${figureOrNone(phone)}. ` +
     `Vehicle cleaning / valeting: ${figureOrNone(cleaning)}. ` +
-    `Congestion, ULEZ and parking (not fines or penalties): ${figureOrNone(parking)}.`;
+    `Congestion, ULEZ and parking (not fines or penalties): ${figureOrNone(parking)}. ` +
+    `Insurance: ${figureOrNone(insurance)}. ` +
+    `Licences and subscriptions: ${figureOrNone(licenceFee)}.`;
 
   const closeAndReset = () => {
     setStage("closed");
     setPhone("");
     setCleaning("");
     setParking("");
+    setInsurance("");
+    setLicenceFee("");
   };
 
   return (
@@ -838,17 +850,20 @@ function ExpenseInterviewSection({
       ) : stage === "quick" ? (
         <div className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
           <div className="text-xs font-medium text-slate-900">
-            Three to start, rough yearly figures, leave blank for none
+            Rough yearly totals, same as most drivers already keep on
+            their own expense sheet, leave blank for none
           </div>
           <div className="flex flex-wrap gap-2">
-            <QuickFigureInput label="Phone & data (year)" value={phone} onChange={setPhone} />
-            <QuickFigureInput label="Vehicle cleaning / valeting" value={cleaning} onChange={setCleaning} />
-            <QuickFigureInput label="Congestion, ULEZ & parking" value={parking} onChange={setParking} />
+            <QuickFigureInput label="Mobile (phone & data)" value={phone} onChange={setPhone} />
+            <QuickFigureInput label="Cleaning" value={cleaning} onChange={setCleaning} />
+            <QuickFigureInput label="Parking (congestion, ULEZ)" value={parking} onChange={setParking} />
+            <QuickFigureInput label="Insurance" value={insurance} onChange={setInsurance} />
+            <QuickFigureInput label="Licence fee" value={licenceFee} onChange={setLicenceFee} />
           </div>
           <p className="text-[11px] text-slate-500">
-            Not fines or penalties, those aren&apos;t claimable. After this
-            the AI will ask about insurance, licences, and anything else
-            to declare.
+            Parking is congestion/ULEZ/parking only, not fines or
+            penalties, those aren&apos;t claimable. After this the AI will
+            ask if there&apos;s anything more to declare.
           </p>
           <div className="flex items-center justify-end gap-2">
             <button
