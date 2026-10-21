@@ -3,8 +3,8 @@
 // Shared chat panel used on client, accountant, and admin PCH case
 // workspaces. Renders the chronological thread + composer with:
 //
-//   - Realtime subscription on case_messages (own sends excluded to
-//     avoid a double-fetch; own send already triggers router.refresh).
+//   - Realtime subscription on case_messages (own sends are appended
+//     locally and optimistically instead, see Task #14 comments below).
 //   - OS-aware shortcut hint (shows the right modifier key graphic
 //     for the viewer's platform, not a raw "Ctrl/Cmd+Enter" string).
 //   - Message bubbles aligned left vs right so the thread reads like
@@ -12,7 +12,6 @@
 //   - Friendly empty state + distinct Sending/Send button state.
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   sendCaseMessageAction,
   getCaseMessageAttachmentUrlAction,
@@ -33,6 +32,11 @@ export type CaseMessageView = {
   body: string;
   createdAt: string;           // ISO
   attachments: CaseMessageAttachment[] | null;
+  // Task #14: set on a message we've optimistically appended locally
+  // right after our own send, before any attachment has a real storage
+  // path to resolve a download URL from. Never set on a message that
+  // came from the server.
+  optimistic?: boolean;
 };
 
 const MAX_BODY_CHARS = 4000;
@@ -56,7 +60,6 @@ export function CaseMessagesPanel({
   viewerRole: "client" | "accountant" | "admin";
   viewerUserId: string;
 }) {
-  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -65,11 +68,22 @@ export function CaseMessagesPanel({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Task #14: router.refresh() is confirmed unreliable on this app (see
+  // pch-client-workspace.tsx), and it can't be replaced with a reload
+  // here (that would defeat the point of a live chat panel). The realtime
+  // subscription already handles the other side's messages; here we
+  // optimistically append our own send locally the moment it succeeds,
+  // since we know its body and author role, even though we don't have a
+  // server-issued id/timestamp or (for any attachments) a resolvable
+  // storage path yet.
+  const [localMessages, setLocalMessages] = useState<CaseMessageView[]>([]);
+  const allMessages = useMemo(
+    () => [...messages, ...localMessages],
+    [messages, localMessages],
+  );
 
-  // Realtime: when the other side posts a message, re-fetch the server
-  // component so the thread refreshes with the real author label +
-  // chronological ordering. Our own sends are already handled by submit()
-  // via router.refresh(), so we skip the self-echo to avoid a double-fetch.
+  // Realtime: when the other side posts a message, append it locally so
+  // the thread stays live without a reload.
   useEffect(() => {
     const channel = supabase
       .channel(`case-messages-panel-${caseId}`)
@@ -82,22 +96,45 @@ export function CaseMessagesPanel({
           filter: `case_id=eq.${caseId}`,
         },
         (payload) => {
-          const row = payload.new as { author_id?: string };
+          const row = payload.new as {
+            id?: string;
+            author_id?: string;
+            author_role?: "client" | "accountant" | "admin";
+            body?: string;
+            created_at?: string;
+            attachments?: CaseMessageAttachment[] | null;
+          };
           if (row.author_id && row.author_id === viewerUserId) return;
-          router.refresh();
+          if (!row.id || !row.author_role || !row.body || !row.created_at) return;
+          setLocalMessages((prev) => [
+            ...prev,
+            {
+              id: row.id!,
+              authorRole: row.author_role!,
+              // Realtime payloads are raw table rows: no joined email
+              // like the server-rendered list has. Mirror the same
+              // fallback the server uses (`loadCaseMessages` above) so
+              // this isn't blank; it'll show the real label next time
+              // this page is freshly loaded.
+              authorLabel: row.author_id ? row.author_id.slice(0, 8) : "",
+              body: row.body!,
+              createdAt: row.created_at!,
+              attachments: row.attachments ?? null,
+            },
+          ]);
         },
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [supabase, caseId, viewerUserId, router]);
+  }, [supabase, caseId, viewerUserId]);
 
   // Auto-scroll to the newest message when the list grows.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, pending]);
+  }, [allMessages.length, pending]);
 
   const addAttachments = (incoming: File[]) => {
     if (incoming.length === 0) return;
@@ -131,10 +168,26 @@ export function CaseMessagesPanel({
       for (const f of attachments) fd.append("file", f);
       const r = await sendCaseMessageAction(caseId, fd);
       if (!r.ok) { setErr(r.error); return; }
+      setLocalMessages((prev) => [
+        ...prev,
+        {
+          id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          authorRole: viewerRole,
+          authorLabel: "",
+          body,
+          createdAt: new Date().toISOString(),
+          attachments: attachments.map((f) => ({
+            path: "",
+            name: f.name,
+            mime: f.type,
+            size_bytes: f.size,
+          })),
+          optimistic: true,
+        },
+      ]);
       setDraft("");
       setAttachments([]);
       inputRef.current?.focus();
-      router.refresh();
     });
   };
 
@@ -148,9 +201,9 @@ export function CaseMessagesPanel({
       <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-5 py-3">
         <div className="flex items-baseline gap-2">
           <h2 className="text-base font-semibold text-slate-900">Messages</h2>
-          {messages.length > 0 ? (
+          {allMessages.length > 0 ? (
             <span className="text-xs text-slate-500">
-              {messages.length}
+              {allMessages.length}
             </span>
           ) : null}
         </div>
@@ -160,11 +213,11 @@ export function CaseMessagesPanel({
       </header>
 
       <div ref={scrollRef} className="max-h-96 overflow-y-auto px-5 py-4">
-        {messages.length === 0 ? (
+        {allMessages.length === 0 ? (
           <EmptyState viewerRole={viewerRole} />
         ) : (
           <ul className="space-y-3">
-            {messages.map((m) => (
+            {allMessages.map((m) => (
               <MessageRow key={m.id} message={m} viewerRole={viewerRole} />
             ))}
           </ul>
@@ -361,9 +414,13 @@ function MessageRow({ message, viewerRole }: {
           <div className="whitespace-pre-wrap">{message.body}</div>
           {attachments.length > 0 ? (
             <ul className="flex flex-wrap gap-1.5">
-              {attachments.map((a) => (
-                <li key={a.path}>
-                  <AttachmentChip messageId={message.id} attachment={a} mine={mine} />
+              {attachments.map((a, i) => (
+                <li key={a.path || `${message.id}-${i}`}>
+                  {message.optimistic ? (
+                    <InertAttachmentChip attachment={a} mine={mine} />
+                  ) : (
+                    <AttachmentChip messageId={message.id} attachment={a} mine={mine} />
+                  )}
                 </li>
               ))}
             </ul>
@@ -417,6 +474,34 @@ function AttachmentChip({
       </span>
       {err ? <span className="text-rose-200">{err}</span> : null}
     </button>
+  );
+}
+
+// Task #14: our own just-sent message is shown optimistically before its
+// attachments have a real storage path to resolve a signed URL from (the
+// send action doesn't return one). Render as an inert chip rather than
+// one that would error when clicked; it becomes a real, clickable
+// AttachmentChip the next time this page is freshly loaded.
+function InertAttachmentChip({
+  attachment, mine,
+}: {
+  attachment: CaseMessageAttachment;
+  mine: boolean;
+}) {
+  const chipStyle = mine
+    ? "border-white/30 bg-white/10 text-white"
+    : "border-slate-300 bg-slate-50 text-slate-700";
+  return (
+    <span
+      title={`${attachment.name} (uploading…)`}
+      className={"inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs " + chipStyle}
+    >
+      <PaperclipIcon />
+      <span className="max-w-[12rem] truncate">{attachment.name}</span>
+      <span className={mine ? "text-white/60" : "text-slate-400"}>
+        {formatBytes(attachment.size_bytes)}
+      </span>
+    </span>
   );
 }
 

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export type RealtimeSubscription = {
@@ -13,11 +12,20 @@ export type RealtimeSubscription = {
   event?: "INSERT" | "UPDATE" | "DELETE" | "*";
 };
 
-// Generic realtime-driven router refresh. Subscribes to postgres_changes
-// on the given tables and calls `router.refresh()` whenever any of them
-// fires. Debounced to 400ms so a burst of related writes (e.g. case
-// INSERT + case_addons INSERT) collapses into a single server-component
-// re-render.
+// Generic realtime watcher for another user's changes landing on this
+// page. Subscribes to postgres_changes on the given tables, debounced to
+// 400ms so a burst of related writes (e.g. case INSERT + case_addons
+// INSERT) collapses into one notice.
+//
+// Task #14: this used to call router.refresh() on every change, but
+// router.refresh() is confirmed unreliable on this app (see
+// pch-client-workspace.tsx), it would silently fail to bring in the
+// new data. A full window.location.reload() would fix that, but firing
+// it out from under someone mid-task (typing into a field, say) the
+// moment any other party touches an unrelated row is a worse
+// regression than the hard-refresh-on-every-click problem this app is
+// being fixed for. So instead we surface a small, dismissible "new
+// activity" notice and let the person choose when to reload.
 //
 // Mount this once per page that needs to stay fresh when another user's
 // action changes the DB. The notification bell handles its own
@@ -34,8 +42,8 @@ export function RealtimeRefresh({
   subscriptions: ReadonlyArray<RealtimeSubscription>;
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const router = useRouter();
   const pending = useRef<number | null>(null);
+  const [hasUpdate, setHasUpdate] = useState(false);
   // Stabilise the subscriptions prop for the effect so the channel
   // isn't torn down and rebuilt on every render.
   const subscriptionsKey = subscriptions
@@ -43,11 +51,11 @@ export function RealtimeRefresh({
     .join("|");
 
   useEffect(() => {
-    const scheduleRefresh = () => {
+    const scheduleNotice = () => {
       if (pending.current !== null) return;
       pending.current = window.setTimeout(() => {
         pending.current = null;
-        router.refresh();
+        setHasUpdate(true);
       }, 400);
     };
 
@@ -61,7 +69,7 @@ export function RealtimeRefresh({
           table: sub.table,
           ...(sub.filter ? { filter: sub.filter } : {}),
         },
-        scheduleRefresh,
+        scheduleNotice,
       );
     }
     const ref = ch.subscribe();
@@ -72,7 +80,35 @@ export function RealtimeRefresh({
     // subscriptionsKey captures the array shape; we don't want the
     // array identity to force a resubscribe each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, router, channel, subscriptionsKey]);
+  }, [supabase, channel, subscriptionsKey]);
 
-  return null;
+  if (!hasUpdate) return null;
+
+  return (
+    <div
+      role="status"
+      className="fixed inset-x-2 bottom-4 z-[70] mx-auto flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border border-line bg-paper px-4 py-2.5 shadow-xl sm:inset-x-auto sm:right-4"
+    >
+      <p className="text-xs font-medium text-ink">
+        This page has new updates.
+      </p>
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setHasUpdate(false)}
+          className="text-xs font-semibold text-slate hover:text-ink"
+        >
+          Dismiss
+        </button>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-lg px-3 py-1 text-xs font-semibold text-white"
+          style={{ background: "linear-gradient(135deg, var(--sky), var(--mint))" }}
+        >
+          Refresh
+        </button>
+      </div>
+    </div>
+  );
 }

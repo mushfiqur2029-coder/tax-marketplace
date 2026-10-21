@@ -8,10 +8,11 @@
 // Support thread is lazy-created on first visit to the Support tab OR
 // on first send. The server-rendered page passes `supportThread` as
 // null when nothing exists yet; the tab shows a short start CTA that
-// calls getOrCreateCaseSupportThreadAction + router.refresh.
+// calls getOrCreateCaseSupportThreadAction, which returns the created
+// thread directly (Task #14: no router.refresh(), it's unreliable on
+// this app, see pch-client-workspace.tsx) so we store it locally.
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   CaseMessagesPanel,
   type CaseMessageView,
@@ -35,23 +36,25 @@ export function CaseConversationsPanel({
   viewerRole: "client" | "accountant" | "admin";
   viewerUserId: string;
 }) {
-  const router = useRouter();
   const [tab, setTab] = useState<Tab>("accountant");
   const [starting, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  const [localSupportThread, setLocalSupportThread] =
+    useState<SupportThreadView | null>(supportThread);
 
-  const supportCount = supportThread?.messages.length ?? 0;
-  const supportUnreadMarker = supportThread && supportThread.status === "open" ? "" : "";
+  const supportCount = localSupportThread?.messages.length ?? 0;
+  const supportUnreadMarker =
+    localSupportThread && localSupportThread.status === "open" ? "" : "";
 
   const openSupport = () => {
     setTab("support");
-    if (supportThread) return;
+    if (localSupportThread) return;
     if (viewerRole === "admin") return;
     start(async () => {
       setErr(null);
       const r = await getOrCreateCaseSupportThreadAction(caseId);
       if (!r.ok) setErr(r.error);
-      else router.refresh();
+      else setLocalSupportThread(r.thread);
     });
   };
 
@@ -70,8 +73,8 @@ export function CaseConversationsPanel({
           onClick={openSupport}
           count={supportCount}
           suffix={supportUnreadMarker}
-          disabled={viewerRole === "admin" && !supportThread}
-          disabledTitle={viewerRole === "admin" && !supportThread
+          disabled={viewerRole === "admin" && !localSupportThread}
+          disabledTitle={viewerRole === "admin" && !localSupportThread
             ? "No support thread opened by this user yet."
             : undefined}
         />
@@ -84,14 +87,14 @@ export function CaseConversationsPanel({
           viewerRole={viewerRole}
           viewerUserId={viewerUserId}
         />
-      ) : supportThread ? (
+      ) : localSupportThread ? (
         <SupportChatPanel
           caseId={caseId}
-          threadId={supportThread.id}
-          messages={supportThread.messages}
+          threadId={localSupportThread.id}
+          messages={localSupportThread.messages}
           viewerRole={viewerRole}
           viewerUserId={viewerUserId}
-          threadStatus={supportThread.status}
+          threadStatus={localSupportThread.status}
         />
       ) : (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-6 py-10 text-center">

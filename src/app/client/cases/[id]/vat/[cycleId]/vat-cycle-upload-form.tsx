@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import { DocumentUploader } from "@/components/case/document-uploader";
 import { formatDateTime } from "@/lib/format";
@@ -37,7 +36,6 @@ export function VatCycleUploadForm({
   removeDoc,
   submit,
 }: Props) {
-  const router = useRouter();
   const [docsByKey, setDocsByKey] =
     useState<Record<string, UploadedDoc[]>>(initialDocsByKey);
   const [submitting, startSubmit] = useTransition();
@@ -57,7 +55,12 @@ export function VatCycleUploadForm({
         setSubmitError(res.error);
         return;
       }
-      router.refresh();
+      // Task #14: router.refresh() is confirmed unreliable on this app
+      // (see pch-client-workspace.tsx). Submitting flips the VAT cycle's
+      // status, which swaps this whole form for a different "submitted"
+      // view server-side, so a full reload (not a local patch) is the
+      // correct, honest way to show that.
+      window.location.reload();
     });
   };
 

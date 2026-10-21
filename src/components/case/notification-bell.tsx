@@ -233,12 +233,19 @@ export function NotificationBell({
 
   const onMarkAll = async () => {
     if (unread === 0) return;
+    const prevItems = items;
+    const prevUnread = unread;
     setItems((prev) => prev.map((p) => ({ ...p, read: true })));
     setUnread(0);
     try {
       await markAllRead();
     } catch {
-      router.refresh();
+      // Task #14: router.refresh() is confirmed unreliable on this app
+      // (see pch-client-workspace.tsx), and it wouldn't help a
+      // server-action throw anyway. Undo the optimistic update instead,
+      // since we know exactly what it was.
+      setItems(prevItems);
+      setUnread(prevUnread);
     }
   };
 

@@ -129,6 +129,16 @@ export function NewCaseForm({
   // the deadline step because there's no fixed fee or filing date yet.
   const isEnquiryTier = !!selectedTier?.requiresEnquiry;
 
+  // Picking a service on Step 2 goes straight to Step 3, no separate
+  // "Continue" press needed. Enquiry tiers are the exception: they have
+  // no Step 3 (and no fee/deadline yet), so clicking one just selects
+  // it and the existing "Continue to enquiry" button stays the
+  // deliberate, explicit next action.
+  const pickTier = (t: PlanTier) => {
+    setTier(t.id);
+    if (!t.requiresEnquiry) setPage(2);
+  };
+
   // Deadline step applies to any flat-fee pick. Personal always
   // (no enquiry tiers exist on that side) and Company once a non-
   // enquiry tier is selected.
@@ -224,7 +234,7 @@ export function NewCaseForm({
                 key={t.id}
                 tier={t}
                 active={tier === t.id}
-                onClick={() => setTier(t.id)}
+                onClick={() => pickTier(t)}
               />
             ))}
           </div>
@@ -248,7 +258,7 @@ export function NewCaseForm({
                 key={t.id}
                 tier={t}
                 active={tier === t.id}
-                onClick={() => setTier(t.id)}
+                onClick={() => pickTier(t)}
               />
             ))}
           </div>

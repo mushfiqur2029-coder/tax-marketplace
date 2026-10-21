@@ -15,13 +15,12 @@
 // would make an abstract-now shared component awkward.
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   sendSupportMessageAction,
   sendAdminSupportReplyAction,
   getSupportMessageAttachmentUrlAction,
 } from "@/app/support/actions";
-import type { SupportMessageView } from "@/lib/support/types";
+import type { AttachmentRecord, SupportMessageView } from "@/lib/support/types";
 import { createClient } from "@/lib/supabase/client";
 
 const MAX_BODY_CHARS = 4000;
@@ -47,7 +46,6 @@ export function SupportChatPanel({
   viewerUserId: string;
   threadStatus: "open" | "resolved";
 }) {
-  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -56,6 +54,16 @@ export function SupportChatPanel({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Task #14: router.refresh() is confirmed unreliable on this app (see
+  // pch-client-workspace.tsx). Mirrors case-messages-panel.tsx: the
+  // other side's messages are appended locally off the realtime
+  // payload, and our own send is appended optimistically the moment it
+  // succeeds.
+  const [localMessages, setLocalMessages] = useState<SupportMessageView[]>([]);
+  const allMessages = useMemo(
+    () => [...messages, ...localMessages],
+    [messages, localMessages],
+  );
 
   useEffect(() => {
     const channel = supabase
@@ -69,21 +77,41 @@ export function SupportChatPanel({
           filter: `thread_id=eq.${threadId}`,
         },
         (payload) => {
-          const row = payload.new as { author_id?: string };
+          const row = payload.new as {
+            id?: string;
+            author_id?: string;
+            author_role?: "client" | "accountant" | "admin";
+            body?: string;
+            created_at?: string;
+            attachments?: AttachmentRecord[] | null;
+          };
           if (row.author_id && row.author_id === viewerUserId) return;
-          router.refresh();
+          if (!row.id || !row.author_role || !row.body || !row.created_at) return;
+          setLocalMessages((prev) => [
+            ...prev,
+            {
+              id: row.id!,
+              authorRole: row.author_role!,
+              // Realtime payloads are raw rows: no joined display name.
+              // Real label shows next time this page is freshly loaded.
+              authorLabel: row.author_id ? row.author_id.slice(0, 8) : "",
+              body: row.body!,
+              createdAt: row.created_at!,
+              attachments: row.attachments ?? null,
+            },
+          ]);
         },
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [supabase, threadId, viewerUserId, router]);
+  }, [supabase, threadId, viewerUserId]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, pending]);
+  }, [allMessages.length, pending]);
 
   const addAttachments = (incoming: File[]) => {
     if (incoming.length === 0) return;
@@ -119,10 +147,26 @@ export function SupportChatPanel({
         ? await sendAdminSupportReplyAction(threadId, fd)
         : await sendSupportMessageAction(caseId, fd);
       if (!r.ok) { setErr(r.error); return; }
+      setLocalMessages((prev) => [
+        ...prev,
+        {
+          id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          authorRole: viewerRole,
+          authorLabel: "",
+          body,
+          createdAt: new Date().toISOString(),
+          attachments: attachments.map((f) => ({
+            path: "",
+            name: f.name,
+            mime: f.type,
+            size_bytes: f.size,
+          })),
+          optimistic: true,
+        },
+      ]);
       setDraft("");
       setAttachments([]);
       inputRef.current?.focus();
-      router.refresh();
     });
   };
 
@@ -137,8 +181,8 @@ export function SupportChatPanel({
           <h2 className="text-base font-semibold text-slate-900">
             {viewerRole === "admin" ? "Support thread" : "Help & support"}
           </h2>
-          {messages.length > 0 ? (
-            <span className="text-xs text-slate-500">{messages.length}</span>
+          {allMessages.length > 0 ? (
+            <span className="text-xs text-slate-500">{allMessages.length}</span>
           ) : null}
           {threadStatus === "resolved" ? (
             <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
@@ -154,11 +198,11 @@ export function SupportChatPanel({
       </header>
 
       <div ref={scrollRef} className="max-h-[480px] overflow-y-auto px-5 py-4">
-        {messages.length === 0 ? (
+        {allMessages.length === 0 ? (
           <EmptyState viewerRole={viewerRole} />
         ) : (
           <ul className="space-y-3">
-            {messages.map((m) => (
+            {allMessages.map((m) => (
               <MessageRow key={m.id} message={m} viewerRole={viewerRole} />
             ))}
           </ul>
@@ -307,9 +351,20 @@ function MessageRow({ message, viewerRole }: {
         </div>
         {attachments.length > 0 ? (
           <ul className={"flex flex-wrap gap-1.5 " + (mine ? "justify-end" : "")}>
-            {attachments.map((a) => (
-              <AttachmentChip key={a.path} messageId={message.id} attachment={a} />
-            ))}
+            {attachments.map((a, i) =>
+              message.optimistic ? (
+                <li key={a.path || `${message.id}-${i}`}>
+                  <span
+                    title={`${a.name} (uploading…)`}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700"
+                  >
+                    {a.name}
+                  </span>
+                </li>
+              ) : (
+                <AttachmentChip key={a.path} messageId={message.id} attachment={a} />
+              ),
+            )}
           </ul>
         ) : null}
       </div>

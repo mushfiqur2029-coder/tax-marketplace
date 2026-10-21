@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 
 type ApproveResult = { ok: true } | { ok: false; error: string };
@@ -14,7 +13,6 @@ type Props = {
 // distinct client component so it can own its own pending/error state without
 // forcing the whole detail page into a client component.
 export function ApproveAndFileButton({ approve }: Props) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -49,10 +47,13 @@ export function ApproveAndFileButton({ approve }: Props) {
             start(async () => {
               const res = await approve();
               if (res.ok) {
-                // Status moves to `filed`; the whole case detail page
-                // changes its CTA + progress bar + banner, refresh so
-                // the next view is accurate without a manual reload.
-                router.refresh();
+                // Task #14: router.refresh() is confirmed unreliable on
+                // this app (see pch-client-workspace.tsx). Status moves
+                // to `filed` here, which changes the whole case detail
+                // page's CTA + progress bar + banner, so a full reload
+                // (not a local patch) is the correct, honest way to
+                // show that.
+                window.location.reload();
               } else setError(res.error);
             });
           }}

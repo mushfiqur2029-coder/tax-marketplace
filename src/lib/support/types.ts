@@ -19,6 +19,10 @@ export type SupportMessageView = {
   body: string;
   createdAt: string;
   attachments: AttachmentRecord[] | null;
+  // Set on a message optimistically appended client-side right after our
+  // own send, before any attachment has a real storage path to resolve a
+  // download URL from. Never set on a message that came from the server.
+  optimistic?: boolean;
 };
 
 export type SupportThreadView = {

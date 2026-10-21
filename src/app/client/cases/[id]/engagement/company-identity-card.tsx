@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   CompanyLookup,
   type CompanyPick,
@@ -27,9 +26,15 @@ export function CompanyIdentityCard({
   setIdentity,
   clearIdentity,
 }: Props) {
-  const router = useRouter();
   const [busy, startBusy] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Task #14: router.refresh() is confirmed unreliable on this app (see
+  // pch-client-workspace.tsx). CompanyLookup already mirrors whatever
+  // `initial` we pass it into its own local state (re-syncing whenever
+  // it changes), so we just track the saved pick ourselves instead of
+  // refreshing, the save actions always write exactly this pick (or
+  // clear it), so the outcome is fully known client-side.
+  const [current, setCurrent] = useState<CompanyPick | null>(initial);
 
   const onPick = async (pick: CompanyPick) => {
     setError(null);
@@ -41,7 +46,7 @@ export function CompanyIdentityCard({
           companyStatus: pick.company_status,
         });
         if (!res.ok) setError(res.error);
-        else router.refresh();
+        else setCurrent(pick);
         resolve();
       });
     });
@@ -53,7 +58,7 @@ export function CompanyIdentityCard({
       startBusy(async () => {
         const res = await clearIdentity();
         if (!res.ok) setError(res.error);
-        else router.refresh();
+        else setCurrent(null);
         resolve();
       });
     });
@@ -61,7 +66,7 @@ export function CompanyIdentityCard({
 
   return (
     <div className="space-y-3">
-      <CompanyLookup initial={initial} onPick={onPick} onClear={onClear} busy={busy} />
+      <CompanyLookup initial={current} onPick={onPick} onClear={onClear} busy={busy} />
       {error ? (
         <p
           role="alert"

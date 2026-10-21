@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
 import { AvatarPicker } from "@/components/avatar-picker";
 
@@ -25,16 +24,23 @@ export function ClientProfileForm({
   pending,
   submit,
 }: Props) {
-  const router = useRouter();
   const [form, setForm] = useState<Current>(current);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [pendingSubmit, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  // Task #14: router.refresh() is confirmed unreliable on this app (see
+  // pch-client-workspace.tsx). `submit` always queues exactly the form
+  // values (and avatar, if any) the user just sent as the new pending
+  // request, so we can build the "pending" banner state locally instead
+  // of refreshing to pick it up from the server prop.
+  const [localPending, setLocalPending] = useState(pending);
 
   const isPending = (field: keyof Current) =>
-    pending != null && (pending[field] ?? "") !== "" && pending[field] !== current[field];
-  const pendingAvatar = pending?.avatar_path ?? null;
+    localPending != null &&
+    (localPending[field] ?? "") !== "" &&
+    localPending[field] !== current[field];
+  const pendingAvatar = localPending?.avatar_path ?? null;
 
   const onChange = (k: keyof Current) => (v: string) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -48,13 +54,18 @@ export function ClientProfileForm({
           const res = await submit(form, avatarFile);
           if (res.ok) {
             setOk(true);
+            const hadAvatar = avatarFile != null;
             setAvatarFile(null);
-            // The "pending edit" banner at the top is driven by a
-            // server-component prop, refresh so it appears
-            // immediately after the first submit (before refresh the
-            // banner would stay hidden until a manual reload even
-            // though the request is already queued server-side).
-            router.refresh();
+            setLocalPending({
+              name: form.name !== current.name ? form.name : "",
+              contact_number:
+                form.contact_number !== current.contact_number
+                  ? form.contact_number
+                  : "",
+              email: form.email !== current.email ? form.email : "",
+              address: form.address !== current.address ? form.address : "",
+              avatar_path: hadAvatar ? "pending" : "",
+            });
           } else {
             setError(res.error);
           }
