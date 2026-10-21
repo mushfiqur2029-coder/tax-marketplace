@@ -97,7 +97,19 @@ function groupByCategory(txns: BankTransactionView[]): Group[] {
   });
 }
 
-export function BankLedgerTable({ caseId, transactions, editable = true }: Props) {
+export function BankLedgerTable({ caseId, transactions: initialTransactions, editable = true }: Props) {
+  // Task #14: no reload. Group totals are derived from this local copy of
+  // the transaction list, and a row's category edit updates its one entry
+  // here directly (we know exactly what the server just wrote, since we
+  // just sent it), so the totals recompute instantly without a round-trip.
+  const [transactions, setTransactions] = useState(initialTransactions);
+  const setCategory = (txnId: string, category: string) => {
+    // Matches setBankTransactionCategoryAction, which always stamps a
+    // manual edit as "high" confidence server-side.
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === txnId ? { ...t, category, categoryConfidence: "high" } : t)),
+    );
+  };
   const groups = useMemo(() => groupByCategory(transactions), [transactions]);
   const totals = useMemo(() => {
     let income = 0;
@@ -141,6 +153,7 @@ export function BankLedgerTable({ caseId, transactions, editable = true }: Props
             caseId={caseId}
             group={g}
             editable={editable}
+            onCategoryChanged={setCategory}
           />
         ))}
       </ul>
@@ -175,10 +188,12 @@ function GroupCard({
   caseId,
   group,
   editable,
+  onCategoryChanged,
 }: {
   caseId: string;
   group: Group;
   editable: boolean;
+  onCategoryChanged: (txnId: string, category: string) => void;
 }) {
   const defaultOpen = group.rows.length <= 8 || group.key === "uncategorized";
   const [open, setOpen] = useState(defaultOpen);
@@ -212,7 +227,13 @@ function GroupCard({
       {open ? (
         <ul className="divide-y divide-slate-100 border-t border-slate-100">
           {group.rows.map((r) => (
-            <TransactionRow key={r.id} caseId={caseId} txn={r} editable={editable} />
+            <TransactionRow
+              key={r.id}
+              caseId={caseId}
+              txn={r}
+              editable={editable}
+              onCategoryChanged={onCategoryChanged}
+            />
           ))}
         </ul>
       ) : null}
@@ -224,10 +245,12 @@ function TransactionRow({
   caseId,
   txn,
   editable,
+  onCategoryChanged,
 }: {
   caseId: string;
   txn: BankTransactionView;
   editable: boolean;
+  onCategoryChanged: (txnId: string, category: string) => void;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -247,7 +270,7 @@ function TransactionRow({
         return;
       }
       setEditing(false);
-      window.location.reload();
+      onCategoryChanged(txn.id, next);
     });
   };
 

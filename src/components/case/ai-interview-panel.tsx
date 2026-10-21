@@ -14,7 +14,6 @@
 // browser could hand-craft.
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type {
   InterviewMessage,
   InterviewTurnResult,
@@ -85,7 +84,6 @@ export function AiInterviewPanel({
   commit: commitAction,
   notApplicable,
 }: Props) {
-  const router = useRouter();
   const [transcript, setTranscript] = useState<InterviewMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, start] = useTransition();
@@ -155,8 +153,16 @@ export function AiInterviewPanel({
         setErr(r.error);
         return;
       }
-      router.refresh();
-      onClose();
+      // Task #14: router.refresh() was live-tested and confirmed to leave
+      // stale data on screen after a commit here (same as the Identity
+      // save), which is worse than a visible reload because nothing
+      // tells the client their answers didn't visibly land. Unlike a
+      // simple field edit, the commit step re-runs the AI's finalising
+      // turn server-side, so the client genuinely doesn't know what was
+      // written, there's no local value to optimistically apply. A full
+      // reload is the correct, honest fallback until each flow's summary
+      // panel is wired to re-fetch its own data directly.
+      window.location.reload();
     });
   };
 
@@ -169,8 +175,7 @@ export function AiInterviewPanel({
         setErr(r.error);
         return;
       }
-      router.refresh();
-      onClose();
+      window.location.reload();
     });
   };
 

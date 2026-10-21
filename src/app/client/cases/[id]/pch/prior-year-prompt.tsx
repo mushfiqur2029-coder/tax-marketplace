@@ -29,8 +29,14 @@ export function PriorYearPrompt({
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [spawned, setSpawned] = useState<number | null>(null);
+  // Task #14: no reload. The action either spawns every year we sent or
+  // fails outright (see spawnPriorYearCasesAction), so on success we
+  // already know exactly which years just became "already added" and
+  // mark them locally rather than waiting on a server round-trip.
+  const [locallySpawned, setLocallySpawned] = useState<Set<string>>(new Set());
+  const isSpawned = (ty: string) => years.find((y) => y.taxYear === ty)?.alreadySpawned || locallySpawned.has(ty);
 
-  const anyActionable = years.some((y) => y.supported && !y.alreadySpawned);
+  const anyActionable = years.some((y) => y.supported && !isSpawned(y.taxYear));
   if (years.length === 0) return null;
 
   const toggle = (ty: string) => {
@@ -50,8 +56,8 @@ export function PriorYearPrompt({
       const r = await spawnPriorYearCasesAction(parentCaseId, selected);
       if (!r.ok) { setErr(r.error); return; }
       setSpawned(r.spawnedCaseIds.length);
+      setLocallySpawned((prev) => new Set([...prev, ...selected]));
       setPicked(new Set());
-      window.location.reload();
     });
   };
 
@@ -87,14 +93,14 @@ export function PriorYearPrompt({
                     We don&apos;t have an automated rate pack for this year yet. Reply to your welcome
                     email and support will set up a bespoke case.
                   </div>
-                ) : y.alreadySpawned ? (
+                ) : isSpawned(y.taxYear) ? (
                   <div className="mt-1 text-xs text-emerald-700">
                     &#x2713; Already added to your dashboard as a draft return.
                   </div>
                 ) : null}
               </div>
               <div className="shrink-0">
-                {y.supported && !y.alreadySpawned && editable ? (
+                {y.supported && !isSpawned(y.taxYear) && editable ? (
                   <label className="flex items-center gap-2 text-xs text-slate-700">
                     <input
                       type="checkbox"

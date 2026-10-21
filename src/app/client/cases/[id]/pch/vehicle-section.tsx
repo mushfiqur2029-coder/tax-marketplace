@@ -50,7 +50,27 @@ type Props = {
   editable?: boolean;
 };
 
-export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
+const EMPTY_VEHICLE: VehicleSummary = {
+  status: null,
+  fuel: null,
+  make_model: null,
+  registration: null,
+  co2_gpkm: null,
+  purchase_date: null,
+  purchase_price_pence: null,
+  new_or_used: null,
+  business_pct_override: null,
+  disposed: false,
+  disposal_proceeds_pence: null,
+  disposal_date: null,
+};
+
+export function VehicleSection({ caseId, vehicle: initialVehicle, editable = true }: Props) {
+  // Task #14: no reload. markNoVehicleAction and markNoVehicleDisposalAction
+  // both write a fixed, known set of fields (see vehicle-interview-actions.ts),
+  // so on success we apply that same patch to our own local copy instead of
+  // waiting on a server round-trip.
+  const [vehicle, setVehicle] = useState(initialVehicle);
   const [open, setOpen] = useState(false);
   const [skipping, startSkip] = useTransition();
   const [skipErr, setSkipErr] = useState<string | null>(null);
@@ -59,8 +79,17 @@ export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
   const skipCard = () => startSkip(async () => {
     setSkipErr(null);
     const r = await markNoVehicleAction(caseId);
-    if (!r.ok) setSkipErr(r.error);
-    else window.location.reload();
+    if (!r.ok) {
+      setSkipErr(r.error);
+      return;
+    }
+    setVehicle((prev) => ({
+      ...(prev ?? EMPTY_VEHICLE),
+      status: "No vehicle",
+      disposed: false,
+      disposal_proceeds_pence: null,
+      disposal_date: null,
+    }));
   });
 
   return (
@@ -139,6 +168,14 @@ export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
           proceedsPence={vehicle?.disposal_proceeds_pence ?? null}
           date={vehicle?.disposal_date ?? null}
           canEdit={editable}
+          onMarkedNotDisposed={() =>
+            setVehicle((prev) => ({
+              ...(prev ?? EMPTY_VEHICLE),
+              disposed: false,
+              disposal_proceeds_pence: null,
+              disposal_date: null,
+            }))
+          }
         />
       ) : null}
     </div>
@@ -152,13 +189,14 @@ export function VehicleSection({ caseId, vehicle, editable = true }: Props) {
 // VEHICLE_CA_EXT chat. Captured state (disposed=true) replaces both
 // with a summary + Update button.
 function DisposalSubpanel({
-  caseId, disposed, proceedsPence, date, canEdit,
+  caseId, disposed, proceedsPence, date, canEdit, onMarkedNotDisposed,
 }: {
   caseId: string;
   disposed: boolean;
   proceedsPence: number | null;
   date: string | null;
   canEdit: boolean;
+  onMarkedNotDisposed: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, start] = useTransition();
@@ -167,8 +205,11 @@ function DisposalSubpanel({
   const markNo = () => start(async () => {
     setErr(null);
     const r = await markNoVehicleDisposalAction(caseId);
-    if (!r.ok) setErr(r.error);
-    else window.location.reload();
+    if (!r.ok) {
+      setErr(r.error);
+      return;
+    }
+    onMarkedNotDisposed();
   });
 
   return (
