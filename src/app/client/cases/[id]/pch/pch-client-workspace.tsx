@@ -147,6 +147,19 @@ export function PchClientWorkspace(props: {
   // the engine would read on Submit for review). Live edits in the
   // forms do not flip the readiness state until the user hits Save in
   // each tab.
+  // Task: confirming a Photo ID field (front of licence: name, DOB,
+  // address, postcode) in the Documents review card used to only show
+  // up in "2. Your identity" after a full page reload, which is
+  // disruptive while the client is actively working elsewhere on the
+  // page. ExtractionReview now reports each applied field straight up
+  // here (see onIdentityFieldApplied below), merged over the
+  // server-rendered head so the identity summary updates live, no
+  // reload.
+  const [identityOverrides, setIdentityOverrides] = useState<Partial<IdentityHead>>({});
+  const onIdentityFieldApplied = (patch: Partial<IdentityHead>) => {
+    setIdentityOverrides((prev) => ({ ...prev, ...patch }));
+  };
+
   const readiness = useMemo(() => canRunDraft(
     props.incomeLines.map((l) => ({
       grossTakings: (l.gross_takings_pence ?? 0) / 100,
@@ -245,13 +258,14 @@ export function PchClientWorkspace(props: {
               extractions={props.extractions}
               editable={editable}
               photoIdKind={(props.head?.photo_id_kind as "passport" | "licence" | null | undefined) ?? null}
+              onIdentityFieldApplied={onIdentityFieldApplied}
             />
 
             <h2 className={h2}>2. Your identity</h2>
             <div className={card}>
               <IdentitySection
                 caseId={props.caseId}
-                head={headToIdentity(props.head ?? {})}
+                head={{ ...headToIdentity(props.head ?? {}), ...identityOverrides }}
                 editable={editable}
               />
             </div>
@@ -926,6 +940,7 @@ function SubmitForReviewSection({
 
 function DocSection({
   caseId, slots, status, uploaded, extractions, editable = true, photoIdKind,
+  onIdentityFieldApplied,
 }: {
   caseId: string; slots: Slot[]; status: DocStatus[]; uploaded: UploadedDoc[];
   extractions: ExtractionReviewPayload[];
@@ -933,6 +948,10 @@ function DocSection({
   // Phase 8 Slice 8.3: lets the Photo ID row swap in the custom passport
   // vs licence UI; null means "client hasn't picked yet".
   photoIdKind: "passport" | "licence" | null;
+  // Reports an accepted/edited Photo ID field straight up to the page so
+  // "2. Your identity" updates live. See the matching comment in
+  // PchClientWorkspace.
+  onIdentityFieldApplied?: (patch: Partial<IdentityHead>) => void;
 }) {
   const statusByCode = new Map(status.map((s) => [s.slot_code, s]));
   const uploadedByKey = new Map<string, UploadedDoc[]>();
@@ -984,6 +1003,7 @@ function DocSection({
                   canEdit={editable}
                   photoIdKind={photoIdKind}
                   onChanged={scheduleReload}
+                  onIdentityFieldApplied={onIdentityFieldApplied}
                 />
               ) : (
                 <DocRow
@@ -1289,12 +1309,14 @@ function DocRow({
 // passport data page).
 function PhotoIdSection({
   caseId, slot, status, uploaded, extractions, canEdit, photoIdKind: initialPhotoIdKind, onChanged,
+  onIdentityFieldApplied,
 }: {
   caseId: string; slot: Slot; status: DocStatus | undefined;
   uploaded: UploadedDoc[]; extractions: ExtractionReviewPayload[];
   canEdit: boolean;
   photoIdKind: "passport" | "licence" | null;
   onChanged: () => void;
+  onIdentityFieldApplied?: (patch: Partial<IdentityHead>) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1380,6 +1402,7 @@ function PhotoIdSection({
           onChanged={onChanged}
           onSwitch={() => pickKind(photoIdKind === "passport" ? "licence" : "passport")}
           switching={busy}
+          onIdentityFieldApplied={onIdentityFieldApplied}
         />
       )}
 
@@ -1390,6 +1413,7 @@ function PhotoIdSection({
 
 function PhotoIdSlots({
   caseId, kind, uploaded, extractions, canEdit, onChanged, onSwitch, switching,
+  onIdentityFieldApplied,
 }: {
   caseId: string;
   kind: "passport" | "licence";
@@ -1399,6 +1423,7 @@ function PhotoIdSlots({
   onChanged: () => void;
   onSwitch: () => void;
   switching: boolean;
+  onIdentityFieldApplied?: (patch: Partial<IdentityHead>) => void;
 }) {
   const switchLabel = kind === "passport"
     ? "I have a driving licence instead"
@@ -1432,6 +1457,7 @@ function PhotoIdSlots({
           extraction={extractions.find((e) => e.photoIdSide === null) ?? null}
           canEdit={canEdit}
           onChanged={onChanged}
+          onIdentityFieldApplied={onIdentityFieldApplied}
         />
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -1443,6 +1469,7 @@ function PhotoIdSlots({
             extraction={extractions.find((e) => e.photoIdSide === "front") ?? null}
             canEdit={canEdit}
             onChanged={onChanged}
+            onIdentityFieldApplied={onIdentityFieldApplied}
           />
           <PhotoIdUploadTile
             caseId={caseId}
@@ -1452,6 +1479,7 @@ function PhotoIdSlots({
             extraction={extractions.find((e) => e.photoIdSide === "back") ?? null}
             canEdit={canEdit}
             onChanged={onChanged}
+            onIdentityFieldApplied={onIdentityFieldApplied}
           />
         </div>
       )}
@@ -1461,6 +1489,7 @@ function PhotoIdSlots({
 
 function PhotoIdUploadTile({
   caseId, label, side, uploaded, extraction, canEdit, onChanged,
+  onIdentityFieldApplied,
 }: {
   caseId: string;
   label: string;
@@ -1469,6 +1498,7 @@ function PhotoIdUploadTile({
   extraction: ExtractionReviewPayload | null;
   canEdit: boolean;
   onChanged: () => void;
+  onIdentityFieldApplied?: (patch: Partial<IdentityHead>) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1569,7 +1599,7 @@ function PhotoIdUploadTile({
       />
       {extraction ? (
         <div className="mt-2">
-          <ExtractionReview ext={extraction} canEdit={canEdit} />
+          <ExtractionReview ext={extraction} canEdit={canEdit} onIdentityFieldApplied={onIdentityFieldApplied} />
         </div>
       ) : null}
     </div>

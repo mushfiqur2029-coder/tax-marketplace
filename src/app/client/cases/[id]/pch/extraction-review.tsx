@@ -7,6 +7,8 @@ import {
   rejectPchExtractionFieldAction,
 } from "@/app/client/pch/extraction-actions";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
+import { SLOT_APPLY_MAPS, coerceValueForTarget } from "@/lib/pch/extraction-apply";
+import type { IdentityHead } from "./identity-section";
 
 // Per-document review panel. Lives next to the Upload button in the
 // client workspace. Renders every field the AI extracted, with its
@@ -56,21 +58,33 @@ export type ExtractionReviewPayload = {
   targetable: Record<string, boolean>;
 };
 
-export function ExtractionReview({ ext, canEdit }: {
+export function ExtractionReview({ ext, canEdit, onIdentityFieldApplied }: {
   ext: ExtractionReviewPayload;
   canEdit: boolean;
+  // Photo ID (PCH-24) fields map straight onto pch_cases.cl_name /
+  // cl_dob / cl_address / cl_postcode, which "2. Your identity" also
+  // displays. Reporting a confirmed/edited value up through here lets
+  // that section update live the instant the client confirms it here,
+  // instead of only on the next full page reload.
+  onIdentityFieldApplied?: (patch: Partial<IdentityHead>) => void;
 }) {
   // Task #14: no reload per click. Confirm/Edit/Skip each write a value
   // we already know (the extracted value verbatim, or exactly what the
   // client just typed), so this card owns its own copy of fieldStates
   // and updates it directly, the summary counts below recompute from
   // the same state so they stay in sync with each row's own display.
-  // (Sibling sections that read the server's head record, like the
-  // Identity summary, can lag until the next natural reload, same
-  // accepted trade-off as document uploads elsewhere in this app.)
   const [fieldStates, setFieldStates] = useState(ext.fieldStates);
   const setFieldState = (key: string, next: ExtractionFieldState) => {
     setFieldStates((prev) => ({ ...prev, [key]: next }));
+    if (!onIdentityFieldApplied) return;
+    if (next.status !== "accepted" && next.status !== "edited") return;
+    const target = SLOT_APPLY_MAPS[ext.slotCode]?.targets[key];
+    if (!target || target.table !== "pch_cases") return;
+    const raw = next.status === "edited" ? next.overrideValue : ext.fields[key]?.value;
+    const value = coerceValueForTarget(raw, undefined);
+    onIdentityFieldApplied({
+      [target.column]: value == null ? null : String(value),
+    } as Partial<IdentityHead>);
   };
   if (ext.status === "pending") {
     return (

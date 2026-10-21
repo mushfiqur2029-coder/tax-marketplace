@@ -242,13 +242,23 @@ export async function uploadPchDocumentAction(
   // every other slot goes through the per-slot extraction pattern from
   // Phase 3. Both run in next/after so the upload response isn't
   // blocked on the 10 to 60 second model work.
+  //
+  // The back of a UK driving licence carries only the vehicle-category
+  // entitlement table, no personal data at all (see
+  // LICENCE_OFF_SIDE_FIELDS in extraction-trigger.ts), so every field
+  // on it was already being auto-rejected the instant the AI came back.
+  // Running the model at all just to auto-skip 100% of its own output
+  // was pure cost and UI noise for a card the client can't actually do
+  // anything with; skip it outright and keep the upload as a plain
+  // record, same as any other document whose content we don't read.
+  const isLicenceBack = slotCode === "PCH-24" && photoIdSide === "back";
   if (slotCode === "PCH-14") {
     const { ingestBankStatement } = await import("@/lib/pch/bank-trigger");
     const documentId = inserted.id;
     after(async () => {
       await ingestBankStatement({ caseId, documentId });
     });
-  } else {
+  } else if (!isLicenceBack) {
     const scheduled = await schedulePchExtraction({
       caseId,
       slotCode,
