@@ -1332,7 +1332,7 @@ export async function createBespokeCaseFromEnquiryAction(
     // own action rather than overloading this one.
     if (enquiry.service_key !== "vat_plus_accounts_200k") {
       throw new Error(
-        "Case creation from enquiry is only supported for the VAT Registered + Accounts (over £200k) tier.",
+        "Case creation from enquiry is only supported for the VAT-registered company (over £200k turnover) tier.",
       );
     }
 

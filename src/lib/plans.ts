@@ -325,7 +325,7 @@ export const PLAN_TIERS: PlanTier[] = [
     // checkout, no onboarding checklist attach to this tier.
     id: "vat_plus_accounts_200k",
     group: "company",
-    title: "VAT Registered + Accounts (over £200k turnover)",
+    title: "VAT-registered company (over £200k turnover)",
     tagline:
       "Larger-company engagement. We scope and price around your business.",
     priceGbp: 0,
@@ -347,7 +347,7 @@ export const PLAN_TIERS: PlanTier[] = [
     // the aliasTier helper in checklist.ts.
     id: "vat_plus_accounts_bespoke",
     group: "company",
-    title: "VAT Registered + Accounts (bespoke)",
+    title: "VAT-registered company (bespoke)",
     tagline:
       "Bespoke engagement priced on a scoping call. Full accounts, CT, and every VAT return.",
     priceGbp: 0,
