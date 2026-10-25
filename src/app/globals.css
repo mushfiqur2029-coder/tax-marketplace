@@ -658,7 +658,13 @@
   }
   .pt-switch.on .pt-knob { transform: translateX(24px); }
 
-  .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  /* Business/VAT panel: always exactly 4 company tiers. 3 columns left
+     the 4th card orphaned alone on its own row with a big empty gap
+     beside it, which read as unfinished/unprofessional. 2 columns
+     gives an even 2x2 with no orphan, and the extra width also suits
+     the longer titles + feature lists on this side (vs. personal's
+     shorter cards, which stay on their own 3-col Tailwind grid). */
+  .pricing-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
   .price-card {
     background: var(--paper); border: 1px solid var(--line); border-radius: 20px;
     padding: 30px 26px; display: flex; flex-direction: column;
