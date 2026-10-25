@@ -50,12 +50,18 @@ export type VehicleInitial = {
   wdv_brought_forward_pence: number | null;
 };
 
-const STATUS_OPTIONS = [
-  "Owned outright",
-  "Bought on HP / loan",
-  "Rented weekly (PCO hire)",
-  "Leased",
-  "No vehicle",
+// Must match pch_vehicle.status check constraint exactly (migration
+// 0103 - the Phase 8 slice-1 expansion from 4 to 7 values). Any
+// friendlier copy sits in STATUS_HELP below the dropdown; the stored
+// value is one of the seven literal strings.
+const STATUS_OPTIONS: Array<{ value: string; help?: string }> = [
+  { value: "Owned outright" },
+  { value: "Hire purchase", help: "Monthly HP payments, you own it at the end" },
+  { value: "PCP", help: "Personal Contract Purchase" },
+  { value: "Loan", help: "Any other car loan" },
+  { value: "Leased", help: "Business lease or PCH, you hand it back" },
+  { value: "Rented", help: "Weekly rental, PCO hire, Uber hire" },
+  { value: "No vehicle", help: "You didn't use a vehicle for work this year" },
 ];
 const FUEL_OPTIONS = ["Petrol", "Diesel", "Hybrid", "Electric"];
 const PREVIOUS_METHOD_OPTIONS = [
@@ -102,6 +108,11 @@ export function Section3Vehicle({
         value={v.status}
         onSaved={(val) => patch({ status: val })}
         editable={editable}
+        helpText={
+          v.status
+            ? STATUS_OPTIONS.find((o) => o.value === v.status)?.help
+            : undefined
+        }
       />
 
       {!noVehicle ? (
@@ -230,13 +241,15 @@ export function Section3Vehicle({
   );
 }
 
+type SelectOption = string | { value: string; help?: string };
+
 function SelectField({
   caseId, field, label, options, value, onSaved, editable, helpText,
 }: {
   caseId: string;
   field: string;
   label: string;
-  options: string[];
+  options: SelectOption[];
   value: string | null;
   onSaved: (v: string | null) => void;
   editable: boolean;
@@ -255,6 +268,9 @@ function SelectField({
       onSaved(next === "" ? null : next);
     },
   });
+  const normalised = options.map((o) =>
+    typeof o === "string" ? { value: o, help: undefined } : o,
+  );
   return (
     <label>
       <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
@@ -268,9 +284,9 @@ function SelectField({
         className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
       >
         <option value="">Pick one...</option>
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
+        {normalised.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.value}
           </option>
         ))}
       </select>

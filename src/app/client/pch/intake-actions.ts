@@ -602,14 +602,16 @@ const VEHICLE_FIELDS: Record<string, "string" | "integer_pence" | "integer" | "b
   wdv_brought_forward_pence: "integer_pence",
 };
 
+// Mirrors pch_vehicle.status check constraint as of migration 0103.
+// Keep in step with STATUS_OPTIONS in section-3-vehicle.tsx; the
+// DB-side check is the source of truth, this is the client-visible
+// guard that gives a readable error before the write round-trips.
 const VEHICLE_STATUSES = new Set([
   "Owned outright",
-  "Bought on HP / loan",
-  "Rented weekly (PCO hire)",
-  "Leased",
   "Hire purchase",
   "PCP",
   "Loan",
+  "Leased",
   "Rented",
   "No vehicle",
 ]);
