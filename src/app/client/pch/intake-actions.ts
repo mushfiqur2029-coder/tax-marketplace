@@ -373,6 +373,495 @@ async function extractSingleField(
 }
 
 // -------------------------------------------------------------------
+// Income row upserts (section 2)
+// -------------------------------------------------------------------
+//
+// Default rows (Uber / Bolt / Free Now) are seeded by ensurePchHeadRow
+// on case creation; "Add income" lets the client add free-text-titled
+// rows. source doubles as the free-text label per the Phase A plan;
+// line_type stays 'Fares' for every intake-created row.
+
+export async function upsertPchIncomeLineAction(
+  caseId: string,
+  lineId: string | null,
+  patch: {
+    source?: string;
+    gross_takings_pence?: number | null;
+  },
+): Promise<IntakeActionResultWith<{ id: string }>> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const row: Record<string, unknown> = {};
+    if (patch.source !== undefined) row.source = patch.source;
+    if (patch.gross_takings_pence !== undefined) {
+      row.gross_takings_pence =
+        patch.gross_takings_pence === null
+          ? 0
+          : Math.max(0, Math.round(patch.gross_takings_pence));
+    }
+    if (lineId) {
+      const upd = await admin
+        .from("pch_income_lines")
+        .update(row)
+        .eq("id", lineId)
+        .eq("case_id", caseId)
+        .select("id")
+        .single();
+      if (upd.error) return { ok: false, error: upd.error.message };
+      return { ok: true, id: upd.data.id as string };
+    }
+    const { data: existing } = await admin
+      .from("pch_income_lines")
+      .select("sort_order")
+      .eq("case_id", caseId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const nextSort = ((existing?.sort_order as number | undefined) ?? -1) + 1;
+    const ins = await admin
+      .from("pch_income_lines")
+      .insert({
+        case_id: caseId,
+        source: patch.source ?? "",
+        gross_takings_pence:
+          patch.gross_takings_pence === null || patch.gross_takings_pence === undefined
+            ? 0
+            : Math.max(0, Math.round(patch.gross_takings_pence)),
+        platform_fee_pence: 0,
+        on_trip_miles: 0,
+        dead_miles: 0,
+        line_type: "Fares",
+        sort_order: nextSort,
+      })
+      .select("id")
+      .single();
+    if (ins.error) return { ok: false, error: ins.error.message };
+    return { ok: true, id: ins.data.id as string };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
+export async function deletePchIncomeLineAction(
+  caseId: string,
+  lineId: string,
+): Promise<IntakeActionResult> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const del = await admin
+      .from("pch_income_lines")
+      .delete()
+      .eq("id", lineId)
+      .eq("case_id", caseId);
+    if (del.error) return { ok: false, error: del.error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Expense row upserts (section 3)
+// -------------------------------------------------------------------
+//
+// Section 3 has a fixed list of 12 named expense slots plus an
+// airport-dropoff multi (one row per selected airport). Every slot
+// maps to one row in pch_expense_lines; the client UI tracks each
+// slot by label and upserts by label if a row exists for that
+// (case_id, label).
+
+const EXPENSE_CATEGORIES = new Set([
+  "Vehicle running costs",
+  "Vehicle hire, lease & finance",
+  "Congestion, ULEZ, tolls & parking",
+  "Licences & compliance",
+  "Phone & technology",
+  "Platform & card fees",
+  "Finance & bank charges",
+  "Accountancy & insurance",
+  "Other expenses",
+  "VAT paid (Flat Rate Scheme)",
+]);
+const SA103S_BOXES = new Set([12, 14, 16, 17, 18, 19]);
+const CAR_COSTS = new Set(["Yes", "No", "Phone"]);
+
+export async function upsertPchExpenseLineAction(
+  caseId: string,
+  lineId: string | null,
+  row: {
+    label: string;
+    amount_paid_pence: number | null;
+    category: string;
+    sa103s_box: number;
+    car_cost: "Yes" | "No" | "Phone";
+  },
+): Promise<IntakeActionResultWith<{ id: string }>> {
+  try {
+    if (!row.label || row.label.trim().length === 0) {
+      return { ok: false, error: "Expense label is required." };
+    }
+    if (!EXPENSE_CATEGORIES.has(row.category)) {
+      return { ok: false, error: "Unknown expense category." };
+    }
+    if (!SA103S_BOXES.has(row.sa103s_box)) {
+      return { ok: false, error: "Unknown SA103S box." };
+    }
+    if (!CAR_COSTS.has(row.car_cost)) {
+      return { ok: false, error: "Unknown car_cost value." };
+    }
+    const amount =
+      row.amount_paid_pence === null
+        ? 0
+        : Math.max(0, Math.round(row.amount_paid_pence));
+    const { admin } = await requirePchIntakeEditable(caseId);
+    if (lineId) {
+      const upd = await admin
+        .from("pch_expense_lines")
+        .update({
+          label: row.label.trim(),
+          amount_paid_pence: amount,
+          category: row.category,
+          sa103s_box: row.sa103s_box,
+          car_cost: row.car_cost,
+        })
+        .eq("id", lineId)
+        .eq("case_id", caseId)
+        .select("id")
+        .single();
+      if (upd.error) return { ok: false, error: upd.error.message };
+      return { ok: true, id: upd.data.id as string };
+    }
+    const { data: existing } = await admin
+      .from("pch_expense_lines")
+      .select("sort_order")
+      .eq("case_id", caseId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const nextSort = ((existing?.sort_order as number | undefined) ?? -1) + 1;
+    const ins = await admin
+      .from("pch_expense_lines")
+      .insert({
+        case_id: caseId,
+        label: row.label.trim(),
+        amount_paid_pence: amount,
+        category: row.category,
+        sa103s_box: row.sa103s_box,
+        car_cost: row.car_cost,
+        sort_order: nextSort,
+      })
+      .select("id")
+      .single();
+    if (ins.error) return { ok: false, error: ins.error.message };
+    return { ok: true, id: ins.data.id as string };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
+export async function deletePchExpenseLineAction(
+  caseId: string,
+  lineId: string,
+): Promise<IntakeActionResult> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const del = await admin
+      .from("pch_expense_lines")
+      .delete()
+      .eq("id", lineId)
+      .eq("case_id", caseId);
+    if (del.error) return { ok: false, error: del.error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Vehicle (section 3 subsection)
+// -------------------------------------------------------------------
+//
+// Manual-form equivalent of what the deleted vehicle_CA chat used to
+// capture. Writes a single pch_vehicle row keyed on case_id with the
+// minimum field set engine-snapshot.ts actually reads for the capital
+// allowance calc; see docs/comment in that file for the full list.
+
+const VEHICLE_FIELDS: Record<string, "string" | "integer_pence" | "integer" | "boolean" | "string_enum" | "date" | "numeric"> = {
+  status: "string_enum",
+  fuel: "string_enum",
+  make_model: "string",
+  registration: "string",
+  bought_this_year: "boolean",
+  purchase_date: "date",
+  purchase_price_pence: "integer_pence",
+  new_or_used: "string_enum",
+  odo_start: "integer",
+  odo_end: "integer",
+  other_business_miles: "integer",
+  previous_method: "string_enum",
+  wdv_brought_forward_pence: "integer_pence",
+};
+
+const VEHICLE_STATUSES = new Set([
+  "Owned outright",
+  "Bought on HP / loan",
+  "Rented weekly (PCO hire)",
+  "Leased",
+  "Hire purchase",
+  "PCP",
+  "Loan",
+  "Rented",
+  "No vehicle",
+]);
+const VEHICLE_FUELS = new Set(["Petrol", "Diesel", "Hybrid", "Electric"]);
+const VEHICLE_NEW_OR_USED = new Set(["New", "Used"]);
+const VEHICLE_PREVIOUS_METHODS = new Set([
+  "Simplified mileage",
+  "Actual costs (capital allowances claimed)",
+  "First year",
+]);
+
+export async function savePchVehicleFieldAction(
+  caseId: string,
+  field: string,
+  value: string | number | boolean | null,
+): Promise<IntakeActionResult> {
+  try {
+    const kind = VEHICLE_FIELDS[field];
+    if (!kind) return { ok: false, error: "Field " + field + " is not writable." };
+
+    let dbValue: string | number | boolean | null = value;
+    if (value === "" || value === undefined) dbValue = null;
+    if (kind === "integer_pence" && dbValue !== null) {
+      const n = typeof dbValue === "number" ? dbValue : Number(dbValue);
+      if (!Number.isFinite(n) || n < 0) return { ok: false, error: "Must be zero or more." };
+      dbValue = Math.round(n);
+    }
+    if (kind === "integer" && dbValue !== null) {
+      const n = typeof dbValue === "number" ? dbValue : Number(dbValue);
+      if (!Number.isFinite(n) || n < 0) return { ok: false, error: "Must be zero or more." };
+      dbValue = Math.round(n);
+    }
+    if (kind === "boolean" && dbValue !== null) {
+      dbValue = dbValue === true || dbValue === "true";
+    }
+    if (field === "status" && dbValue !== null && !VEHICLE_STATUSES.has(dbValue as string)) {
+      return { ok: false, error: "Unknown vehicle status." };
+    }
+    if (field === "fuel" && dbValue !== null && !VEHICLE_FUELS.has(dbValue as string)) {
+      return { ok: false, error: "Unknown fuel type." };
+    }
+    if (field === "new_or_used" && dbValue !== null && !VEHICLE_NEW_OR_USED.has(dbValue as string)) {
+      return { ok: false, error: "new_or_used must be 'New' or 'Used'." };
+    }
+    if (field === "previous_method" && dbValue !== null && !VEHICLE_PREVIOUS_METHODS.has(dbValue as string)) {
+      return { ok: false, error: "Unknown previous_method." };
+    }
+
+    const { admin } = await requirePchIntakeEditable(caseId);
+    // Upsert on case_id since pch_vehicle has case_id as primary key.
+    const upsert = await admin
+      .from("pch_vehicle")
+      .upsert(
+        { case_id: caseId, [field]: dbValue },
+        { onConflict: "case_id" },
+      );
+    if (upsert.error) return { ok: false, error: upsert.error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Row-evidence uploads: section 2 income rows + section 3 expense rows
+// each have an optional doc-upload button that both stores the file
+// as an accountant reference AND runs a single-field OCR for the
+// row's money amount. Shape mirrors the UTR/NI single-field helper.
+// -------------------------------------------------------------------
+
+export async function extractIncomeAmountFromUploadAction(
+  caseId: string,
+  lineId: string,
+  formData: FormData,
+): Promise<IntakeActionResultWith<{ gross_takings_pence: number | null }>> {
+  const r = await extractAmountForLine(caseId, lineId, formData, {
+    label: "income",
+    requirementKey: "intake-income",
+    table: "pch_income_lines",
+    moneyColumn: "gross_takings_pence",
+    evidenceColumn: "evidence",
+    prompt:
+      "Find the TOTAL gross income (fares plus incentives, before fees) on this platform tax summary or statement. "
+      + "Return a single number in pounds, no currency symbol and no commas. "
+      + "If several totals are shown, pick the ANNUAL gross earnings total. "
+      + "If you cannot find it, return null.",
+  });
+  if (!r.ok) return r;
+  return { ok: true, gross_takings_pence: r.value };
+}
+
+export async function extractExpenseAmountFromUploadAction(
+  caseId: string,
+  lineId: string,
+  formData: FormData,
+): Promise<IntakeActionResultWith<{ amount_paid_pence: number | null }>> {
+  const r = await extractAmountForLine(caseId, lineId, formData, {
+    label: "expense",
+    requirementKey: "intake-expense",
+    table: "pch_expense_lines",
+    moneyColumn: "amount_paid_pence",
+    evidenceColumn: "evidence",
+    prompt:
+      "Find the TOTAL AMOUNT PAID on this receipt or invoice. "
+      + "Return a single number in pounds, no currency symbol and no commas. "
+      + "If several totals are shown, pick the final total paid including any VAT. "
+      + "If you cannot find it, return null.",
+  });
+  if (!r.ok) return r;
+  return { ok: true, amount_paid_pence: r.value };
+}
+
+const AMOUNT_REGEX = /£?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/;
+
+async function extractAmountForLine(
+  caseId: string,
+  lineId: string,
+  formData: FormData,
+  cfg: {
+    label: string;
+    requirementKey: string;
+    table: "pch_income_lines" | "pch_expense_lines";
+    moneyColumn: string;
+    evidenceColumn: string;
+    prompt: string;
+  },
+): Promise<IntakeActionResultWith<{ value: number | null }>> {
+  try {
+    const { me, admin } = await requirePchIntakeEditable(caseId);
+
+    // Make sure the line is really this case's line.
+    const check = await admin
+      .from(cfg.table)
+      .select("id")
+      .eq("id", lineId)
+      .eq("case_id", caseId)
+      .maybeSingle();
+    if (check.error) return { ok: false, error: check.error.message };
+    if (!check.data) return { ok: false, error: "Row not found." };
+
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
+
+    const typeLower = (file.type || "").toLowerCase();
+    const nameLower = file.name.toLowerCase();
+    const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+    const isJpeg = typeLower === "image/jpeg" || /\.jpe?g$/.test(nameLower);
+    const isPng = typeLower === "image/png" || /\.png$/.test(nameLower);
+    const isWebp = typeLower === "image/webp" || /\.webp$/.test(nameLower);
+    if (!isPdf && !isJpeg && !isPng && !isWebp) {
+      return { ok: false, error: "Upload a PDF, JPG, PNG or WebP." };
+    }
+
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const path = `${caseId}/intake/${cfg.requirementKey}-${lineId}-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const docIns = await admin
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_name: file.name,
+        file_url: path,
+        requirement_key: `${cfg.requirementKey}-${lineId}`,
+      })
+      .select("id")
+      .single();
+    if (docIns.error) return { ok: false, error: docIns.error.message };
+
+    // Store the evidence path on the row immediately so the accountant
+    // can open the file even if OCR fails.
+    const evidenceUpdate = await admin
+      .from(cfg.table)
+      .update({ [cfg.evidenceColumn]: path })
+      .eq("id", lineId)
+      .eq("case_id", caseId);
+    if (evidenceUpdate.error) return { ok: false, error: evidenceUpdate.error.message };
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return { ok: true, value: null };
+
+    const base64 = Buffer.from(bytes).toString("base64");
+    const mediaType = isPdf
+      ? "application/pdf"
+      : isPng
+        ? "image/png"
+        : isWebp
+          ? "image/webp"
+          : "image/jpeg";
+    const contentBlock: Record<string, unknown> = isPdf
+      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 128,
+        messages: [
+          {
+            role: "user",
+            content: [contentBlock, { type: "text", text: cfg.prompt }],
+          },
+        ],
+      }),
+    });
+    if (!resp.ok) return { ok: true, value: null };
+    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
+    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
+
+    // Model may wrap the figure in prose; pattern-match if needed.
+    let candidate: string | null = null;
+    const asNum = Number(raw.trim());
+    if (Number.isFinite(asNum) && asNum >= 0) {
+      candidate = String(asNum);
+    } else {
+      const m = AMOUNT_REGEX.exec(raw);
+      if (m) candidate = m[1];
+    }
+    if (!candidate) return { ok: true, value: null };
+    const pounds = Number(candidate.replace(/,/g, ""));
+    if (!Number.isFinite(pounds) || pounds < 0) return { ok: true, value: null };
+    const pence = Math.round(pounds * 100);
+
+    const amountUpdate = await admin
+      .from(cfg.table)
+      .update({ [cfg.moneyColumn]: pence })
+      .eq("id", lineId)
+      .eq("case_id", caseId);
+    if (amountUpdate.error) return { ok: false, error: amountUpdate.error.message };
+
+    return { ok: true, value: pence };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Extract failed." };
+  }
+}
+
+// -------------------------------------------------------------------
 // Auto-apply the latest completed PCH-24 (photo ID) extraction so
 // the identity inputs populate the moment the vision call finishes.
 // Called by the UI once it sees the extraction row flip to status=done.

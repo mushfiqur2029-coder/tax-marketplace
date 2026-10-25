@@ -9,6 +9,9 @@ import { AddonPayBanner } from "../addon-pay-banner";
 import { FinalPackReview } from "./final-pack-review";
 import { PriorYearPrompt, type PriorYearOption } from "./prior-year-prompt";
 import { Section1Identity, type Section1InitialHead } from "./section-1-identity";
+import { Section2Income, type IncomeLine } from "./section-2-income";
+import { Section3Expenses, type ExpenseLine } from "./section-3-expenses";
+import { type VehicleInitial } from "./section-3-vehicle";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 // Status-aware workspace for the automated PCH flow.
@@ -62,6 +65,10 @@ export function PchClientWorkspace(props: {
   section1Initial: Section1InitialHead;
   licenceDocs: Section1LicenceDoc[];
   pch24Extractions: Section1Pch24Extraction[];
+  incomeLines: IncomeLine[];
+  expenseLines: ExpenseLine[];
+  vehicleInitial: VehicleInitial;
+  caseFeePence: number;
   messagesPanel: React.ReactNode;
 }) {
   // Live-tracked state so the whole workspace stays current without
@@ -232,6 +239,20 @@ export function PchClientWorkspace(props: {
             pch24Extractions={props.pch24Extractions}
           />
 
+          <Section2Income
+            caseId={props.caseId}
+            editable={editable}
+            initial={props.incomeLines}
+          />
+
+          <Section3Expenses
+            caseId={props.caseId}
+            editable={editable}
+            initial={props.expenseLines}
+            caseFeePence={props.caseFeePence}
+            vehicleInitial={props.vehicleInitial}
+          />
+
           <IntakeRestPlaceholder editable={editable} />
         </>
       )}
@@ -241,11 +262,9 @@ export function PchClientWorkspace(props: {
   );
 }
 
-// Placeholder for the still-to-land sections (2 income, 3 expenses +
-// vehicle, 4-14 declarations, 15 last-year SA, final uploads, submit
-// for review). Phase B wires section 1; phase C adds income + expenses
-// + vehicle; phase D adds the declaration cards + last-year SA +
-// general uploads + Submit for review.
+// Placeholder for the still-to-land sections 4 to 14 (declaration
+// cards), section 15 (last year's SA), the general multi-file upload,
+// and the Submit for review button. Phase D wires them up.
 function IntakeRestPlaceholder({ editable }: { editable: boolean }) {
   return (
     <section
@@ -259,13 +278,14 @@ function IntakeRestPlaceholder({ editable }: { editable: boolean }) {
         More sections coming
       </div>
       <h2 className="mt-1 text-base font-semibold text-ink">
-        Income, expenses, and the rest land in the next updates.
+        Declarations, last-year SA and submit coming next.
       </h2>
       <p className="mt-2 text-sm text-slate-700">
-        You can keep going with your identity details above now; the
-        income rows (Uber / Bolt / Free Now), expenses (fuel, insurance
-        and the rest), vehicle details and declarations are being
-        wired up next. Nothing you&apos;ve entered is lost.
+        Sections 4-14 (interest, dividends, capital gains, rental,
+        pension, Gift Aid, child benefit, overseas, student loan, plus
+        a free-text &quot;anything else&quot; note), last year&apos;s
+        Self Assessment status and the Submit for review button all
+        land in the next update. Nothing you&apos;ve entered is lost.
       </p>
       {!editable ? (
         <p className="mt-3 text-xs text-slate-600">

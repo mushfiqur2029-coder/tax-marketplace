@@ -10,6 +10,8 @@ import {
   type TaxEngineOutput,
   type UkTaxYear,
 } from "@/lib/tax-engine";
+import { getTier } from "@/lib/service-catalog";
+import { effectiveFeePence } from "@/lib/case/pricing";
 import { type CaseMessageView } from "@/components/case/case-messages-panel";
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
@@ -40,7 +42,7 @@ export default async function PchClientPage({
   const admin = createAdminClient();
   const { data: caseRow } = await admin
     .from("cases")
-    .select("id, client_id, accountant_id, status, tier")
+    .select("id, client_id, accountant_id, status, tier, custom_fee_pence")
     .eq("id", id)
     .single();
   if (!caseRow) notFound();
@@ -52,8 +54,16 @@ export default async function PchClientPage({
   // Make sure the head row exists so every subsequent save finds a row.
   await ensurePchHeadRow(id);
 
-  const [head, snapshot, pendingAddons, licenceDocsRes, pch24ExtRes] =
-    await Promise.all([
+  const [
+    head,
+    snapshot,
+    pendingAddons,
+    licenceDocsRes,
+    pch24ExtRes,
+    incomeRes,
+    expenseRes,
+    vehicleRes,
+  ] = await Promise.all([
       admin.from("pch_cases").select("*").eq("case_id", id).single(),
       admin
         .from("pch_cases")
@@ -88,7 +98,29 @@ export default async function PchClientPage({
         .eq("slot_code", "PCH-24")
         .order("created_at", { ascending: false })
         .limit(5),
+      // Section 2: income lines (default rows seeded on first type).
+      admin
+        .from("pch_income_lines")
+        .select("id, source, gross_takings_pence")
+        .eq("case_id", id)
+        .order("sort_order"),
+      // Section 3: expense lines (fixed slots + airport rows).
+      admin
+        .from("pch_expense_lines")
+        .select("id, label, amount_paid_pence, category, sa103s_box, car_cost")
+        .eq("case_id", id)
+        .order("sort_order"),
+      // Section 3 vehicle subsection: pch_vehicle row keyed on case_id.
+      admin.from("pch_vehicle").select("*").eq("case_id", id).maybeSingle(),
     ]);
+
+  // Accountancy Fees row prefills with what this client is paying us
+  // for this return. Look up the live tier (admin may have put it on
+  // sale since the case was created) and prefer custom_fee_pence if
+  // this is a bespoke-fee case; same precedence effectiveFeePence
+  // enforces everywhere else.
+  const tier = await getTier(caseRow.tier);
+  const caseFeePence = effectiveFeePence(caseRow, tier);
 
   const priorYearOptions = await buildPriorYearOptions({
     admin,
@@ -155,6 +187,40 @@ export default async function PchClientPage({
           photo_id_side: (e.photo_id_side ?? null) as "front" | "back" | null,
           applied_at: (e.applied_at as string | null) ?? null,
         }))}
+        incomeLines={(incomeRes.data ?? []).map((l) => ({
+          id: l.id as string,
+          source: (l.source as string) ?? "",
+          gross_takings_pence: Number(l.gross_takings_pence ?? 0),
+        }))}
+        expenseLines={(expenseRes.data ?? []).map((l) => ({
+          id: l.id as string,
+          label: l.label as string,
+          amount_paid_pence: Number(l.amount_paid_pence ?? 0),
+          category: l.category as string,
+          sa103s_box: Number(l.sa103s_box),
+          car_cost: (l.car_cost ?? "No") as "Yes" | "No" | "Phone",
+        }))}
+        vehicleInitial={{
+          status: (vehicleRes.data?.status as string | null) ?? null,
+          fuel: (vehicleRes.data?.fuel as string | null) ?? null,
+          make_model: (vehicleRes.data?.make_model as string | null) ?? null,
+          registration: (vehicleRes.data?.registration as string | null) ?? null,
+          bought_this_year:
+            (vehicleRes.data?.bought_this_year as boolean | null) ?? null,
+          purchase_price_pence:
+            (vehicleRes.data?.purchase_price_pence as number | null) ?? null,
+          new_or_used:
+            (vehicleRes.data?.new_or_used as "New" | "Used" | null) ?? null,
+          odo_start: (vehicleRes.data?.odo_start as number | null) ?? null,
+          odo_end: (vehicleRes.data?.odo_end as number | null) ?? null,
+          other_business_miles:
+            (vehicleRes.data?.other_business_miles as number | null) ?? null,
+          previous_method:
+            (vehicleRes.data?.previous_method as string | null) ?? null,
+          wdv_brought_forward_pence:
+            (vehicleRes.data?.wdv_brought_forward_pence as number | null) ?? null,
+        }}
+        caseFeePence={caseFeePence}
         messagesPanel={
           <CaseConversationsPanel
             caseId={id}
