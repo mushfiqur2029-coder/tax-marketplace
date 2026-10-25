@@ -239,6 +239,11 @@ export default async function PchClientPage({
           private_use_evidence:
             (vehicleRes.data?.private_use_evidence as string | null) ?? null,
         }}
+        personalAllowance={{
+          employment_income_pence:
+            (head.data?.employment_income_pence as number | null) ?? null,
+          evidence: (head.data?.other_employment_evidence as string | null) ?? null,
+        }}
         caseFeePence={caseFeePence}
         declarationsInitial={{
           statuses: ((head.data?.cl_declaration_status ?? {}) as Record<
@@ -262,8 +267,6 @@ export default async function PchClientPage({
             (head.data?.overseas_tax_paid_pence as number | null) ?? null,
           student_loan_plan: (head.data?.student_loan_plan as string | null) ?? null,
           anything_else_note: (head.data?.anything_else_note as string | null) ?? null,
-          employment_income_pence:
-            (head.data?.employment_income_pence as number | null) ?? null,
           p11d_evidence: (head.data?.p11d_evidence as string | null) ?? null,
           interest_evidence: (head.data?.interest_evidence as string | null) ?? null,
           dividend_evidence: (head.data?.dividend_evidence as string | null) ?? null,
@@ -276,8 +279,6 @@ export default async function PchClientPage({
           overseas_evidence: (head.data?.overseas_evidence as string | null) ?? null,
           student_loan_evidence:
             (head.data?.student_loan_evidence as string | null) ?? null,
-          other_employment_evidence:
-            (head.data?.other_employment_evidence as string | null) ?? null,
         }}
         giftAidEntries={(giftAidRes.data ?? []).map((e) => ({
           id: e.id as string,

@@ -69,10 +69,11 @@ export function PriorYearPrompt({
             Older tax years that may still be outstanding
           </h2>
           <p className="mt-1 text-xs text-amber-800">
-            We checked HMRC&apos;s tax-year calendar against the trading dates on your intake. Tick any
-            year you&apos;d also like us to prepare. Each year is a separate return with its own fee and
-            its own pipeline. Pay the current-year invoice now, then handle the extra years from your
-            dashboard when you&apos;re ready.
+            Your trading dates suggest HMRC may still be waiting on these.
+            Tick any year you'd like us to prepare too; each is a
+            separate return with its own fee. Pay the current-year
+            invoice now, then kick off the extras from your dashboard
+            whenever you're ready.
           </p>
         </div>
       </div>
@@ -90,8 +91,8 @@ export function PriorYearPrompt({
                 </div>
                 {!y.supported ? (
                   <div className="mt-1 text-xs text-slate-500">
-                    We don&apos;t have an automated rate pack for this year yet. Reply to your welcome
-                    email and support will set up a bespoke case.
+                    No automated rate pack for this year yet. Reply to your welcome email and
+                    support will set up a bespoke case for you.
                   </div>
                 ) : isSpawned(y.taxYear) ? (
                   <div className="mt-1 text-xs text-emerald-700">

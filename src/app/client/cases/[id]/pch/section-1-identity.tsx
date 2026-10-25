@@ -23,6 +23,7 @@ import {
 import { uploadPchDocumentAction, setPchPhotoIdKindAction } from "@/app/client/pch/actions";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { isIdentityComplete } from "./intake-completion";
+import { TileUpload, useFileDrop } from "./upload-dropzone";
 
 type LicenceDoc = {
   id: string;
@@ -112,12 +113,12 @@ export function Section1Identity({
   }, [live, uploadedSides, setSectionDone]);
 
   return (
-    <section className="mb-8">
+    <section id="pch-section-identity" className="mb-8 scroll-mt-24">
       <h2 className="mb-1 text-lg font-bold">1. Identity</h2>
       <p className="mb-4 text-xs text-slate-600">
-        Starts with your driving licence. We&apos;ll read your name,
-        date of birth, address and postcode off it so you don&apos;t
-        have to type them. Everything else is a quick field below.
+        Upload the front and back of your driving licence and we'll
+        read your name, date of birth, address and postcode off it. The
+        rest of the fields are quick type-ins below.
       </p>
 
       <LicenceCard
@@ -202,7 +203,7 @@ export function Section1Identity({
           responseField="utr"
           autoCapitalize="off"
           inputMode="numeric"
-          helpText="Optional: upload your HMRC letter and we&apos;ll read the UTR off it. You can also just type it in."
+          helpText="Optional. Upload your HMRC letter and we'll read the UTR off it, or just type it in."
         />
         <HeadFieldWithOcrUpload
           caseId={caseId}
@@ -214,7 +215,7 @@ export function Section1Identity({
           runUpload={extractNinoFromUploadAction}
           responseField="nino"
           autoCapitalize="characters"
-          helpText="Optional: upload any payslip, P60 or HMRC letter and we&apos;ll read your NI number off it."
+          helpText="Optional. Upload a payslip, P60 or HMRC letter and we'll read your NI number off it."
         />
       </div>
     </section>
@@ -329,10 +330,7 @@ function HeadFieldWithOcrUpload(props: {
   const [extracted, setExtracted] = useState<string | null>(null);
 
   const openPicker = () => fileRef.current?.click();
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = ""; // allow re-selecting the same file
+  const uploadFile = async (file: File) => {
     setUploading(true);
     setUploadError(null);
     setExtracted(null);
@@ -350,7 +348,7 @@ function HeadFieldWithOcrUpload(props: {
         onChange(found);
       } else {
         setUploadError(
-          "Uploaded, but we couldn&apos;t read it off this document. Type it below.",
+          "Uploaded, but we couldn't read the number off this document. Type it in instead.",
         );
       }
     } catch (err) {
@@ -359,6 +357,17 @@ function HeadFieldWithOcrUpload(props: {
       setUploading(false);
     }
   };
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    await uploadFile(file);
+  };
+  const { dropProps, isDragOver } = useFileDrop({
+    onFile: uploadFile,
+    accept: "application/pdf,image/jpeg,image/png,image/webp,image/heic",
+    disabled: !props.editable || uploading,
+  });
 
   return (
     <div>
@@ -369,7 +378,13 @@ function HeadFieldWithOcrUpload(props: {
         </span>
         <SaveStatusPill status={status} error={error} />
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div
+        {...dropProps}
+        className={
+          "flex flex-col gap-2 rounded-lg sm:flex-row "
+          + (isDragOver ? "ring-2 ring-sky" : "")
+        }
+      >
         <input
           type="text"
           inputMode={props.inputMode}
@@ -386,20 +401,22 @@ function HeadFieldWithOcrUpload(props: {
           disabled={!props.editable || uploading}
           className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
         >
-          {uploading ? "Reading..." : "Upload document"}
+          {uploading ? "Reading..." : "Upload"}
         </button>
         <input
           ref={fileRef}
           type="file"
-          accept="application/pdf,image/jpeg,image/png,image/webp"
+          accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
           onChange={onFile}
           className="hidden"
         />
       </div>
+      {isDragOver ? (
+        <p className="mt-1 text-[11px] font-medium text-sky-800">Drop to upload.</p>
+      ) : null}
       {extracted ? (
         <p className="mt-1 text-xs text-emerald-700">
-          Read {extracted} off your document. Check it&apos;s right, or
-          edit above.
+          Got {extracted} off your document. Check it's right, or edit above.
         </p>
       ) : null}
       {uploadError ? (
@@ -547,9 +564,8 @@ function LicenceCard({
         <div>
           <div className="text-sm font-bold text-ink">Driving licence</div>
           <p className="mt-1 text-xs text-slate-600">
-            Upload the front and back of your UK driving licence. We&apos;ll
-            read your name, date of birth, address and postcode off the
-            front automatically.
+            Front and back. We read your name, date of birth, address and
+            postcode off the front for you.
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-700">
@@ -577,15 +593,15 @@ function LicenceCard({
 
       {applyPending || readingExtraction ? (
         <p className="mt-3 text-xs text-sky-800">
-          Reading your ID... this usually takes 10-30 seconds.
+          Reading your licence. Usually 10 to 30 seconds.
         </p>
       ) : null}
       {applied && Object.keys(applied).length > 0 && !applyPending ? (
         <p className="mt-3 text-xs text-emerald-700">
-          Read {Object.keys(applied).length}{" "}
+          Got {Object.keys(applied).length}{" "}
           {Object.keys(applied).length === 1 ? "field" : "fields"} off
-          your ID. Check each one below and edit if anything looks
-          wrong.
+          your licence. Check each one below and tidy up anything that
+          looks off.
         </p>
       ) : null}
       {applyError ? (
@@ -605,17 +621,10 @@ function LicenceSideTile({
   runsOcr?: boolean;
   onUploaded?: () => void;
 }) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const label = side === "front" ? "Front" : "Back";
 
-  const openPicker = () => fileRef.current?.click();
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    setUploading(true);
+  const upload = async (file: File) => {
     setErr(null);
     try {
       const fd = new FormData();
@@ -626,52 +635,24 @@ function LicenceSideTile({
       else onUploaded?.();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Upload failed.");
-    } finally {
-      setUploading(false);
     }
   };
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-wider text-slate-700">
-          {label}
-        </div>
-        {uploaded ? (
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
-            Uploaded
-          </span>
-        ) : (
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Needed
-          </span>
-        )}
-      </div>
-      {uploaded ? (
-        <p className="truncate text-xs text-slate-700" title={uploaded.file_name}>
-          {uploaded.file_name}
-        </p>
-      ) : (
-        <p className="text-xs text-slate-500">
-          PDF or photo. {runsOcr ? "We&apos;ll read it automatically." : "Keep it clear so your accountant can read it later."}
-        </p>
-      )}
-      <button
-        type="button"
-        onClick={openPicker}
-        disabled={!editable || uploading}
-        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
-      >
-        {uploading ? "Uploading..." : uploaded ? "Replace file" : "Upload"}
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="application/pdf,image/jpeg,image/png,image/heic"
-        onChange={onFile}
-        className="hidden"
-      />
-      {err ? <p className="mt-1 text-xs text-rose-700">{err}</p> : null}
-    </div>
+    <TileUpload
+      disabled={!editable}
+      heading={label}
+      fileName={uploaded?.file_name ?? null}
+      emptyHint={
+        runsOcr
+          ? "PDF or photo. We'll read it automatically."
+          : "PDF or photo. Keep it legible for your accountant."
+      }
+      onFile={upload}
+      error={err}
+      withCamera
+      cameraCapture="environment"
+      accept="application/pdf,image/jpeg,image/png,image/heic"
+    />
   );
 }

@@ -11,7 +11,10 @@ import { PriorYearPrompt, type PriorYearOption } from "./prior-year-prompt";
 import { Section1Identity, type Section1InitialHead } from "./section-1-identity";
 import { Section2Income, type IncomeLine } from "./section-2-income";
 import { Section3Expenses, type ExpenseLine } from "./section-3-expenses";
-import { type VehicleInitial } from "./section-3-vehicle";
+import {
+  type PersonalAllowanceInitial,
+  type VehicleInitial,
+} from "./section-3-vehicle";
 import {
   Section4to14Declarations,
   type DeclarationsInitial,
@@ -91,6 +94,7 @@ export function PchClientWorkspace(props: {
   incomeLines: IncomeLine[];
   expenseLines: ExpenseLine[];
   vehicleInitial: VehicleInitial;
+  personalAllowance: PersonalAllowanceInitial;
   caseFeePence: number;
   declarationsInitial: DeclarationsInitial;
   giftAidEntries: GiftAidEntry[];
@@ -225,7 +229,7 @@ export function PchClientWorkspace(props: {
             Figures approved on {new Date(liveHead.client_approval_at).toLocaleString("en-GB")}
           </h2>
           <p className="mt-1 text-xs text-slate-700">
-            Your accountant is preparing the final accounts pack. You&apos;ll be prompted to review and confirm it here once it&apos;s ready.
+            Your accountant is preparing the final accounts pack. You'll be prompted to review and confirm it here once it's ready.
           </p>
         </section>
       ) : filed && props.engineSnapshot ? (
@@ -280,6 +284,7 @@ export function PchClientWorkspace(props: {
             initial={props.expenseLines}
             caseFeePence={props.caseFeePence}
             vehicleInitial={props.vehicleInitial}
+            personalAllowance={props.personalAllowance}
           />
 
           <Section4to14Declarations
@@ -373,7 +378,7 @@ function SubmitForReviewSection({
       <h2 className="mb-1 text-lg font-bold">Ready to send to your accountant?</h2>
       <p className="mb-3 text-sm text-slate-600">
         One click runs the engine and sends your return into the queue
-        for one of our accountants to pick up. You&apos;ll get an email
+        for one of our accountants to pick up. You'll get an email
         when they take it on, and another when the figures are ready
         for your approval. You can keep editing until they pick it up.
       </p>
@@ -416,11 +421,11 @@ function WithAccountantBanner() {
         Your accountant is reviewing
       </div>
       <h2 className="mt-1 text-base font-semibold text-ink">
-        We&apos;ve got your return. No action needed right now.
+        We've got your return. No action needed right now.
       </h2>
       <p className="mt-2 text-sm text-slate-700">
         You can still add documents or correct a figure below if you spot
-        something. We&apos;ll email you when the figures are ready to
+        something. We'll email you when the figures are ready to
         approve.
       </p>
     </section>

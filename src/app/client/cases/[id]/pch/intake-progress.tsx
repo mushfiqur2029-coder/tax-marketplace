@@ -7,8 +7,13 @@
 // chip = done. When submit is attempted while anything is pending,
 // the workspace calls highlightPending() and the matching chips get
 // an amber ring/pulse until the user resolves them.
+//
+// Phase H: chips are also clickable and smooth-scroll to the section
+// anchor they correspond to (mirroring the Submit-button scroll back
+// up to this bar on a rejected submit).
 
 import {
+  INTAKE_SECTION_ANCHOR_IDS,
   INTAKE_SECTION_KEYS,
   INTAKE_SECTION_LABELS,
   type IntakeSectionKey,
@@ -16,6 +21,12 @@ import {
 import { useIntakeProgress } from "./intake-progress-context";
 
 export const INTAKE_PROGRESS_ANCHOR_ID = "pch-intake-progress";
+
+function scrollToSection(key: IntakeSectionKey) {
+  if (typeof window === "undefined") return;
+  const el = window.document.getElementById(INTAKE_SECTION_ANCHOR_IDS[key]);
+  el?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 export function IntakeProgress() {
   const { completion, highlighted } = useIntakeProgress();
@@ -56,6 +67,7 @@ export function IntakeProgress() {
             label={INTAKE_SECTION_LABELS[key]}
             done={completion[key]}
             highlighted={highlighted.has(key)}
+            onClick={() => scrollToSection(key)}
           />
         ))}
       </div>
@@ -64,13 +76,16 @@ export function IntakeProgress() {
 }
 
 function SectionChip({
-  label, done, highlighted,
+  label, done, highlighted, onClick,
 }: {
   label: string;
   done: boolean;
   highlighted: boolean;
+  onClick: () => void;
 }) {
-  const base = "rounded-full border px-2 py-0.5 text-[11px] font-medium transition ";
+  const base =
+    "rounded-full border px-2 py-0.5 text-[11px] font-medium transition "
+    + "cursor-pointer hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-sky/40 ";
   const colour = done
     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
     : "border-amber-300 bg-amber-50 text-amber-900";
@@ -78,9 +93,13 @@ function SectionChip({
     ? " ring-2 ring-amber-400 animate-pulse"
     : "";
   return (
-    <span className={base + colour + ring}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={base + colour + ring}
+    >
       {done ? "✓ " : ""}{label}
-    </span>
+    </button>
   );
 }
 

@@ -8,12 +8,18 @@
 
 import { useRef, useState } from "react";
 import { uploadPchGeneralDocumentAction } from "@/app/client/pch/intake-actions";
+import { useFileDrop } from "./upload-dropzone";
 
 export type GeneralUpload = {
   id: string;
   file_name: string;
   uploaded_at: string;
 };
+
+const GENERAL_ACCEPT =
+  "application/pdf,image/jpeg,image/png,image/webp,image/heic,text/csv,"
+  + "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+  + "application/vnd.ms-excel";
 
 export function SectionGeneralUploads({
   caseId,
@@ -30,43 +36,62 @@ export function SectionGeneralUploads({
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const openPicker = () => fileRef.current?.click();
+  const uploadOne = async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await uploadPchGeneralDocumentAction(caseId, fd);
+    if (!r.ok) {
+      setErr(r.error);
+      return;
+    }
+    setUploads((prev) => [
+      { id: r.id, file_name: r.file_name, uploaded_at: new Date().toISOString() },
+      ...prev,
+    ]);
+  };
+  const uploadMany = async (files: File[]) => {
+    setUploading(true);
+    setErr(null);
+    try {
+      for (const f of files) {
+        try {
+          await uploadOne(f);
+        } catch (ex) {
+          setErr(ex instanceof Error ? ex.message : "Upload failed.");
+          break;
+        }
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
   const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
     e.target.value = "";
-    setUploading(true);
-    setErr(null);
-    for (const file of files) {
-      try {
-        const fd = new FormData();
-        fd.append("file", file);
-        const r = await uploadPchGeneralDocumentAction(caseId, fd);
-        if (!r.ok) {
-          setErr(r.error);
-          break;
-        }
-        setUploads((prev) => [
-          { id: r.id, file_name: r.file_name, uploaded_at: new Date().toISOString() },
-          ...prev,
-        ]);
-      } catch (ex) {
-        setErr(ex instanceof Error ? ex.message : "Upload failed.");
-        break;
-      }
-    }
-    setUploading(false);
+    await uploadMany(files);
   };
+  const { dropProps, isDragOver } = useFileDrop({
+    onFile: (f) => uploadMany([f]),
+    accept: GENERAL_ACCEPT,
+    disabled: !editable || uploading,
+  });
 
   return (
     <section className="mb-8">
-      <h2 className="mb-1 text-lg font-bold">Any other documents</h2>
+      <h2 className="mb-1 text-lg font-bold">Anything else</h2>
       <p className="mb-4 text-xs text-slate-600">
-        Bank statements, receipts, invoices, anything else that might
-        help your accountant. Multi-file; drop as many as you like.
-        Optional. Your typed figures above stay the source of truth
-        either way.
+        Bank statements, receipts, invoices, or anything else that might
+        help your accountant. Drop as many files as you like. Optional;
+        your typed figures above stay the source of truth either way.
       </p>
-      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+      <div
+        {...dropProps}
+        className={
+          "rounded-xl border border-dashed p-6 text-center transition "
+          + (isDragOver ? "border-sky bg-sky/5" : "border-slate-300 bg-slate-50")
+        }
+      >
         <button
           type="button"
           onClick={openPicker}
@@ -76,13 +101,15 @@ export function SectionGeneralUploads({
           {uploading ? "Uploading..." : "Add files"}
         </button>
         <p className="mt-2 text-[11px] text-slate-500">
-          PDF, JPG, PNG, WebP, or CSV / XLSX up to 50 MB each.
+          {isDragOver
+            ? "Drop to upload."
+            : "Drag and drop, or tap to pick. PDF, JPG, PNG, WebP, CSV or XLSX up to 50 MB."}
         </p>
         <input
           ref={fileRef}
           type="file"
           multiple
-          accept="application/pdf,image/jpeg,image/png,image/webp,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          accept={GENERAL_ACCEPT}
           onChange={onFiles}
           className="hidden"
         />

@@ -27,7 +27,7 @@ export function PriorYearAnomalyPanel({
         {severeCount > 0 ? `${severeCount} severe` : null}
         {severeCount > 0 && notableCount > 0 ? ", " : null}
         {notableCount > 0 ? `${notableCount} notable` : null}
-        {" "}deviation{anomalies.length === 1 ? "" : "s"} from the client&apos;s prior linked year. Not blocking, but
+        {" "}deviation{anomalies.length === 1 ? "" : "s"} from the client's prior linked year. Not blocking, but
         resolve or note each before advancing to the client approval step.
       </p>
       <ul className="mt-3 space-y-2">

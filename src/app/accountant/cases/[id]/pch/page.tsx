@@ -140,9 +140,9 @@ export default async function PchAccountantPage({
             // (direct link, back button, a stale notification) must not
             // offer a way around that gate, so no TakeCaseForm here.
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              Not ready to take yet. The client has paid but hasn&apos;t
-              clicked &quot;Submit for review&quot; on their intake, so this
-              case isn&apos;t open for pickup. Check back once they&apos;ve
+              Not ready to take yet. The client has paid but hasn't
+              clicked "Submit for review" on their intake, so this
+              case isn't open for pickup. Check back once they've
               submitted; it will then show as available here and in the
               queue.
             </p>

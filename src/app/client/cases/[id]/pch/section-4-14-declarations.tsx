@@ -30,6 +30,7 @@ import {
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { areDeclarationsComplete } from "./intake-completion";
+import { UploadControl } from "./upload-dropzone";
 
 export type DeclarationKey =
   | "p11d"
@@ -42,12 +43,13 @@ export type DeclarationKey =
   | "child_benefit"
   | "overseas"
   | "student_loan"
-  | "anything_else"
-  // Phase F addition: another PAYE job alongside the self-employment
-  // income. Writes against employment_income_pence + paye_pence (both
-  // already allow-listed on savePchHeadFieldAction and already fed to
-  // the engine); no schema change needed.
-  | "other_employment";
+  | "anything_else";
+// Phase F -> H: "other_employment" was a 12th declaration card for
+// another PAYE job. Phase H relocated it to the Vehicle section as a
+// free-form Personal allowance pair (amount + optional supporting
+// doc) and dropped it from the Declarations completion gate. The
+// server-side status key is still accepted by setDeclarationStatus
+// Action so historic cases that answered it do not fail.
 
 export type DeclarationStatus = "applicable" | "not_applicable" | null;
 
@@ -69,12 +71,6 @@ export type DeclarationsInitial = {
   overseas_tax_paid_pence: number | null;
   student_loan_plan: string | null;
   anything_else_note: string | null;
-  // Phase F -> G: the another-PAYE-job card is now a single amount
-  // field (employment_income_pence) plus an optional P60/payslip
-  // upload. paye_pence remains on pch_cases and the engine, but the
-  // client no longer types it in; the accountant lifts it off the
-  // uploaded doc on review.
-  employment_income_pence: number | null;
   // Evidence storage paths (null = not uploaded).
   p11d_evidence: string | null;
   interest_evidence: string | null;
@@ -85,7 +81,9 @@ export type DeclarationsInitial = {
   child_benefit_evidence: string | null;
   overseas_evidence: string | null;
   student_loan_evidence: string | null;
-  other_employment_evidence: string | null;
+  // Phase F -> H: employment_income_pence + other_employment_evidence
+  // moved to the relocated Personal allowance card in the Vehicle
+  // section; they are not threaded through this type any more.
 };
 
 export type GiftAidEntry = {
@@ -126,13 +124,12 @@ export function Section4to14Declarations({
   }, [statuses, setSectionDone]);
 
   return (
-    <section className="mb-8">
+    <section id="pch-section-declarations" className="mb-8 scroll-mt-24">
       <h2 className="mb-1 text-lg font-bold">4-14. Other declarations</h2>
       <p className="mb-4 text-xs text-slate-600">
-        Each card below asks about something that might apply to your
-        return. If it doesn&apos;t apply to you, tap &quot;Not
-        applicable&quot; and move on. If it does, fill in the figure or
-        upload the document.
+        Each card asks about something that might apply to your return.
+        Tap "Not applicable" if it doesn't; otherwise fill in the
+        figure or upload the document.
       </p>
 
       <div className="space-y-3">
@@ -342,7 +339,7 @@ export function Section4to14Declarations({
           sectionKey="anything_else"
           number={14}
           title="Anything else relevant"
-          subtitle="Anything we haven&apos;t asked about. Just type a note; your accountant will follow up if it matters."
+          subtitle="Anything we haven't asked about. Just leave a note; your accountant will follow up if it matters."
           initialStatus={initial.statuses.anything_else ?? null}
           onStatusChange={(s) => noteStatus("anything_else", s)}
           longTextField={{
@@ -353,24 +350,13 @@ export function Section4to14Declarations({
           }}
         />
 
-        <DeclarationCard
-          caseId={caseId}
-          editable={editable}
-          sectionKey="other_employment"
-          numberLabel="Extra"
-          title="Income from another job (PAYE)"
-          subtitle="If you had any PAYE employment income alongside your driving work this year. Upload a P60 or payslip and we'll lift the figures off it on review."
-          initialStatus={initial.statuses.other_employment ?? null}
-          onStatusChange={(s) => noteStatus("other_employment", s)}
-          moneyField={{
-            field: "employment_income_pence",
-            label: "Income from this job (if any)",
-            value: initial.employment_income_pence,
-            help: "Gross pay for the year before tax. Rough figure fine; we'll check it against your P60 or payslip.",
-          }}
-          evidenceColumn="other_employment_evidence"
-          evidencePath={initial.other_employment_evidence}
-        />
+        {/*
+          Phase H: Personal allowance (previously "Income from another
+          job (PAYE)") moved into the Vehicle section. The server
+          actions and head columns stay the same; only the rendering
+          location changed. See section-3-vehicle.tsx PersonalAllowance
+          Card.
+        */}
       </div>
     </section>
   );
@@ -786,53 +772,23 @@ function EvidenceUpload({
   current: string | null;
   onUploaded: (path: string) => void;
 }) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const open = () => fileRef.current?.click();
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    setUploading(true);
+  const upload = async (file: File) => {
     setErr(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const r = await uploadPchSectionEvidenceAction(caseId, column, fd);
-      if (!r.ok) setErr(r.error);
-      else onUploaded(r.path);
-    } finally {
-      setUploading(false);
-    }
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await uploadPchSectionEvidenceAction(caseId, column, fd);
+    if (!r.ok) setErr(r.error);
+    else onUploaded(r.path);
   };
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700">
-        Supporting document (optional)
-      </div>
-      {current ? (
-        <p className="mb-2 text-xs text-emerald-700">
-          File uploaded. Pick another to replace it.
-        </p>
-      ) : null}
-      <button
-        type="button"
-        onClick={open}
-        disabled={!editable || uploading}
-        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
-      >
-        {uploading ? "Uploading..." : current ? "Replace file" : "Upload"}
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="application/pdf,image/jpeg,image/png,image/webp"
-        onChange={onFile}
-        className="hidden"
-      />
-      {err ? <p className="mt-1 text-xs text-rose-700">{err}</p> : null}
-    </div>
+    <UploadControl
+      disabled={!editable}
+      heading="Supporting document (optional)"
+      current={!!current}
+      onFile={upload}
+      error={err}
+    />
   );
 }
 
@@ -939,7 +895,7 @@ function GiftAidCard({
         <div className="mt-4 space-y-3">
           {rows.length === 0 ? (
             <p className="text-xs text-slate-600">
-              No donations yet. Click &quot;Add donation&quot; below.
+              No donations yet. Tap "Add donation" below.
             </p>
           ) : (
             rows.map((row) => (

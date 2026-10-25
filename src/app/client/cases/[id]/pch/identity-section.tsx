@@ -96,7 +96,7 @@ export function IdentitySection({ caseId, head, editable = true }: Props) {
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-900">HMRC references</h3>
         <p className="mt-1 text-xs text-slate-600">
-          UTR and NI aren&apos;t on your ID, so type them here.
+          UTR and NI aren't on your ID, so type them here.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
@@ -175,9 +175,9 @@ function IdentitySummary({ head }: { head: IdentityHead }) {
   if (!anyFilled) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
-        Upload your Photo ID in the Documents section above and we&apos;ll fill
+        Upload your Photo ID in the Documents section above and we'll fill
         in your name, date of birth, and address here automatically. Review
-        and edit anything that didn&apos;t read correctly on the Photo ID
+        and edit anything that didn't read correctly on the Photo ID
         review card.
       </div>
     );

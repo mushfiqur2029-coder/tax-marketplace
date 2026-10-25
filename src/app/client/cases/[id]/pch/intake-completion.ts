@@ -37,6 +37,18 @@ export const INTAKE_SECTION_LABELS: Record<IntakeSectionKey, string> = {
   lastYearSa: "Last year SA",
 };
 
+// DOM anchor ids each section mounts on its root element. Chips in
+// the progress bar use these to scrollIntoView; the Submit button uses
+// INTAKE_PROGRESS_ANCHOR_ID from ./intake-progress to scroll BACK.
+export const INTAKE_SECTION_ANCHOR_IDS: Record<IntakeSectionKey, string> = {
+  identity: "pch-section-identity",
+  income: "pch-section-income",
+  expenses: "pch-section-expenses",
+  vehicle: "pch-section-vehicle",
+  declarations: "pch-section-declarations",
+  lastYearSa: "pch-section-last-year-sa",
+};
+
 export type IntakeCompletion = Record<IntakeSectionKey, boolean>;
 
 function nonEmpty(v: string | null | undefined): boolean {

@@ -80,7 +80,7 @@ export function FinalSignoffPanel({
       <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
         <h2 className="text-sm font-bold text-emerald-900">Filed with HMRC</h2>
         <p className="mt-1 text-xs text-emerald-900">
-          Case is <strong>filed</strong>. Mark it complete once you&apos;ve confirmed the HMRC submission is settled; that posts the 50% commission to your wallet and closes the case out.
+          Case is <strong>filed</strong>. Mark it complete once you've confirmed the HMRC submission is settled; that posts the 50% commission to your wallet and closes the case out.
         </p>
         <div className="mt-3 flex items-center gap-3">
           <button
@@ -103,7 +103,7 @@ export function FinalSignoffPanel({
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-bold text-slate-900">Final sign-off</h2>
         <p className="mt-1 text-xs text-slate-600">
-          Waiting on the client to approve the figures first. Use the &quot;Advance to client approval&quot; button in the readiness band above to prompt them.
+          Waiting on the client to approve the figures first. Use the "Advance to client approval" button in the readiness band above to prompt them.
         </p>
       </section>
     );
@@ -136,7 +136,7 @@ export function FinalSignoffPanel({
       <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
         <h2 className="text-sm font-bold text-amber-900">Awaiting client confirmation</h2>
         <p className="mt-1 text-xs text-amber-900">
-          Final pack sent {new Date(finalPackSentAt).toLocaleString("en-GB")}. The client has a review-and-confirm card on their workspace; once they confirm, the &quot;Mark filed with HMRC&quot; button appears here.
+          Final pack sent {new Date(finalPackSentAt).toLocaleString("en-GB")}. The client has a review-and-confirm card on their workspace; once they confirm, the "Mark filed with HMRC" button appears here.
         </p>
         <div className="mt-3 flex items-center gap-3">
           <button

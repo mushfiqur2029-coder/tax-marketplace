@@ -91,7 +91,7 @@ export function AccountantHelpPrompt({
       </header>
 
       <p className="mb-2 text-slate-700">
-        Short note on why you can&apos;t upload this (optional). Your
+        Short note on why you can't upload this (optional). Your
         accountant will reach out in the case messages below.
       </p>
 

@@ -31,14 +31,17 @@
 // disposal_proceeds (rare mid-year, accountant adds on review),
 // purchase_date (bought_this_year flag is enough for the engine).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
 import {
+  savePchHeadFieldAction,
   savePchVehicleFieldAction,
+  uploadPchSectionEvidenceAction,
   uploadPchVehicleEvidenceAction,
 } from "@/app/client/pch/intake-actions";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { isVehicleComplete } from "./intake-completion";
+import { UploadControl } from "./upload-dropzone";
 
 export type VehicleInitial = {
   status: string | null;
@@ -61,10 +64,21 @@ export type VehicleInitial = {
   private_use_evidence: string | null;
 };
 
+// Phase H: the "Income from another job" card relocated into this
+// section and renamed to Personal allowance. It is a free-form
+// optional pair (amount + optional supporting doc), not a chip-tracked
+// declaration any more. Writes against the same employment_income_
+// pence and other_employment_evidence columns.
+export type PersonalAllowanceInitial = {
+  employment_income_pence: number | null;
+  evidence: string | null;
+};
+
 // Must match pch_vehicle.status check constraint exactly (migration
-// 0103 - the Phase 8 slice-1 expansion from 4 to 7 values). Any
-// friendlier copy sits in STATUS_HELP below the dropdown; the stored
-// value is one of the seven literal strings.
+// 0103 - the Phase 8 slice-1 expansion from 4 to 7 values). "No
+// vehicle" is still a valid DB value but Phase H lifts it out of the
+// dropdown into the outer applicable/not_applicable toggle: picking
+// Not applicable saves status="No vehicle" under the hood.
 const STATUS_OPTIONS: Array<{ value: string; help?: string }> = [
   { value: "Owned outright" },
   { value: "Hire purchase", help: "Monthly HP payments, you own it at the end" },
@@ -72,7 +86,6 @@ const STATUS_OPTIONS: Array<{ value: string; help?: string }> = [
   { value: "Loan", help: "Any other car loan" },
   { value: "Leased", help: "Business lease or PCH, you hand it back" },
   { value: "Rented", help: "Weekly rental, PCO hire, Uber hire" },
-  { value: "No vehicle", help: "You didn't use a vehicle for work this year" },
 ];
 const FUEL_OPTIONS = ["Petrol", "Diesel", "Hybrid", "Electric"];
 const PREVIOUS_METHOD_OPTIONS = [
@@ -85,10 +98,12 @@ export function Section3Vehicle({
   caseId,
   editable,
   initial,
+  personalAllowance,
 }: {
   caseId: string;
   editable: boolean;
   initial: VehicleInitial;
+  personalAllowance: PersonalAllowanceInitial;
 }) {
   // Local mirror of the whole vehicle row so a dropdown change can
   // decide whether sub-questions appear (e.g. "did you buy a vehicle
@@ -98,7 +113,48 @@ export function Section3Vehicle({
   const [v, setV] = useState<VehicleInitial>(initial);
   const patch = (p: Partial<VehicleInitial>) => setV((prev) => ({ ...prev, ...p }));
 
-  const noVehicle = v.status === "No vehicle";
+  // Phase H: outer applicable/not_applicable gate. UI state is tracked
+  // locally so picking "Applicable" sticks visually even before the
+  // client picks a real ownership mode from the dropdown. We seed it
+  // from the stored status:
+  //   null/empty  -> unanswered (amber)
+  //   "No vehicle" -> not applicable
+  //   anything else -> applicable
+  const seedToggle = (): "applicable" | "not_applicable" | null => {
+    if (initial.status === "No vehicle") return "not_applicable";
+    if (initial.status && initial.status.trim().length > 0) return "applicable";
+    return null;
+  };
+  const [applicable, setApplicable] = useState<"applicable" | "not_applicable" | null>(
+    seedToggle,
+  );
+  const [togglePending, setTogglePending] = useState(false);
+  const [toggleErr, setToggleErr] = useState<string | null>(null);
+
+  const pickApplicable = async (next: "applicable" | "not_applicable") => {
+    setTogglePending(true);
+    setToggleErr(null);
+    try {
+      if (next === "not_applicable") {
+        const r = await savePchVehicleFieldAction(caseId, "status", "No vehicle");
+        if (!r.ok) { setToggleErr(r.error); return; }
+        patch({ status: "No vehicle" });
+        setApplicable("not_applicable");
+      } else {
+        // Clear status if we were previously on "No vehicle" so the
+        // dropdown returns to an empty state for the client to pick.
+        // Preserves any sub-fields they may have entered.
+        if (v.status === "No vehicle") {
+          const r = await savePchVehicleFieldAction(caseId, "status", null);
+          if (!r.ok) { setToggleErr(r.error); return; }
+          patch({ status: null });
+        }
+        setApplicable("applicable");
+      }
+    } finally {
+      setTogglePending(false);
+    }
+  };
 
   const { setSectionDone } = useOptionalIntakeProgress();
   useEffect(() => {
@@ -107,32 +163,44 @@ export function Section3Vehicle({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-      <div className="mb-3">
-        <div className="text-sm font-bold text-ink">Your vehicle</div>
-        <p className="mt-1 text-xs text-slate-600">
-          A few quick questions about the vehicle you used for private-
-          hire work this year. We use these to work out capital
-          allowances on the tax side.
-        </p>
-      </div>
+      <header className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-bold text-ink">Your vehicle</div>
+          <p className="mt-1 text-xs text-slate-600">
+            Did you use a vehicle for private-hire work this year? We
+            need the details for the capital-allowances calculation if
+            yes; skip it if not.
+          </p>
+        </div>
+        <OuterApplicableToggle
+          status={applicable}
+          pending={togglePending}
+          editable={editable}
+          onApplicable={() => pickApplicable("applicable")}
+          onNotApplicable={() => pickApplicable("not_applicable")}
+        />
+      </header>
+      {toggleErr ? (
+        <p className="mb-2 text-xs text-rose-700">{toggleErr}</p>
+      ) : null}
 
-      <SelectField
-        caseId={caseId}
-        field="status"
-        label="How do you have the vehicle?"
-        options={STATUS_OPTIONS}
-        value={v.status}
-        onSaved={(val) => patch({ status: val })}
-        editable={editable}
-        helpText={
-          v.status
-            ? STATUS_OPTIONS.find((o) => o.value === v.status)?.help
-            : undefined
-        }
-      />
-
-      {!noVehicle ? (
+      {applicable === "applicable" ? (
         <>
+          <SelectField
+            caseId={caseId}
+            field="status"
+            label="How do you have the vehicle?"
+            options={STATUS_OPTIONS}
+            value={v.status}
+            onSaved={(val) => patch({ status: val })}
+            editable={editable}
+            helpText={
+              v.status
+                ? STATUS_OPTIONS.find((o) => o.value === v.status)?.help
+                : undefined
+            }
+          />
+
           <div className="mt-4">
             <SelectField
               caseId={caseId}
@@ -154,7 +222,7 @@ export function Section3Vehicle({
               value={v.previous_method}
               onSaved={(val) => patch({ previous_method: val })}
               editable={editable}
-              helpText="If you&apos;ve never filed a return before, pick First year."
+              helpText="Never filed a return before? Pick First year."
             />
           </div>
 
@@ -238,7 +306,7 @@ export function Section3Vehicle({
               value={v.other_business_miles}
               onSaved={(val) => patch({ other_business_miles: val })}
               editable={editable}
-              helpText="If any work-related miles weren&apos;t on this car&apos;s odometer."
+              helpText="Work-related miles that weren't on this car's odometer."
             />
           </div>
 
@@ -251,38 +319,211 @@ export function Section3Vehicle({
                 value={v.wdv_brought_forward_pence}
                 onSaved={(val) => patch({ wdv_brought_forward_pence: val })}
                 editable={editable}
-                helpText="The vehicle&apos;s remaining tax book value from last year&apos;s accounts. Ask your previous accountant if you don&apos;t have it."
+                helpText="The vehicle's remaining tax book value from last year's accounts. Ask your previous accountant if you don't have it."
               />
             </div>
           ) : null}
-
-          <div className="mt-6 border-t border-slate-100 pt-5">
-            <div className="mb-3 text-xs text-slate-600">
-              If you used this vehicle, or anything you&apos;re claiming
-              as an expense, for personal use too, give us a rough
-              figure. Leave blank or zero if everything was for work.
-            </div>
-            <MoneyField
-              caseId={caseId}
-              field="private_use_amount_pence"
-              label="Private use amount (if any)"
-              value={v.private_use_amount_pence}
-              onSaved={(val) => patch({ private_use_amount_pence: val })}
-              editable={editable}
-              helpText="Your estimate of the personal-use portion over the year. Your accountant will factor it in on review."
-            />
-            <div className="mt-4">
-              <PrivateUseEvidenceUpload
-                caseId={caseId}
-                editable={editable}
-                current={v.private_use_evidence}
-                onUploaded={(path) => patch({ private_use_evidence: path })}
-              />
-            </div>
-          </div>
         </>
       ) : null}
+
+      <div className="mt-6 border-t border-slate-100 pt-5">
+        <PersonalAllowanceCard
+          caseId={caseId}
+          editable={editable}
+          initial={personalAllowance}
+        />
+      </div>
+
+      {applicable === "applicable" ? (
+        <div className="mt-6 border-t border-slate-100 pt-5">
+          <div className="mb-1 text-sm font-bold text-ink">Private use</div>
+          <p className="mb-3 text-xs text-slate-600">
+            Rough figure for the personal-use portion of the vehicle or
+            anything else you're claiming as an expense. Leave blank if
+            everything was for work.
+          </p>
+          <MoneyField
+            caseId={caseId}
+            field="private_use_amount_pence"
+            label="Private use amount (if any)"
+            value={v.private_use_amount_pence}
+            onSaved={(val) => patch({ private_use_amount_pence: val })}
+            editable={editable}
+            helpText="Your estimate for the year. Your accountant factors it in on review."
+          />
+          <div className="mt-4">
+            <PrivateUseEvidenceUpload
+              caseId={caseId}
+              editable={editable}
+              current={v.private_use_evidence}
+              onUploaded={(path) => patch({ private_use_evidence: path })}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+// Outer applicable/not_applicable toggle for the Vehicle section.
+// Visually matches the toggle on the 12 declaration cards.
+function OuterApplicableToggle({
+  status, pending, editable, onApplicable, onNotApplicable,
+}: {
+  status: "applicable" | "not_applicable" | null;
+  pending: boolean;
+  editable: boolean;
+  onApplicable: () => void;
+  onNotApplicable: () => void;
+}) {
+  const base =
+    "rounded-full px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ";
+  const yesActive = status === "applicable";
+  const noActive = status === "not_applicable";
+  return (
+    <div className="flex shrink-0 gap-2">
+      <button
+        type="button"
+        onClick={onApplicable}
+        disabled={!editable || pending}
+        className={
+          base
+          + (yesActive
+            ? "border border-sky bg-sky/10 text-sky"
+            : "border border-slate-300 bg-white text-slate-700 hover:border-sky hover:text-sky")
+        }
+      >
+        Applicable
+      </button>
+      <button
+        type="button"
+        onClick={onNotApplicable}
+        disabled={!editable || pending}
+        className={
+          base
+          + (noActive
+            ? "border border-slate-500 bg-slate-100 text-slate-800"
+            : "border border-slate-300 bg-white text-slate-700 hover:border-slate-500")
+        }
+      >
+        Not applicable
+      </button>
+    </div>
+  );
+}
+
+// Phase H: Personal allowance (relocated from Section 4 to 14's "Income
+// from another job" card). Simple optional pair: amount + supporting
+// doc. Not chip-tracked; a client with no PAYE income just leaves it
+// blank. Writes against employment_income_pence +
+// other_employment_evidence (both already migrated and already fed to
+// the engine).
+function PersonalAllowanceCard({
+  caseId, editable, initial,
+}: {
+  caseId: string;
+  editable: boolean;
+  initial: PersonalAllowanceInitial;
+}) {
+  const [evidence, setEvidence] = useState<string | null>(initial.evidence);
+  const [evErr, setEvErr] = useState<string | null>(null);
+
+  const upload = async (file: File) => {
+    setEvErr(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await uploadPchSectionEvidenceAction(
+      caseId,
+      "other_employment_evidence",
+      fd,
+    );
+    if (!r.ok) setEvErr(r.error);
+    else setEvidence(r.path);
+  };
+
+  return (
+    <div>
+      <div className="mb-1 text-sm font-bold text-ink">Personal allowance</div>
+      <p className="mb-3 text-xs text-slate-600">
+        Had a PAYE job alongside your driving work this year? Drop a P60
+        or last payslip here and we'll lift the figures off it on
+        review. Rough number is fine too; skip the whole thing if it
+        doesn't apply.
+      </p>
+      <HeadMoneyField
+        caseId={caseId}
+        field="employment_income_pence"
+        label="Income from this job (if any)"
+        value={initial.employment_income_pence}
+        editable={editable}
+        helpText="Gross pay for the year before tax. We'll cross-check it against your P60 or payslip."
+      />
+      <div className="mt-3">
+        <UploadControl
+          disabled={!editable}
+          heading="Supporting document (optional)"
+          current={!!evidence}
+          successText="P60 or payslip uploaded. Drop another to replace it."
+          onFile={upload}
+          error={evErr}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Money field that writes directly to pch_cases head (not pch_vehicle).
+// Separate from the vehicle MoneyField below so Personal allowance's
+// one input routes through the right server action without the vehicle
+// row getting touched.
+function HeadMoneyField({
+  caseId, field, label, value, editable, helpText,
+}: {
+  caseId: string;
+  field: string;
+  label: string;
+  value: number | null;
+  editable: boolean;
+  helpText?: string;
+}) {
+  const { value: v, onChange, status, error } = useDebouncedSave<string>({
+    initial: value && value > 0 ? (value / 100).toString() : "",
+    save: async (next) => {
+      const clean = next.replace(/[^0-9.]/g, "");
+      const pounds = clean === "" ? null : Number(clean);
+      if (pounds !== null && (!Number.isFinite(pounds) || pounds < 0)) {
+        throw new Error("Must be zero or more.");
+      }
+      const pence = pounds === null ? null : Math.round(pounds * 100);
+      const r = await savePchHeadFieldAction(caseId, field, pence);
+      if (!r.ok) throw new Error(r.error);
+    },
+  });
+  return (
+    <label>
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+        <span>{label}</span>
+        <SaveStatusPill status={status} error={error} />
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-sm text-slate-500">£</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={v}
+          onChange={(e) => {
+            const stripped = e.target.value.replace(/[^0-9.]/g, "");
+            const parts = stripped.split(".");
+            const cleaned = parts.length <= 1 ? stripped : parts[0] + "." + parts.slice(1).join("");
+            onChange(cleaned);
+          }}
+          placeholder="0.00"
+          disabled={!editable}
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+        />
+      </div>
+      {helpText ? <p className="mt-1 text-[11px] text-slate-500">{helpText}</p> : null}
+    </label>
   );
 }
 
@@ -562,10 +803,11 @@ function SaveStatusPill({
   return null;
 }
 
-// Phase G: optional supporting-doc upload for the vehicle private-use
-// amount. Shape mirrors EvidenceUpload in section-4-14-declarations.tsx
-// but routes through uploadPchVehicleEvidenceAction so the storage
-// path lands on pch_vehicle.private_use_evidence (migration 0117).
+// Phase G -> H: optional supporting-doc upload for the vehicle
+// private-use amount. Writes to pch_vehicle.private_use_evidence
+// (migration 0117) via its own server action because the column lives
+// on pch_vehicle not pch_cases; everything else is handled by the
+// shared UploadControl.
 function PrivateUseEvidenceUpload({
   caseId, editable, current, onUploaded,
 }: {
@@ -574,52 +816,22 @@ function PrivateUseEvidenceUpload({
   current: string | null;
   onUploaded: (path: string) => void;
 }) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const open = () => fileRef.current?.click();
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    setUploading(true);
+  const upload = async (file: File) => {
     setErr(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const r = await uploadPchVehicleEvidenceAction(caseId, "private_use_evidence", fd);
-      if (!r.ok) setErr(r.error);
-      else onUploaded(r.path);
-    } finally {
-      setUploading(false);
-    }
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await uploadPchVehicleEvidenceAction(caseId, "private_use_evidence", fd);
+    if (!r.ok) setErr(r.error);
+    else onUploaded(r.path);
   };
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700">
-        Supporting document (optional)
-      </div>
-      {current ? (
-        <p className="mb-2 text-xs text-emerald-700">
-          File uploaded. Pick another to replace it.
-        </p>
-      ) : null}
-      <button
-        type="button"
-        onClick={open}
-        disabled={!editable || uploading}
-        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
-      >
-        {uploading ? "Uploading..." : current ? "Replace file" : "Upload"}
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="application/pdf,image/jpeg,image/png,image/webp"
-        onChange={onFile}
-        className="hidden"
-      />
-      {err ? <p className="mt-1 text-xs text-rose-700">{err}</p> : null}
-    </div>
+    <UploadControl
+      disabled={!editable}
+      heading="Supporting document (optional)"
+      current={!!current}
+      onFile={upload}
+      error={err}
+    />
   );
 }

@@ -170,7 +170,7 @@ export function DocumentsPanel({ caseId, docs, slotMeta, signUrl }: Props) {
       {expanded ? (
         allDocs.length === 0 ? (
           <p className="mt-3 rounded border border-dashed border-slate-200 p-3 text-center text-xs text-slate-500">
-            The client hasn&apos;t uploaded anything yet.
+            The client hasn't uploaded anything yet.
           </p>
         ) : (
           <div className="mt-3 space-y-3">

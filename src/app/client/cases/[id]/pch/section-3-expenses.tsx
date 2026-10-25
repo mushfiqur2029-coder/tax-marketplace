@@ -22,9 +22,14 @@ import {
   upsertPchExpenseLineAction,
 } from "@/app/client/pch/intake-actions";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
-import { Section3Vehicle, type VehicleInitial } from "./section-3-vehicle";
+import {
+  Section3Vehicle,
+  type PersonalAllowanceInitial,
+  type VehicleInitial,
+} from "./section-3-vehicle";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { isExpensesComplete } from "./intake-completion";
+import { useFileDrop } from "./upload-dropzone";
 
 export type ExpenseLine = {
   id: string;
@@ -77,12 +82,14 @@ export function Section3Expenses({
   initial,
   caseFeePence,
   vehicleInitial,
+  personalAllowance,
 }: {
   caseId: string;
   editable: boolean;
   initial: ExpenseLine[];
   caseFeePence: number;
   vehicleInitial: VehicleInitial;
+  personalAllowance: PersonalAllowanceInitial;
 }) {
   // Partition initial expense lines into fixed-slot matches + airport
   // rows + "other" rows the client created elsewhere (shouldn't happen
@@ -183,12 +190,12 @@ export function Section3Expenses({
   }, [fixedRows, airportRows, setSectionDone]);
 
   return (
-    <section className="mb-8">
+    <section id="pch-section-expenses" className="mb-8 scroll-mt-24">
       <h2 className="mb-1 text-lg font-bold">3. Expenses</h2>
       <p className="mb-4 text-xs text-slate-600">
         Everything you spent on the business this year. Round yearly
-        totals are fine. Each row has an optional &quot;upload document&quot;
-        button that reads the amount off the receipt for you.
+        totals are fine. Each row has an Upload receipt button that
+        reads the amount off a photo or PDF for you.
       </p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -255,11 +262,12 @@ export function Section3Expenses({
         ) : null}
       </div>
 
-      <div className="mt-8">
+      <div id="pch-section-vehicle" className="mt-8 scroll-mt-24">
         <Section3Vehicle
           caseId={caseId}
           editable={editable}
           initial={vehicleInitial}
+          personalAllowance={personalAllowance}
         />
       </div>
     </section>
@@ -313,11 +321,7 @@ function FixedExpenseRow({
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
 
   const openPicker = () => fileRef.current?.click();
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-
+  const uploadFile = async (file: File) => {
     let id = latestRef.current.id;
     if (!id) {
       const created = await upsertPchExpenseLineAction(caseId, null, {
@@ -342,9 +346,9 @@ function FixedExpenseRow({
       if (!r.ok) { setUploadErr(r.error); return; }
       if (r.amount_paid_pence !== null) {
         onPatch({ amount_pence: r.amount_paid_pence });
-        setUploadMsg(`Read ${penceToStr(r.amount_paid_pence)} off your receipt.`);
+        setUploadMsg(`Got ${penceToStr(r.amount_paid_pence)} off your receipt.`);
       } else {
-        setUploadMsg("File saved. Couldn't read the amount; type it below.");
+        setUploadMsg("File saved. We couldn't read the amount; type it in instead.");
       }
     } catch (ex) {
       setUploadErr(ex instanceof Error ? ex.message : "Upload failed.");
@@ -352,9 +356,26 @@ function FixedExpenseRow({
       setUploading(false);
     }
   };
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    await uploadFile(file);
+  };
+  const { dropProps, isDragOver } = useFileDrop({
+    onFile: uploadFile,
+    accept: "application/pdf,image/jpeg,image/png,image/webp,image/heic",
+    disabled: !editable || uploading,
+  });
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div
+      {...dropProps}
+      className={
+        "rounded-xl border bg-white p-4 transition "
+        + (isDragOver ? "border-sky ring-2 ring-sky/30" : "border-slate-200")
+      }
+    >
       <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
         <span>{row.slot.label}</span>
         <SaveStatusPill status={amount.status} error={amount.error} />
@@ -385,10 +406,13 @@ function FixedExpenseRow({
       <input
         ref={fileRef}
         type="file"
-        accept="application/pdf,image/jpeg,image/png,image/webp"
+        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
         onChange={onFile}
         className="hidden"
       />
+      {isDragOver ? (
+        <p className="mt-1 text-[11px] font-medium text-sky-800">Drop to upload.</p>
+      ) : null}
       {uploadMsg ? <p className="mt-1 text-xs text-emerald-700">{uploadMsg}</p> : null}
       {uploadErr ? <p className="mt-1 text-xs text-rose-700">{uploadErr}</p> : null}
     </div>

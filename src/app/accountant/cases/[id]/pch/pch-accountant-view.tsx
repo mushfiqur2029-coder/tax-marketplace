@@ -297,7 +297,7 @@ export function PchAccountantView(props: {
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
                   Status will move to <code>client_approval</code>. The client sees the
-                  figures for the first time and clicks &quot;Approve figures&quot;;
+                  figures for the first time and clicks "Approve figures";
                   after that you send the final pack, the client confirms, and you
                   mark it filed with HMRC from the panel below.
                 </p>

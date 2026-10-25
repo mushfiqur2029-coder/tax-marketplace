@@ -24,6 +24,7 @@ import {
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { isIncomeComplete } from "./intake-completion";
+import { useFileDrop } from "./upload-dropzone";
 
 export type IncomeLine = {
   id: string;
@@ -132,12 +133,12 @@ export function Section2Income({
   }, [rows, setSectionDone]);
 
   return (
-    <section className="mb-8">
+    <section id="pch-section-income" className="mb-8 scroll-mt-24">
       <h2 className="mb-1 text-lg font-bold">2. Income</h2>
       <p className="mb-4 text-xs text-slate-600">
-        How much your platforms paid you across the year, before fees.
-        Round yearly totals are fine. Upload the platform&apos;s tax
-        summary PDF and we&apos;ll read the amount for you if you want.
+        What each platform paid you across the year, before fees. Round
+        yearly totals are fine. Drop in a tax-summary PDF and we'll read
+        the amount off it.
       </p>
 
       <div className="space-y-3">
@@ -234,12 +235,7 @@ function IncomeRow({
   const [uploadErr, setUploadErr] = useState<string | null>(null);
 
   const openPicker = () => fileRef.current?.click();
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-
-    // Need a row id. Create one if we don't have one yet.
+  const uploadFile = async (file: File) => {
     let id = latestRef.current.id;
     const source = latestRef.current.presetTitle ?? latestRef.current.source.trim();
     if (!id) {
@@ -272,7 +268,7 @@ function IncomeRow({
       }
       if (r.gross_takings_pence !== null) {
         onPatch({ gross_takings_pence: r.gross_takings_pence });
-        setUploadMsg(`Read ${penceToStr(r.gross_takings_pence)} off your document.`);
+        setUploadMsg(`Got ${penceToStr(r.gross_takings_pence)} off your document.`);
       } else {
         setUploadMsg(
           "File saved, but we couldn't read a figure off it. Type it in instead.",
@@ -284,9 +280,26 @@ function IncomeRow({
       setUploading(false);
     }
   };
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    await uploadFile(file);
+  };
+  const { dropProps, isDragOver } = useFileDrop({
+    onFile: uploadFile,
+    accept: "application/pdf,image/jpeg,image/png,image/webp,image/heic",
+    disabled: !editable || uploading,
+  });
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div
+      {...dropProps}
+      className={
+        "rounded-xl border bg-white p-4 transition "
+        + (isDragOver ? "border-sky ring-2 ring-sky/30" : "border-slate-200")
+      }
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex-1">
           <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
@@ -336,7 +349,7 @@ function IncomeRow({
           disabled={!editable || uploading}
           className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
         >
-          {uploading ? "Reading..." : "Upload document"}
+          {uploading ? "Reading..." : "Upload"}
         </button>
         {!row.presetTitle ? (
           <button
@@ -351,11 +364,14 @@ function IncomeRow({
         <input
           ref={fileRef}
           type="file"
-          accept="application/pdf,image/jpeg,image/png,image/webp"
+          accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
           onChange={onFile}
           className="hidden"
         />
       </div>
+      {isDragOver ? (
+        <p className="mt-2 text-xs font-medium text-sky-800">Drop to upload.</p>
+      ) : null}
       {uploadMsg ? (
         <p className="mt-2 text-xs text-emerald-700">{uploadMsg}</p>
       ) : null}

@@ -79,7 +79,7 @@ export function FinalPackReview({
         </div>
         <p className="mt-1 text-xs text-emerald-900">
           Your accountant will now file this with HMRC and let you know
-          once it&apos;s accepted.
+          once it's accepted.
         </p>
       </section>
     );

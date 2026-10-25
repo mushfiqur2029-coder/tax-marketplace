@@ -176,10 +176,13 @@ export type ExpenseLineShape = { amountPaid: number; evidence: string | null };
 
 export type Readiness = { ok: boolean; blockers: string[] };
 
-// Twelve explicit answers required before submit (sections 4-14 plus
-// the new 'other_employment' card added in Phase F). Mirrors
-// DECLARATION_KEYS in src/app/client/pch/intake-actions.ts; keep in
-// step.
+// Eleven explicit answers required before submit (sections 4-14).
+// Phase H relocated the "Income from another job" card to the Vehicle
+// section as a free-form optional Personal allowance input, so it is
+// no longer part of the Declarations completion gate - a client with
+// no PAYE income just leaves it blank. The server-side status key is
+// still accepted (DECLARATION_KEYS in intake-actions.ts) for historic
+// cases that previously answered it.
 export const REQUIRED_DECLARATION_KEYS: readonly string[] = [
   "p11d",
   "interest",
@@ -192,7 +195,6 @@ export const REQUIRED_DECLARATION_KEYS: readonly string[] = [
   "overseas",
   "student_loan",
   "anything_else",
-  "other_employment",
 ];
 
 export type IntakeReadinessExtras = {

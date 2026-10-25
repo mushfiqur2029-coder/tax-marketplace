@@ -38,7 +38,7 @@ export function AwaitingAccountantPanel({
           {blocked.length} question{blocked.length === 1 ? "" : "s"} from the client
         </h2>
         <span className="text-xs text-amber-800">
-          The client flagged these slots as &quot;I don&apos;t have this document&quot; and asked you to help.
+          The client flagged these slots as "I don't have this document" and asked you to help.
         </span>
       </header>
       <ul className="mt-3 space-y-2">
@@ -48,8 +48,8 @@ export function AwaitingAccountantPanel({
       </ul>
       <p className="mt-3 text-[11px] text-amber-800">
         Clarify in the case chat below; use the override cells to record any
-        figure you fill in. &quot;Mark resolved&quot; flips the slot to
-        &quot;Not applicable&quot; and preserves the full audit note.
+        figure you fill in. "Mark resolved" flips the slot to
+        "Not applicable" and preserves the full audit note.
       </p>
     </section>
   );
