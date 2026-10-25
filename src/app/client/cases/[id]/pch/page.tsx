@@ -239,17 +239,16 @@ export default async function PchClientPage({
           private_use_evidence:
             (vehicleRes.data?.private_use_evidence as string | null) ?? null,
         }}
-        personalAllowance={{
-          employment_income_pence:
-            (head.data?.employment_income_pence as number | null) ?? null,
-          evidence: (head.data?.other_employment_evidence as string | null) ?? null,
-        }}
         caseFeePence={caseFeePence}
         declarationsInitial={{
           statuses: ((head.data?.cl_declaration_status ?? {}) as Record<
             string,
             "applicable" | "not_applicable" | undefined
           >),
+          employment_income_pence:
+            (head.data?.employment_income_pence as number | null) ?? null,
+          other_employment_evidence:
+            (head.data?.other_employment_evidence as string | null) ?? null,
           p11d_pence: (head.data?.p11d_pence as number | null) ?? null,
           benefits_note: (head.data?.benefits_note as string | null) ?? null,
           bank_interest_pence: (head.data?.bank_interest_pence as number | null) ?? null,

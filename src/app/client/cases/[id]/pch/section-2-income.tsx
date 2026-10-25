@@ -2,22 +2,14 @@
 
 // Section 2: Income.
 //
-// Three preset rows (Uber / Bolt / Free Now) always appear. Any
-// pch_income_lines row whose `source` (case-insensitive) matches one
-// of those titles is used as the backing row for that preset; others
-// render below as "custom" rows (editable title + delete button).
-// "Add income" appends an empty custom row the client can title and
-// value.
-//
-// Every row's amount input live-saves on 500ms debounce; the optional
-// "Upload document" button runs a single-shot OCR that fills in the
-// amount after the upload lands (via extractIncomeAmountFromUpload
-// Action). Nothing is mandatory except the top-level "did you have
-// income" implicit answer: an empty section is fine.
+// Phase J: five fixed cards, no freeform add. Each card matches a
+// pch_income_lines row by source name; the row is only created when
+// the client types a non-zero amount or uploads a document. The card
+// layout mirrors the expense cards: label on top, £ amount below, an
+// Upload receipt button for optional OCR.
 
 import { useEffect, useRef, useState } from "react";
 import {
-  deletePchIncomeLineAction,
   extractIncomeAmountFromUploadAction,
   upsertPchIncomeLineAction,
 } from "@/app/client/pch/intake-actions";
@@ -32,23 +24,23 @@ export type IncomeLine = {
   gross_takings_pence: number;
 };
 
-const PRESETS: Array<{ title: string }> = [
-  { title: "Uber" },
-  { title: "Bolt" },
-  { title: "Free Now" },
+type IncomeSlot = {
+  label: string;        // the client-visible label, also the stored source value
+  helpText?: string;
+};
+
+// Phase J: five fixed sources mirroring the PL.xlsx template rows.
+const FIXED_SLOTS: IncomeSlot[] = [
+  { label: "Uber" },
+  { label: "Bolt" },
+  { label: "Free Now" },
+  { label: "Cash receipt", helpText: "Fares taken in cash across the year." },
+  { label: "Others income", helpText: "Anything from a platform not listed above." },
 ];
 
-function matchesPreset(title: string, source: string): boolean {
-  return source.trim().toLowerCase() === title.toLowerCase();
+function matchesSlot(label: string, source: string): boolean {
+  return source.trim().toLowerCase() === label.toLowerCase();
 }
-
-type UiRow = {
-  key: string;              // stable React key
-  id: string | null;        // db id once saved; null until first save
-  presetTitle: string | null; // if non-null, title is read-only
-  source: string;           // client-visible title
-  gross_takings_pence: number;
-};
 
 export function Section2Income({
   caseId,
@@ -59,74 +51,38 @@ export function Section2Income({
   editable: boolean;
   initial: IncomeLine[];
 }) {
-  // Build initial UI rows: each preset gets either the matching DB
-  // row or an empty slot; any extras from the DB become custom rows.
+  type UiRow = {
+    slot: IncomeSlot;
+    id: string | null;
+    gross_takings_pence: number;
+  };
+
   const [rows, setRows] = useState<UiRow[]>(() => {
-    const uiRows: UiRow[] = [];
     const used = new Set<string>();
-    for (const preset of PRESETS) {
+    return FIXED_SLOTS.map((slot) => {
       const match = initial.find(
-        (l) => !used.has(l.id) && matchesPreset(preset.title, l.source),
+        (l) => !used.has(l.id) && matchesSlot(slot.label, l.source),
       );
-      if (match) {
-        used.add(match.id);
-        uiRows.push({
-          key: match.id,
-          id: match.id,
-          presetTitle: preset.title,
-          source: preset.title,
-          gross_takings_pence: match.gross_takings_pence,
-        });
-      } else {
-        uiRows.push({
-          key: `preset-${preset.title}`,
-          id: null,
-          presetTitle: preset.title,
-          source: preset.title,
-          gross_takings_pence: 0,
-        });
-      }
-    }
-    for (const line of initial) {
-      if (used.has(line.id)) continue;
-      uiRows.push({
-        key: line.id,
-        id: line.id,
-        presetTitle: null,
-        source: line.source,
-        gross_takings_pence: line.gross_takings_pence,
-      });
-    }
-    return uiRows;
+      if (match) used.add(match.id);
+      return {
+        slot,
+        id: match?.id ?? null,
+        gross_takings_pence: match?.gross_takings_pence ?? 0,
+      };
+    });
   });
 
-  const addCustom = () => {
-    setRows((prev) => [
-      ...prev,
-      {
-        key: "new-" + Math.random().toString(36).slice(2),
-        id: null,
-        presetTitle: null,
-        source: "",
-        gross_takings_pence: 0,
-      },
-    ]);
-  };
-
-  const removeRow = async (row: UiRow) => {
-    setRows((prev) => prev.filter((r) => r.key !== row.key));
-    if (row.id) await deletePchIncomeLineAction(caseId, row.id);
-  };
-
-  const patchRow = (key: string, patch: Partial<UiRow>) => {
-    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const patchRow = (label: string, patch: Partial<UiRow>) => {
+    setRows((prev) =>
+      prev.map((r) => (r.slot.label === label ? { ...r, ...patch } : r)),
+    );
   };
 
   const { setSectionDone } = useOptionalIntakeProgress();
   useEffect(() => {
     const lines: IncomeLine[] = rows.map((r) => ({
-      id: r.id ?? r.key,
-      source: r.source,
+      id: r.id ?? r.slot.label,
+      source: r.slot.label,
       gross_takings_pence: r.gross_takings_pence,
     }));
     setSectionDone("income", isIncomeComplete(lines));
@@ -141,80 +97,41 @@ export function Section2Income({
         the amount off it.
       </p>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {rows.map((row) => (
-          <IncomeRow
-            key={row.key}
+          <FixedIncomeRow
+            key={row.slot.label}
             caseId={caseId}
             editable={editable}
             row={row}
-            onPatch={(patch) => patchRow(row.key, patch)}
-            onDelete={() => removeRow(row)}
+            onPatch={(patch) => patchRow(row.slot.label, patch)}
           />
         ))}
       </div>
-
-      <button
-        type="button"
-        onClick={addCustom}
-        disabled={!editable}
-        className="mt-3 rounded-lg border border-dashed border-slate-400 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
-      >
-        + Add income
-      </button>
     </section>
   );
 }
 
-function IncomeRow({
-  caseId, editable, row, onPatch, onDelete,
+function FixedIncomeRow({
+  caseId, editable, row, onPatch,
 }: {
   caseId: string;
   editable: boolean;
-  row: UiRow;
-  onPatch: (patch: Partial<UiRow>) => void;
-  onDelete: () => void;
+  row: { slot: IncomeSlot; id: string | null; gross_takings_pence: number };
+  onPatch: (patch: { id?: string | null; gross_takings_pence?: number }) => void;
 }) {
-  // Fresh pointer to the current row for async callbacks (upload
-  // handlers kick off before the next render but need to read the
-  // latest id / title the parent has handed us).
   const latestRef = useRef(row);
   useEffect(() => { latestRef.current = row; }, [row]);
 
-  // Title debounced save (custom rows only - preset titles are fixed).
-  const title = useDebouncedSave<string>({
-    initial: row.source,
-    save: async (v) => {
-      if (row.presetTitle) return; // preset rows don't change their title
-      const trimmed = v.trim();
-      if (trimmed.length === 0 && latestRef.current.gross_takings_pence === 0) {
-        return;
-      }
-      const r = await upsertPchIncomeLineAction(caseId, latestRef.current.id, {
-        source: trimmed,
-      });
-      if (!r.ok) throw new Error(r.error);
-      if (!latestRef.current.id) onPatch({ id: r.id });
-      onPatch({ source: trimmed });
-    },
-  });
-
-  // Amount: the hook is the sole source of truth for the input's
-  // visible value. Pass `penceToStr(row.gross_takings_pence)` as
-  // `initial` each render; the hook's own useEffect syncs it in when
-  // the user isn't actively typing (OCR autofill via onPatch bumps
-  // row.gross_takings_pence and the hook picks it up).
   const amount = useDebouncedSave<string>({
     initial: penceToStr(row.gross_takings_pence),
     save: async (v) => {
       const pence = strToPence(v);
       const id = latestRef.current.id;
-      const source = latestRef.current.presetTitle ?? latestRef.current.source.trim();
-      if (!id && pence === 0) return; // nothing to save yet
-      if (!id && !source) return;     // custom row without title: wait
+      if (!id && pence === 0) return;
       if (!id) {
         const r = await upsertPchIncomeLineAction(caseId, null, {
-          source,
+          source: row.slot.label,
           gross_takings_pence: pence,
         });
         if (!r.ok) throw new Error(r.error);
@@ -237,20 +154,12 @@ function IncomeRow({
   const openPicker = () => fileRef.current?.click();
   const uploadFile = async (file: File) => {
     let id = latestRef.current.id;
-    const source = latestRef.current.presetTitle ?? latestRef.current.source.trim();
     if (!id) {
-      if (!source) {
-        setUploadErr("Give this row a title first.");
-        return;
-      }
       const created = await upsertPchIncomeLineAction(caseId, null, {
-        source,
+        source: row.slot.label,
         gross_takings_pence: latestRef.current.gross_takings_pence,
       });
-      if (!created.ok) {
-        setUploadErr(created.error);
-        return;
-      }
+      if (!created.ok) { setUploadErr(created.error); return; }
       id = created.id;
       onPatch({ id });
     }
@@ -262,17 +171,12 @@ function IncomeRow({
       const fd = new FormData();
       fd.append("file", file);
       const r = await extractIncomeAmountFromUploadAction(caseId, id, fd);
-      if (!r.ok) {
-        setUploadErr(r.error);
-        return;
-      }
+      if (!r.ok) { setUploadErr(r.error); return; }
       if (r.gross_takings_pence !== null) {
         onPatch({ gross_takings_pence: r.gross_takings_pence });
         setUploadMsg(`Got ${penceToStr(r.gross_takings_pence)} off your document.`);
       } else {
-        setUploadMsg(
-          "File saved, but we couldn't read a figure off it. Type it in instead.",
-        );
+        setUploadMsg("File saved. We couldn't read the amount; type it in instead.");
       }
     } catch (ex) {
       setUploadErr(ex instanceof Error ? ex.message : "Upload failed.");
@@ -300,84 +204,45 @@ function IncomeRow({
         + (isDragOver ? "border-sky ring-2 ring-sky/30" : "border-slate-200")
       }
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="flex-1">
-          <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
-            <span>{row.presetTitle ? row.presetTitle : "Platform / source"}</span>
-            {!row.presetTitle ? (
-              <SaveStatusPill status={title.status} error={title.error} />
-            ) : null}
-          </div>
-          {row.presetTitle ? (
-            <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-ink">
-              {row.presetTitle}
-            </div>
-          ) : (
-            <input
-              type="text"
-              value={title.value}
-              onChange={(e) => title.onChange(e.target.value)}
-              placeholder="e.g. Just Eat, rent, side-income"
-              disabled={!editable}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
-            />
-          )}
-        </label>
-        <label className="w-full sm:w-40">
-          <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
-            <span>Amount</span>
-            <SaveStatusPill status={amount.status} error={amount.error} />
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-sm text-slate-500">£</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={amount.value}
-              onChange={(e) => amount.onChange(cleanMoneyInput(e.target.value))}
-              placeholder="0.00"
-              disabled={!editable}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
-            />
-          </div>
-        </label>
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+        <span>{row.slot.label}</span>
+        <SaveStatusPill status={amount.status} error={amount.error} />
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={openPicker}
-          disabled={!editable || uploading}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
-        >
-          {uploading ? "Reading..." : "Upload"}
-        </button>
-        {!row.presetTitle ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={!editable}
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-          >
-            Remove
-          </button>
-        ) : null}
+      <div className="flex items-center gap-1">
+        <span className="text-sm text-slate-500">£</span>
         <input
-          ref={fileRef}
-          type="file"
-          accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
-          onChange={onFile}
-          className="hidden"
+          type="text"
+          inputMode="decimal"
+          value={amount.value}
+          onChange={(e) => amount.onChange(cleanMoneyInput(e.target.value))}
+          placeholder="0.00"
+          disabled={!editable}
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
         />
       </div>
+      {row.slot.helpText ? (
+        <p className="mt-1 text-[11px] text-slate-500">{row.slot.helpText}</p>
+      ) : null}
+      <button
+        type="button"
+        onClick={openPicker}
+        disabled={!editable || uploading}
+        className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
+      >
+        {uploading ? "Reading..." : "Upload receipt"}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
+        onChange={onFile}
+        className="hidden"
+      />
       {isDragOver ? (
-        <p className="mt-2 text-xs font-medium text-sky-800">Drop to upload.</p>
+        <p className="mt-1 text-[11px] font-medium text-sky-800">Drop to upload.</p>
       ) : null}
-      {uploadMsg ? (
-        <p className="mt-2 text-xs text-emerald-700">{uploadMsg}</p>
-      ) : null}
-      {uploadErr ? (
-        <p className="mt-2 text-xs text-rose-700">{uploadErr}</p>
-      ) : null}
+      {uploadMsg ? <p className="mt-1 text-xs text-emerald-700">{uploadMsg}</p> : null}
+      {uploadErr ? <p className="mt-1 text-xs text-rose-700">{uploadErr}</p> : null}
     </div>
   );
 }

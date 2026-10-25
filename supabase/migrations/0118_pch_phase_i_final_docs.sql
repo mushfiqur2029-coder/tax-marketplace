@@ -1,4 +1,4 @@
--- Phase I: accountant-portal rebuild — the 4-document send/approve/file flow.
+-- Phase I: accountant-portal rebuild, the 4-document send/approve/file flow.
 -- New, cleanly-named columns; the old final_pack_sent_at / final_pack_confirmed_at /
 -- bookkeeping_confirmed_at columns are left in place (other code may still read them)
 -- but the Phase I accountant UI does not write to them.

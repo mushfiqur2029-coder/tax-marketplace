@@ -34,9 +34,7 @@
 import { useEffect, useState } from "react";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
 import {
-  savePchHeadFieldAction,
   savePchVehicleFieldAction,
-  uploadPchSectionEvidenceAction,
   uploadPchVehicleEvidenceAction,
 } from "@/app/client/pch/intake-actions";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
@@ -64,16 +62,6 @@ export type VehicleInitial = {
   private_use_evidence: string | null;
 };
 
-// Phase H: the "Income from another job" card relocated into this
-// section and renamed to Personal allowance. It is a free-form
-// optional pair (amount + optional supporting doc), not a chip-tracked
-// declaration any more. Writes against the same employment_income_
-// pence and other_employment_evidence columns.
-export type PersonalAllowanceInitial = {
-  employment_income_pence: number | null;
-  evidence: string | null;
-};
-
 // Must match pch_vehicle.status check constraint exactly (migration
 // 0103 - the Phase 8 slice-1 expansion from 4 to 7 values). "No
 // vehicle" is still a valid DB value but Phase H lifts it out of the
@@ -94,16 +82,20 @@ const PREVIOUS_METHOD_OPTIONS = [
   "Actual costs (capital allowances claimed)",
 ];
 
-export function Section3Vehicle({
+// Phase J: Vehicle is now a top-level numbered section (4. Your
+// vehicle), rendered as a sibling of Expenses in the workspace rather
+// than nested inside it. The Personal allowance box that previously
+// sat in this section is gone; its two fields (employment_income_
+// pence + other_employment_evidence) have moved into the P11D
+// declaration card.
+export function Section4Vehicle({
   caseId,
   editable,
   initial,
-  personalAllowance,
 }: {
   caseId: string;
   editable: boolean;
   initial: VehicleInitial;
-  personalAllowance: PersonalAllowanceInitial;
 }) {
   // Local mirror of the whole vehicle row so a dropdown change can
   // decide whether sub-questions appear (e.g. "did you buy a vehicle
@@ -162,27 +154,26 @@ export function Section3Vehicle({
   }, [v, setSectionDone]);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-      <header className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold text-ink">Your vehicle</div>
-          <p className="mt-1 text-xs text-slate-600">
-            Did you use a vehicle for private-hire work this year? We
-            need the details for the capital-allowances calculation if
-            yes; skip it if not.
-          </p>
+    <section id="pch-section-vehicle" className="mb-8 scroll-mt-24">
+      <h2 className="mb-1 text-lg font-bold">4. Your vehicle</h2>
+      <p className="mb-4 text-xs text-slate-600">
+        Did you use a vehicle for private-hire work this year? We need
+        the details for the capital-allowances calculation if yes; skip
+        it if not.
+      </p>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="mb-4 flex justify-end">
+          <OuterApplicableToggle
+            status={applicable}
+            pending={togglePending}
+            editable={editable}
+            onApplicable={() => pickApplicable("applicable")}
+            onNotApplicable={() => pickApplicable("not_applicable")}
+          />
         </div>
-        <OuterApplicableToggle
-          status={applicable}
-          pending={togglePending}
-          editable={editable}
-          onApplicable={() => pickApplicable("applicable")}
-          onNotApplicable={() => pickApplicable("not_applicable")}
-        />
-      </header>
-      {toggleErr ? (
-        <p className="mb-2 text-xs text-rose-700">{toggleErr}</p>
-      ) : null}
+        {toggleErr ? (
+          <p className="mb-2 text-xs text-rose-700">{toggleErr}</p>
+        ) : null}
 
       {applicable === "applicable" ? (
         <>
@@ -326,42 +317,35 @@ export function Section3Vehicle({
         </>
       ) : null}
 
-      <div className="mt-6 border-t border-slate-100 pt-5">
-        <PersonalAllowanceCard
-          caseId={caseId}
-          editable={editable}
-          initial={personalAllowance}
-        />
-      </div>
-
-      {applicable === "applicable" ? (
-        <div className="mt-6 border-t border-slate-100 pt-5">
-          <div className="mb-1 text-sm font-bold text-ink">Private use</div>
-          <p className="mb-3 text-xs text-slate-600">
-            Rough figure for the personal-use portion of the vehicle or
-            anything else you're claiming as an expense. Leave blank if
-            everything was for work.
-          </p>
-          <MoneyField
-            caseId={caseId}
-            field="private_use_amount_pence"
-            label="Private use amount (if any)"
-            value={v.private_use_amount_pence}
-            onSaved={(val) => patch({ private_use_amount_pence: val })}
-            editable={editable}
-            helpText="Your estimate for the year. Your accountant factors it in on review."
-          />
-          <div className="mt-4">
-            <PrivateUseEvidenceUpload
+        {applicable === "applicable" ? (
+          <div className="mt-6 border-t border-slate-100 pt-5">
+            <div className="mb-1 text-sm font-bold text-ink">Private use</div>
+            <p className="mb-3 text-xs text-slate-600">
+              Rough figure for the personal-use portion of the vehicle
+              or anything else you're claiming as an expense. Leave
+              blank if everything was for work.
+            </p>
+            <MoneyField
               caseId={caseId}
+              field="private_use_amount_pence"
+              label="Private use amount (if any)"
+              value={v.private_use_amount_pence}
+              onSaved={(val) => patch({ private_use_amount_pence: val })}
               editable={editable}
-              current={v.private_use_evidence}
-              onUploaded={(path) => patch({ private_use_evidence: path })}
+              helpText="Your estimate for the year. Your accountant factors it in on review."
             />
+            <div className="mt-4">
+              <PrivateUseEvidenceUpload
+                caseId={caseId}
+                editable={editable}
+                current={v.private_use_evidence}
+                onUploaded={(path) => patch({ private_use_evidence: path })}
+              />
+            </div>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -409,121 +393,6 @@ function OuterApplicableToggle({
         Not applicable
       </button>
     </div>
-  );
-}
-
-// Phase H: Personal allowance (relocated from Section 4 to 14's "Income
-// from another job" card). Simple optional pair: amount + supporting
-// doc. Not chip-tracked; a client with no PAYE income just leaves it
-// blank. Writes against employment_income_pence +
-// other_employment_evidence (both already migrated and already fed to
-// the engine).
-function PersonalAllowanceCard({
-  caseId, editable, initial,
-}: {
-  caseId: string;
-  editable: boolean;
-  initial: PersonalAllowanceInitial;
-}) {
-  const [evidence, setEvidence] = useState<string | null>(initial.evidence);
-  const [evErr, setEvErr] = useState<string | null>(null);
-
-  const upload = async (file: File) => {
-    setEvErr(null);
-    const fd = new FormData();
-    fd.append("file", file);
-    const r = await uploadPchSectionEvidenceAction(
-      caseId,
-      "other_employment_evidence",
-      fd,
-    );
-    if (!r.ok) setEvErr(r.error);
-    else setEvidence(r.path);
-  };
-
-  return (
-    <div>
-      <div className="mb-1 text-sm font-bold text-ink">Personal allowance</div>
-      <p className="mb-3 text-xs text-slate-600">
-        Had a PAYE job alongside your driving work this year? Drop a P60
-        or last payslip here and we'll lift the figures off it on
-        review. Rough number is fine too; skip the whole thing if it
-        doesn't apply.
-      </p>
-      <HeadMoneyField
-        caseId={caseId}
-        field="employment_income_pence"
-        label="Income from this job (if any)"
-        value={initial.employment_income_pence}
-        editable={editable}
-        helpText="Gross pay for the year before tax. We'll cross-check it against your P60 or payslip."
-      />
-      <div className="mt-3">
-        <UploadControl
-          disabled={!editable}
-          heading="Supporting document (optional)"
-          current={!!evidence}
-          successText="P60 or payslip uploaded. Drop another to replace it."
-          onFile={upload}
-          error={evErr}
-        />
-      </div>
-    </div>
-  );
-}
-
-// Money field that writes directly to pch_cases head (not pch_vehicle).
-// Separate from the vehicle MoneyField below so Personal allowance's
-// one input routes through the right server action without the vehicle
-// row getting touched.
-function HeadMoneyField({
-  caseId, field, label, value, editable, helpText,
-}: {
-  caseId: string;
-  field: string;
-  label: string;
-  value: number | null;
-  editable: boolean;
-  helpText?: string;
-}) {
-  const { value: v, onChange, status, error } = useDebouncedSave<string>({
-    initial: value && value > 0 ? (value / 100).toString() : "",
-    save: async (next) => {
-      const clean = next.replace(/[^0-9.]/g, "");
-      const pounds = clean === "" ? null : Number(clean);
-      if (pounds !== null && (!Number.isFinite(pounds) || pounds < 0)) {
-        throw new Error("Must be zero or more.");
-      }
-      const pence = pounds === null ? null : Math.round(pounds * 100);
-      const r = await savePchHeadFieldAction(caseId, field, pence);
-      if (!r.ok) throw new Error(r.error);
-    },
-  });
-  return (
-    <label>
-      <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
-        <span>{label}</span>
-        <SaveStatusPill status={status} error={error} />
-      </div>
-      <div className="flex items-center gap-1">
-        <span className="text-sm text-slate-500">£</span>
-        <input
-          type="text"
-          inputMode="decimal"
-          value={v}
-          onChange={(e) => {
-            const stripped = e.target.value.replace(/[^0-9.]/g, "");
-            const parts = stripped.split(".");
-            const cleaned = parts.length <= 1 ? stripped : parts[0] + "." + parts.slice(1).join("");
-            onChange(cleaned);
-          }}
-          placeholder="0.00"
-          disabled={!editable}
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
-        />
-      </div>
-      {helpText ? <p className="mt-1 text-[11px] text-slate-500">{helpText}</p> : null}
-    </label>
   );
 }
 

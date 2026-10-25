@@ -11,10 +11,7 @@ import { PriorYearPrompt, type PriorYearOption } from "./prior-year-prompt";
 import { Section1Identity, type Section1InitialHead } from "./section-1-identity";
 import { Section2Income, type IncomeLine } from "./section-2-income";
 import { Section3Expenses, type ExpenseLine } from "./section-3-expenses";
-import {
-  type PersonalAllowanceInitial,
-  type VehicleInitial,
-} from "./section-3-vehicle";
+import { Section4Vehicle, type VehicleInitial } from "./section-3-vehicle";
 import {
   Section4to14Declarations,
   type DeclarationsInitial,
@@ -94,7 +91,6 @@ export function PchClientWorkspace(props: {
   incomeLines: IncomeLine[];
   expenseLines: ExpenseLine[];
   vehicleInitial: VehicleInitial;
-  personalAllowance: PersonalAllowanceInitial;
   caseFeePence: number;
   declarationsInitial: DeclarationsInitial;
   giftAidEntries: GiftAidEntry[];
@@ -283,8 +279,12 @@ export function PchClientWorkspace(props: {
             editable={editable}
             initial={props.expenseLines}
             caseFeePence={props.caseFeePence}
-            vehicleInitial={props.vehicleInitial}
-            personalAllowance={props.personalAllowance}
+          />
+
+          <Section4Vehicle
+            caseId={props.caseId}
+            editable={editable}
+            initial={props.vehicleInitial}
           />
 
           <Section4to14Declarations

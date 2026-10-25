@@ -1,23 +1,26 @@
 "use client";
 
-// Sections 4 to 14: eleven declaration cards. Each one is its own
+// Sections 5 to 15: eleven declaration cards (file name kept as
+// section-4-14-declarations.tsx from an earlier numbering; Vehicle
+// was promoted to its own top-level Section 4 in Phase J which
+// pushed everything here forward by one). Each card has its own
 // Applicable / Not applicable toggle at the top; "Not applicable"
 // collapses the body and records that answer on
 // cl_declaration_status jsonb. "Applicable" opens an amount input
-// (where the item has one) + optional evidence upload. Nothing is
-// mandatory except the implicit "did you remember to answer each
-// card" readiness check, which is informational, not enforced:
-// the submit gate accepts any card left in the unanswered state as
-// "no, nothing for me on that one" when the client finally hits
-// Submit for review.
+// (where the item has one) + optional evidence upload.
 //
-// Gift Aid (section 10) is a repeatable mini-list: charity name,
+// Gift Aid (section 11) is a repeatable mini-list: charity name,
 // donation date, amount per entry. Each row saves independently.
 //
-// The sections 4-14 all follow the same card shape to keep this
+// Phase J also merged the "Income from another job" card into
+// Section 5 (P11D) as a second amount+upload pair, so the P11D
+// card now carries both employment income (P60 / payslip) and
+// P11D benefits in a single applicable/not_applicable gate.
+//
+// All eleven cards follow the same card shape to keep this
 // mobile-first and reduce decision fatigue; branded consistently
-// with sections 1-3 so the client can scroll a single column top
-// to bottom.
+// with sections 1 to 4 so the client can scroll a single column
+// top to bottom.
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -81,9 +84,10 @@ export type DeclarationsInitial = {
   child_benefit_evidence: string | null;
   overseas_evidence: string | null;
   student_loan_evidence: string | null;
-  // Phase F -> H: employment_income_pence + other_employment_evidence
-  // moved to the relocated Personal allowance card in the Vehicle
-  // section; they are not threaded through this type any more.
+  // Phase J: employment income + its evidence are back here, merged
+  // into the P11D card as a second amount+upload pair.
+  employment_income_pence: number | null;
+  other_employment_evidence: string | null;
 };
 
 export type GiftAidEntry = {
@@ -125,7 +129,7 @@ export function Section4to14Declarations({
 
   return (
     <section id="pch-section-declarations" className="mb-8 scroll-mt-24">
-      <h2 className="mb-1 text-lg font-bold">4-14. Other declarations</h2>
+      <h2 className="mb-1 text-lg font-bold">5-15. Other declarations</h2>
       <p className="mb-4 text-xs text-slate-600">
         Each card asks about something that might apply to your return.
         Tap "Not applicable" if it doesn't; otherwise fill in the
@@ -137,32 +141,44 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="p11d"
-          number={4}
-          title="Employment benefits P11D"
-          subtitle="If your employer gave you benefits like a company car, medical insurance or interest-free loan AND those weren't payrolled, we need the P11D form."
+          number={5}
+          title="Employment income and P11D benefits"
+          subtitle="Had a PAYE job alongside your driving work this year? Drop a P60 or last payslip and we'll lift the figures off it on review. If your employer also gave you benefits like a company car, medical insurance or interest-free loan that weren't payrolled, we need the P11D figure and form too. Rough numbers are fine; skip the whole thing if neither applies."
           initialStatus={initial.statuses.p11d ?? null}
           onStatusChange={(s) => noteStatus("p11d", s)}
-          moneyField={{
-            field: "p11d_pence",
-            label: "Total cash equivalent of benefits",
-            value: initial.p11d_pence,
-            help: "The P11D's total figure, box N or the summary line.",
-          }}
+          moneyFieldsWithUpload={[
+            {
+              field: "employment_income_pence",
+              label: "Employment income (gross for the year)",
+              value: initial.employment_income_pence,
+              help: "Gross pay before tax, box 1 on your P60.",
+              evidenceColumn: "other_employment_evidence",
+              evidencePath: initial.other_employment_evidence,
+              successText: "P60 or payslip uploaded. Drop another to replace it.",
+            },
+            {
+              field: "p11d_pence",
+              label: "P11D benefits (total cash equivalent)",
+              value: initial.p11d_pence,
+              help: "The P11D's total figure, box N or the summary line.",
+              evidenceColumn: "p11d_evidence",
+              evidencePath: initial.p11d_evidence,
+              successText: "P11D form uploaded. Drop another to replace it.",
+            },
+          ]}
           headTextField={{
             field: "benefits_note",
             label: "Short summary (type of benefits)",
             value: initial.benefits_note,
             placeholder: "e.g. Company car + private medical",
           }}
-          evidenceColumn="p11d_evidence"
-          evidencePath={initial.p11d_evidence}
         />
 
         <DeclarationCard
           caseId={caseId}
           editable={editable}
           sectionKey="interest"
-          number={5}
+          number={6}
           title="Interest income"
           subtitle="Interest from UK bank or building society accounts in the tax year. Get it off the annual certificate of interest."
           initialStatus={initial.statuses.interest ?? null}
@@ -180,7 +196,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="dividend"
-          number={6}
+          number={7}
           title="Dividend income"
           subtitle="UK or overseas dividends you received. Get the figures off your dividend vouchers or portfolio year-end summary."
           initialStatus={initial.statuses.dividend ?? null}
@@ -198,7 +214,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="capital_gains"
-          number={7}
+          number={8}
           title="Capital gains for the year"
           subtitle="If you sold shares, crypto, a second property or any other asset at a gain. Upload any supporting documents."
           initialStatus={initial.statuses.capital_gains ?? null}
@@ -222,7 +238,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="rental"
-          number={8}
+          number={9}
           title="Rental income (UK or overseas)"
           subtitle="If you let out a property. Upload the income and expenditure summary plus any mortgage statement."
           initialStatus={initial.statuses.rental ?? null}
@@ -248,7 +264,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="pension"
-          number={9}
+          number={10}
           title="Private pension contributions"
           subtitle="A SIPP or private pension you paid into yourself. NOT the workplace pension that comes out of a salary before tax."
           initialStatus={initial.statuses.pension ?? null}
@@ -275,7 +291,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="child_benefit"
-          number={11}
+          number={12}
           title="Child benefit received"
           subtitle="If you (or your partner) claimed Child Benefit this tax year. HMRC uses it to calculate the High Income Child Benefit Charge."
           initialStatus={initial.statuses.child_benefit ?? null}
@@ -293,7 +309,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="overseas"
-          number={12}
+          number={13}
           title="Overseas income and overseas tax paid"
           subtitle="Any income from outside the UK, plus any tax you already paid overseas on it (double-tax relief)."
           initialStatus={initial.statuses.overseas ?? null}
@@ -318,7 +334,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="student_loan"
-          number={13}
+          number={14}
           title="Student loan plan"
           subtitle="If you have a UK student or postgraduate loan. HMRC collects repayments through Self Assessment."
           initialStatus={initial.statuses.student_loan ?? null}
@@ -337,7 +353,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           sectionKey="anything_else"
-          number={14}
+          number={15}
           title="Anything else relevant"
           subtitle="Anything we haven't asked about. Just leave a note; your accountant will follow up if it matters."
           initialStatus={initial.statuses.anything_else ?? null}
@@ -368,6 +384,14 @@ type MoneyFieldConfig = {
   value: number | null;
   help?: string;
 };
+type MoneyFieldWithUploadConfig = MoneyFieldConfig & {
+  // Phase J: paired upload under the amount input, same visual
+  // treatment as the single evidenceColumn below. Enables cards like
+  // P11D that collect two distinct amount+doc pairs.
+  evidenceColumn: string;
+  evidencePath: string | null;
+  successText?: string;
+};
 type TextFieldConfig = {
   field: string;
   label: string;
@@ -383,7 +407,8 @@ type EnumFieldConfig = {
 
 function DeclarationCard({
   caseId, editable, sectionKey, number, numberLabel, title, subtitle, initialStatus,
-  moneyField, moneyFields, headTextField, noteField, longTextField, enumField,
+  moneyField, moneyFields, moneyFieldsWithUpload,
+  headTextField, noteField, longTextField, enumField,
   evidenceColumn, evidencePath, onStatusChange,
 }: {
   caseId: string;
@@ -396,6 +421,7 @@ function DeclarationCard({
   initialStatus: DeclarationStatus;
   moneyField?: MoneyFieldConfig;
   moneyFields?: MoneyFieldConfig[];
+  moneyFieldsWithUpload?: MoneyFieldWithUploadConfig[];
   headTextField?: TextFieldConfig;
   noteField?: TextFieldConfig;
   longTextField?: TextFieldConfig;
@@ -476,6 +502,16 @@ function DeclarationCard({
                   label={f.label}
                   initial={f.value}
                   help={f.help}
+                />
+              ))
+            : null}
+          {moneyFieldsWithUpload
+            ? moneyFieldsWithUpload.map((f) => (
+                <MoneyWithUpload
+                  key={f.field}
+                  caseId={caseId}
+                  editable={editable}
+                  config={f}
                 />
               ))
             : null}
@@ -792,6 +828,48 @@ function EvidenceUpload({
   );
 }
 
+// Phase J: money input + its own paired upload. Used by cards that
+// collect multiple distinct amount+doc pairs, e.g. the P11D card now
+// collects both employment income (P60/payslip) and P11D benefits.
+function MoneyWithUpload({
+  caseId, editable, config,
+}: {
+  caseId: string;
+  editable: boolean;
+  config: MoneyFieldWithUploadConfig;
+}) {
+  const [evPath, setEvPath] = useState<string | null>(config.evidencePath);
+  const [err, setErr] = useState<string | null>(null);
+  const upload = async (file: File) => {
+    setErr(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await uploadPchSectionEvidenceAction(caseId, config.evidenceColumn, fd);
+    if (!r.ok) setErr(r.error);
+    else setEvPath(r.path);
+  };
+  return (
+    <div className="space-y-2">
+      <MoneyInput
+        caseId={caseId}
+        editable={editable}
+        field={config.field}
+        label={config.label}
+        initial={config.value}
+        help={config.help}
+      />
+      <UploadControl
+        disabled={!editable}
+        heading="Supporting document (optional)"
+        current={!!evPath}
+        successText={config.successText}
+        onFile={upload}
+        error={err}
+      />
+    </div>
+  );
+}
+
 // -------------------------------------------------------------------
 // Section 10 Gift Aid: repeatable mini-list (charity, date, amount)
 // -------------------------------------------------------------------
@@ -871,7 +949,7 @@ function GiftAidCard({
               className="text-[10px] font-semibold uppercase tracking-widest text-slate-500"
               style={{ fontFamily: "var(--font-mono)" }}
             >
-              Section 10
+              Section 11
             </div>
             <StatusPill status={status} />
           </div>

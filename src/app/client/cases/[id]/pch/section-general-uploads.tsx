@@ -79,7 +79,7 @@ export function SectionGeneralUploads({
 
   return (
     <section className="mb-8">
-      <h2 className="mb-1 text-lg font-bold">Anything else</h2>
+      <h2 className="mb-1 text-lg font-bold">17. Anything else</h2>
       <p className="mb-4 text-xs text-slate-600">
         Bank statements, receipts, invoices, or anything else that might
         help your accountant. Drop as many files as you like. Optional;

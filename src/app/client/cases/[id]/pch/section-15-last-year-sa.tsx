@@ -84,7 +84,7 @@ export function Section15LastYearSA({
 
   return (
     <section id="pch-section-last-year-sa" className="mb-8 scroll-mt-24">
-      <h2 className="mb-1 text-lg font-bold">15. Last year's Self Assessment</h2>
+      <h2 className="mb-1 text-lg font-bold">16. Last year's Self Assessment</h2>
       <p className="mb-4 text-xs text-slate-600">
         Did you have a Self Assessment tax liability last year? We ask
         so we can line up payments on account correctly for this year.
