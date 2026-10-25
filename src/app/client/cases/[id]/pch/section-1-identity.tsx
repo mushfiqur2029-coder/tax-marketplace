@@ -11,7 +11,7 @@
 // have an inline optional "upload document" button that runs a
 // single-shot OCR for just that one field.
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveList, useLiveRow } from "@/lib/realtime-live-merge";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
 import {
@@ -442,8 +442,21 @@ function LicenceCard({
   extractions: Pch24Extraction[];
   photoIdKind: "passport" | "licence" | null;
 }) {
-  const [kind, setKind] = useState<"passport" | "licence" | null>(photoIdKind);
-  const [kindPending, startKind] = useTransition();
+  // Phase F: driving licence is the only ID we accept. Call
+  // setPchPhotoIdKindAction once on first mount so the existing
+  // uploadPchDocumentAction / PCH-24 server path (which requires
+  // photo_id_kind to be set before accepting a side) still works.
+  // No client-visible kind picker any more.
+  const didSetKindRef = useRef(false);
+  useEffect(() => {
+    if (didSetKindRef.current) return;
+    if (photoIdKind === "licence") {
+      didSetKindRef.current = true;
+      return;
+    }
+    didSetKindRef.current = true;
+    void setPchPhotoIdKindAction(caseId, "licence");
+  }, [caseId, photoIdKind]);
 
   // Live-track PCH-24 extraction rows so a vision call completing in
   // the background flips us from "AI is reading your licence..." to
@@ -490,30 +503,16 @@ function LicenceCard({
     });
   }, [liveExtractions, caseId]);
 
-  // Any pending/processing extraction on a front-of-licence / passport
-  // upload is worth showing a "reading" indicator for.
+  // Any pending/processing extraction on the licence front upload is
+  // worth showing a "reading" indicator for.
   const readingExtraction = liveExtractions.find(
     (e) =>
       (e.status === "pending" || e.status === "processing")
-      && e.photo_id_side !== "back",
+      && e.photo_id_side === "front",
   );
-
-  const pickKind = (next: "passport" | "licence") => {
-    setKind(next);
-    startKind(async () => {
-      // The existing head action already enforces the photo_id_kind
-      // enum constraint and status editability.
-      const r = await setPchPhotoIdKindAction(caseId, next);
-      if (!r.ok) {
-        // Revert local state if the server refused.
-        setKind(photoIdKind);
-      }
-    });
-  };
 
   const frontDoc = docs.find((d) => d.photo_id_side === "front") ?? null;
   const backDoc = docs.find((d) => d.photo_id_side === "back") ?? null;
-  const passportDoc = docs.find((d) => d.photo_id_side === null) ?? null;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
@@ -523,8 +522,7 @@ function LicenceCard({
           <p className="mt-1 text-xs text-slate-600">
             Upload the front and back of your UK driving licence. We&apos;ll
             read your name, date of birth, address and postcode off the
-            front automatically. If you only have a passport, pick that
-            instead.
+            front automatically.
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-700">
@@ -532,61 +530,21 @@ function LicenceCard({
         </span>
       </div>
 
-      {kind === null ? (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => pickKind("licence")}
-            disabled={!editable || kindPending}
-            className="rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            I have a UK driving licence
-          </button>
-          <button
-            type="button"
-            onClick={() => pickKind("passport")}
-            disabled={!editable || kindPending}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-sky disabled:opacity-50"
-          >
-            I only have a passport
-          </button>
-        </div>
-      ) : kind === "licence" ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <LicenceSideTile
-            caseId={caseId}
-            editable={editable}
-            side="front"
-            uploaded={frontDoc}
-            runsOcr
-          />
-          <LicenceSideTile
-            caseId={caseId}
-            editable={editable}
-            side="back"
-            uploaded={backDoc}
-          />
-        </div>
-      ) : (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <LicenceSideTile
           caseId={caseId}
           editable={editable}
-          side={null}
-          uploaded={passportDoc}
+          side="front"
+          uploaded={frontDoc}
           runsOcr
         />
-      )}
-
-      {kind !== null ? (
-        <button
-          type="button"
-          onClick={() => pickKind(kind === "licence" ? "passport" : "licence")}
-          disabled={!editable || kindPending}
-          className="mt-3 text-[11px] font-semibold text-slate-500 underline underline-offset-4 hover:text-slate-700 disabled:opacity-50"
-        >
-          Change to {kind === "licence" ? "passport" : "driving licence"}
-        </button>
-      ) : null}
+        <LicenceSideTile
+          caseId={caseId}
+          editable={editable}
+          side="back"
+          uploaded={backDoc}
+        />
+      </div>
 
       {applyPending || readingExtraction ? (
         <p className="mt-3 text-xs text-sky-800">
@@ -613,15 +571,14 @@ function LicenceSideTile({
 }: {
   caseId: string;
   editable: boolean;
-  side: "front" | "back" | null;
+  side: "front" | "back";
   uploaded: LicenceDoc | null;
   runsOcr?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const label =
-    side === "front" ? "Front" : side === "back" ? "Back" : "Passport data page";
+  const label = side === "front" ? "Front" : "Back";
 
   const openPicker = () => fileRef.current?.click();
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -633,7 +590,7 @@ function LicenceSideTile({
     try {
       const fd = new FormData();
       fd.append("file", file);
-      if (side) fd.append("photo_id_side", side);
+      fd.append("photo_id_side", side);
       const r = await uploadPchDocumentAction(caseId, "PCH-24", fd);
       if (!r.ok) setErr(r.error);
     } catch (ex) {

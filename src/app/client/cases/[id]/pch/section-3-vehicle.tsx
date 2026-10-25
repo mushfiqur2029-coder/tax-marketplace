@@ -48,6 +48,11 @@ export type VehicleInitial = {
   other_business_miles: number | null;
   previous_method: string | null;
   wdv_brought_forward_pence: number | null;
+  // Phase F (migration 0115): client-declared private-use flag +
+  // the client's own estimate of the private-use value. Not the same
+  // as business_pct_override, which stays accountant-only tuning.
+  private_use_declared: boolean | null;
+  private_use_amount_pence: number | null;
 };
 
 // Must match pch_vehicle.status check constraint exactly (migration
@@ -117,7 +122,7 @@ export function Section3Vehicle({
 
       {!noVehicle ? (
         <>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="mt-4">
             <SelectField
               caseId={caseId}
               field="fuel"
@@ -127,6 +132,9 @@ export function Section3Vehicle({
               onSaved={(val) => patch({ fuel: val })}
               editable={editable}
             />
+          </div>
+
+          <div className="mt-4">
             <SelectField
               caseId={caseId}
               field="previous_method"
@@ -138,20 +146,6 @@ export function Section3Vehicle({
               helpText="If you&apos;ve never filed a return before, pick First year."
             />
           </div>
-
-          {v.previous_method === "Actual costs (capital allowances claimed)" ? (
-            <div className="mt-4">
-              <MoneyField
-                caseId={caseId}
-                field="wdv_brought_forward_pence"
-                label="Written-down value brought forward"
-                value={v.wdv_brought_forward_pence}
-                onSaved={(val) => patch({ wdv_brought_forward_pence: val })}
-                editable={editable}
-                helpText="The vehicle&apos;s remaining tax book value from last year&apos;s accounts. Ask your previous accountant if you don&apos;t have it."
-              />
-            </div>
-          ) : null}
 
           <div className="mt-4">
             <YesNoField
@@ -206,25 +200,26 @@ export function Section3Vehicle({
             </div>
           ) : null}
 
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <IntegerField
               caseId={caseId}
               field="odo_start"
-              label="Odometer at tax year start"
+              label="Odometer at tax year start (6 April)"
               value={v.odo_start}
               onSaved={(val) => patch({ odo_start: val })}
               editable={editable}
-              helpText="6 April"
             />
             <IntegerField
               caseId={caseId}
               field="odo_end"
-              label="Odometer at tax year end"
+              label="Odometer at tax year end (5 April)"
               value={v.odo_end}
               onSaved={(val) => patch({ odo_end: val })}
               editable={editable}
-              helpText="5 April"
             />
+          </div>
+
+          <div className="mt-4">
             <IntegerField
               caseId={caseId}
               field="other_business_miles"
@@ -232,8 +227,46 @@ export function Section3Vehicle({
               value={v.other_business_miles}
               onSaved={(val) => patch({ other_business_miles: val })}
               editable={editable}
-              helpText="If any work-related miles weren't on this car's odometer."
+              helpText="If any work-related miles weren&apos;t on this car&apos;s odometer."
             />
+          </div>
+
+          {v.previous_method === "Actual costs (capital allowances claimed)" ? (
+            <div className="mt-4">
+              <MoneyField
+                caseId={caseId}
+                field="wdv_brought_forward_pence"
+                label="Written-down value brought forward"
+                value={v.wdv_brought_forward_pence}
+                onSaved={(val) => patch({ wdv_brought_forward_pence: val })}
+                editable={editable}
+                helpText="The vehicle&apos;s remaining tax book value from last year&apos;s accounts. Ask your previous accountant if you don&apos;t have it."
+              />
+            </div>
+          ) : null}
+
+          <div className="mt-6 border-t border-slate-100 pt-5">
+            <YesNoField
+              caseId={caseId}
+              field="private_use_declared"
+              label="Did you use this vehicle, or anything you&apos;re claiming as an expense, for personal use too?"
+              value={v.private_use_declared}
+              onSaved={(val) => patch({ private_use_declared: val })}
+              editable={editable}
+            />
+            {v.private_use_declared === true ? (
+              <div className="mt-4">
+                <MoneyField
+                  caseId={caseId}
+                  field="private_use_amount_pence"
+                  label="Roughly how much was that worth?"
+                  value={v.private_use_amount_pence}
+                  onSaved={(val) => patch({ private_use_amount_pence: val })}
+                  editable={editable}
+                  helpText="Your estimate of the personal-use portion over the year. Your accountant will factor it in on review."
+                />
+              </div>
+            ) : null}
           </div>
         </>
       ) : null}

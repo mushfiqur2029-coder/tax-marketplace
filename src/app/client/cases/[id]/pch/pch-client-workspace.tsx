@@ -19,6 +19,7 @@ import {
 } from "./section-4-14-declarations";
 import { Section15LastYearSA, type Section15Initial } from "./section-15-last-year-sa";
 import { SectionGeneralUploads, type GeneralUpload } from "./section-general-uploads";
+import { IntakeProgress } from "./intake-progress";
 import { submitForReviewAction } from "@/app/client/pch/actions";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
@@ -242,6 +243,16 @@ export function PchClientWorkspace(props: {
               editable={editable}
             />
           ) : null}
+
+          <IntakeProgress
+            section1={props.section1Initial}
+            licenceDocs={props.licenceDocs}
+            incomeLines={props.incomeLines}
+            expenseLines={props.expenseLines}
+            vehicle={props.vehicleInitial}
+            declarations={props.declarationsInitial}
+            section15={props.section15Initial}
+          />
 
           <Section1Identity
             caseId={props.caseId}

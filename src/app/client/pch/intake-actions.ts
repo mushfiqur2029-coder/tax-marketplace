@@ -63,7 +63,9 @@ const HEAD_FIELDS: Record<string, "string" | "integer_pence" | "boolean" | "stri
   cl_utr: "string",
   cl_nino: "string",
 
-  // Section 4 (P11D benefits) - evidence only, no numeric figure on head
+  // Section 4 (P11D benefits): numeric cash equivalent (migration 0116)
+  // plus the free-text benefits_note (writable below).
+  p11d_pence: "integer_pence",
   // Section 5 (Interest income)
   bank_interest_pence: "integer_pence",
   // Section 6 (Dividend income)
@@ -155,6 +157,10 @@ const DECLARATION_KEYS = new Set([
   "overseas",
   "student_loan",
   "anything_else",
+  // Phase F: the "Income from another job (PAYE)" card. Writes against
+  // the already-allow-listed employment_income_pence + paye_pence head
+  // columns, no new schema needed.
+  "other_employment",
 ]);
 
 export async function setDeclarationStatusAction(
@@ -600,6 +606,9 @@ const VEHICLE_FIELDS: Record<string, "string" | "integer_pence" | "integer" | "b
   other_business_miles: "integer",
   previous_method: "string_enum",
   wdv_brought_forward_pence: "integer_pence",
+  // Phase F: client-declared private-use flag + estimate (migration 0115).
+  private_use_declared: "boolean",
+  private_use_amount_pence: "integer_pence",
 };
 
 // Mirrors pch_vehicle.status check constraint as of migration 0103.

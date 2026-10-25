@@ -41,13 +41,12 @@ type ExpenseSlot = {
   helpText?: string;
 };
 
-// Order mirrors the spec exactly, including the deliberately split
-// Road Tax and MOT / Road Tax rows.
+// Phase F: Road Tax and MOT / Road Tax collapsed into a single "MOT"
+// row per spec.
 const FIXED_SLOTS: ExpenseSlot[] = [
   { label: "Insurance", category: "Accountancy & insurance", sa103s_box: 14, car_cost: "Yes" },
   { label: "Cleaning", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
-  { label: "Road Tax and MOT", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
-  { label: "Road Tax", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
+  { label: "MOT", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
   { label: "Mobile", category: "Phone & technology", sa103s_box: 18, car_cost: "Phone", helpText: "Phone bills for the year." },
   { label: "Fuel", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
   { label: "Parking", category: "Congestion, ULEZ, tolls & parking", sa103s_box: 12, car_cost: "Yes", helpText: "Congestion, ULEZ, parking fees. Not fines." },
@@ -123,7 +122,7 @@ export function Section3Expenses({
   );
 
   const addAirport = (airport: string) => {
-    if (airportRows.find((r) => r.airport === airport)) return;
+    if (airport !== "" && airportRows.find((r) => r.airport === airport)) return;
     setAirportRows((prev) => [
       ...prev,
       {
@@ -138,6 +137,11 @@ export function Section3Expenses({
   const removeAirport = async (row: UiAirportRow) => {
     setAirportRows((prev) => prev.filter((r) => r.key !== row.key));
     if (row.id) await deletePchExpenseLineAction(caseId, row.id);
+  };
+  const patchAirportName = (key: string, name: string) => {
+    setAirportRows((prev) =>
+      prev.map((r) => (r.key === key ? { ...r, airport: name } : r)),
+    );
   };
 
   const patchFixed = (label: string, patch: Partial<UiFixedRow>) => {
@@ -196,6 +200,14 @@ export function Section3Expenses({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => addAirport("")}
+            disabled={!editable}
+            className="rounded-full border border-dashed border-slate-400 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
+          >
+            + Other airport
+          </button>
         </div>
         {airportRows.length > 0 ? (
           <div className="mt-4 space-y-2">
@@ -206,6 +218,7 @@ export function Section3Expenses({
                 editable={editable}
                 row={row}
                 onPatch={(patch) => patchAirport(row.key, patch)}
+                onNameChange={(name) => patchAirportName(row.key, name)}
                 onDelete={() => removeAirport(row)}
               />
             ))}
@@ -354,24 +367,49 @@ function FixedExpenseRow({
 }
 
 function AirportRow({
-  caseId, editable, row, onPatch, onDelete,
+  caseId, editable, row, onPatch, onNameChange, onDelete,
 }: {
   caseId: string;
   editable: boolean;
   row: { key: string; id: string | null; airport: string; amount_pence: number };
   onPatch: (patch: { id?: string | null; amount_pence?: number }) => void;
+  onNameChange: (name: string) => void;
   onDelete: () => void;
 }) {
   const latestRef = useRef(row);
   useEffect(() => { latestRef.current = row; }, [row]);
+
+  // Free-text "Other airport" rows need their name saved as part of
+  // the label on the pch_expense_lines row. Any row that was created
+  // from a preset airport chip has its name fixed, so for those the
+  // name hook is effectively a no-op.
+  const nameHook = useDebouncedSave<string>({
+    initial: row.airport,
+    save: async (v) => {
+      const trimmed = v.trim();
+      onNameChange(trimmed);
+      const id = latestRef.current.id;
+      if (!id) return; // row not yet created; amount save creates it
+      const r = await upsertPchExpenseLineAction(caseId, id, {
+        label: AIRPORT_PREFIX + trimmed,
+        amount_paid_pence: latestRef.current.amount_pence,
+        category: "Congestion, ULEZ, tolls & parking",
+        sa103s_box: 12,
+        car_cost: "Yes",
+      });
+      if (!r.ok) throw new Error(r.error);
+    },
+  });
 
   const amount = useDebouncedSave<string>({
     initial: penceToStr(row.amount_pence),
     save: async (v) => {
       const pence = strToPence(v);
       const id = latestRef.current.id;
+      const airportName = latestRef.current.airport.trim();
+      if (!airportName) return; // free-text row without a name yet
       if (!id && pence === 0) return;
-      const label = AIRPORT_PREFIX + latestRef.current.airport;
+      const label = AIRPORT_PREFIX + airportName;
       if (!id) {
         const r = await upsertPchExpenseLineAction(caseId, null, {
           label,
@@ -396,13 +434,28 @@ function AirportRow({
     },
   });
 
+  // Free-text row = airport was selected via "+ Other airport" (empty
+  // on creation) and the row id hasn't been minted yet with a fixed
+  // name. Preset chips create rows with the airport name hard-set.
+  const isFreeText = row.id === null && row.airport.trim() === "";
+
   return (
     <div className="flex items-end gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex-1">
         <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
-          <span>{row.airport}</span>
+          <span>{isFreeText ? "Airport name" : row.airport || "Airport"}</span>
           <SaveStatusPill status={amount.status} error={amount.error} />
         </div>
+        {isFreeText || row.id === null ? (
+          <input
+            type="text"
+            value={nameHook.value}
+            onChange={(e) => nameHook.onChange(e.target.value)}
+            placeholder="Type airport name"
+            disabled={!editable}
+            className="mb-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+          />
+        ) : null}
         <div className="flex items-center gap-1">
           <span className="text-sm text-slate-500">£</span>
           <input

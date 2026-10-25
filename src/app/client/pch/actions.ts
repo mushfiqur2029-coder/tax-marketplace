@@ -656,11 +656,18 @@ export async function submitForReviewAction(
     // row = client hasn't touched the Vehicle section = skipped =
     // no block. Only an explicit "Owned outright" / HP / PCP / Loan
     // with missing data should block.
-    const { data: rawVeh } = await admin
-      .from("pch_vehicle")
-      .select("status")
-      .eq("case_id", caseId)
-      .maybeSingle();
+    const [{ data: rawVeh }, { data: declHead }] = await Promise.all([
+      admin
+        .from("pch_vehicle")
+        .select("status")
+        .eq("case_id", caseId)
+        .maybeSingle(),
+      admin
+        .from("pch_cases")
+        .select("cl_declaration_status")
+        .eq("case_id", caseId)
+        .maybeSingle(),
+    ]);
     const readiness = canRunDraft(
       inputs.income.map((l) => ({ grossTakings: l.grossTakings, type: l.type })),
       {
@@ -669,6 +676,14 @@ export async function submitForReviewAction(
         odo_end: inputs.vehicle.odoEnd ?? null,
         method_choice: inputs.vehicle.methodChoice ?? null,
         business_pct_override: inputs.vehicle.businessPctOverride ?? null,
+      },
+      {
+        expenses: inputs.expenses.map((e) => ({
+          amountPaid: e.amountPaid,
+          evidence: e.evidence,
+        })),
+        declarationStatuses:
+          (declHead?.cl_declaration_status as Record<string, string> | null) ?? {},
       },
     );
     if (!readiness.ok) {

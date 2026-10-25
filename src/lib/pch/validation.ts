@@ -176,6 +176,32 @@ export type ExpenseLineShape = { amountPaid: number; evidence: string | null };
 
 export type Readiness = { ok: boolean; blockers: string[] };
 
+// Twelve explicit answers required before submit (sections 4-14 plus
+// the new 'other_employment' card added in Phase F). Mirrors
+// DECLARATION_KEYS in src/app/client/pch/intake-actions.ts; keep in
+// step.
+export const REQUIRED_DECLARATION_KEYS: readonly string[] = [
+  "p11d",
+  "interest",
+  "dividend",
+  "capital_gains",
+  "rental",
+  "pension",
+  "gift_aid",
+  "child_benefit",
+  "overseas",
+  "student_loan",
+  "anything_else",
+  "other_employment",
+];
+
+export type IntakeReadinessExtras = {
+  expenses?: readonly ExpenseLineShape[];
+  // Shape: { p11d: 'applicable' | 'not_applicable', ... }. Missing key
+  // = unanswered; present key = client has decided.
+  declarationStatuses?: Partial<Record<string, string>> | null;
+};
+
 // Vehicle statuses that put the car into the capital-allowances pool.
 // Only these four need a business-use % or mileage figure for the engine
 // to work out the deduction. Any other status (including Leased, Rented,
@@ -187,23 +213,47 @@ export type Readiness = { ok: boolean; blockers: string[] };
 const VEHICLE_CA_ELIGIBLE_STATUSES = new Set(["Owned outright", "Hire purchase", "PCP", "Loan"]);
 
 // Can the engine be run? Needs at least one income line with a positive
-// gross figure, and (if the client has a vehicle to depreciate) a
-// business-use % or mileage figure the engine can apply.
+// gross figure, at least one expense line (sections 2 and 3 are both
+// mandatory in Phase F), every declaration card explicitly answered
+// (applicable or not_applicable), and - only when the client has
+// declared a CA-eligible vehicle status - a business-use % or mileage
+// figure the engine can apply.
 //
-// Phase 6: income comes from the bank-statement ingest, not a manual
-// income grid; vehicle details come from the VEHICLE_CA conversation,
-// not a form. Error copy therefore points the client at the right
-// section instead of the deleted tab names.
+// The extras bag is optional for backward compatibility with existing
+// callers / tests that still pass just (income, vehicle); the newer
+// per-section checks only fire when the matching slice is passed in.
 export function canRunDraft(
   income: readonly IncomeLineShape[],
   vehicle: VehicleShape | null,
+  extras?: IntakeReadinessExtras,
 ): Readiness {
   const blockers: string[] = [];
   const positiveIncome = income.some((l) => l.grossTakings > 0);
   if (!positiveIncome) {
     blockers.push(
-      "No income yet. Upload a bank statement in the Documents section above; we'll categorise your fares and other income automatically.",
+      "No income yet. Open Section 2 (Income) above and enter the yearly totals for each platform you worked on. Round figures are fine.",
     );
+  }
+  if (extras?.expenses !== undefined) {
+    const positiveExpense = extras.expenses.some((e) => e.amountPaid > 0);
+    if (!positiveExpense) {
+      blockers.push(
+        "No expenses yet. Open Section 3 (Expenses) above and enter at least one yearly total; even the prefilled Accountancy Fees row counts.",
+      );
+    }
+  }
+  if (extras?.declarationStatuses !== undefined) {
+    const statuses = extras.declarationStatuses ?? {};
+    const unanswered = REQUIRED_DECLARATION_KEYS.filter((k) => {
+      const v = statuses[k];
+      return v !== "applicable" && v !== "not_applicable";
+    });
+    if (unanswered.length > 0) {
+      const n = unanswered.length;
+      blockers.push(
+        `${n} declaration card${n === 1 ? "" : "s"} in sections 4-14 ${n === 1 ? "hasn't" : "haven't"} been answered yet. Pick Applicable or Not applicable on each one before submitting.`,
+      );
+    }
   }
   // Positive check: only block when the client has explicitly declared
   // a CA-eligible status (owned, HP, PCP, loan). Anything else, including
@@ -220,7 +270,7 @@ export function canRunDraft(
     const hasPctOverride = (vehicle?.business_pct_override ?? 0) > 0;
     if (!hasMileage && !hasMethod && !hasPctOverride) {
       blockers.push(
-        "Open the Vehicle and capital allowances section above and finish the short chat. You said you own or finance the car, so we need a business-use percentage (or odometer readings) to work out your deduction.",
+        "You said you own or finance the car, so Section 3's Vehicle subsection needs odometer readings (start and end) or a business-use percentage before we can work out capital allowances.",
       );
     }
   }

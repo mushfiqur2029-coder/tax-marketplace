@@ -40,7 +40,12 @@ export type DeclarationKey =
   | "child_benefit"
   | "overseas"
   | "student_loan"
-  | "anything_else";
+  | "anything_else"
+  // Phase F addition: another PAYE job alongside the self-employment
+  // income. Writes against employment_income_pence + paye_pence (both
+  // already allow-listed on savePchHeadFieldAction and already fed to
+  // the engine); no schema change needed.
+  | "other_employment";
 
 export type DeclarationStatus = "applicable" | "not_applicable" | null;
 
@@ -48,6 +53,7 @@ export type DeclarationsInitial = {
   // Per-section applicable/not-applicable state (missing = unanswered).
   statuses: Partial<Record<DeclarationKey, DeclarationStatus>>;
   // Head fields the cards write into (null-safe).
+  p11d_pence: number | null;
   benefits_note: string | null;
   bank_interest_pence: number | null;
   dividend_income_pence: number | null;
@@ -61,6 +67,9 @@ export type DeclarationsInitial = {
   overseas_tax_paid_pence: number | null;
   student_loan_plan: string | null;
   anything_else_note: string | null;
+  // Phase F: another-PAYE-job card writes these two.
+  employment_income_pence: number | null;
+  paye_pence: number | null;
   // Evidence storage paths (null = not uploaded).
   p11d_evidence: string | null;
   interest_evidence: string | null;
@@ -112,6 +121,12 @@ export function Section4to14Declarations({
           title="Employment benefits P11D"
           subtitle="If your employer gave you benefits like a company car, medical insurance or interest-free loan AND those weren't payrolled, we need the P11D form."
           initialStatus={initial.statuses.p11d ?? null}
+          moneyField={{
+            field: "p11d_pence",
+            label: "Total cash equivalent of benefits",
+            value: initial.p11d_pence,
+            help: "The P11D's total figure, box N or the summary line.",
+          }}
           headTextField={{
             field: "benefits_note",
             label: "Short summary (type of benefits)",
@@ -303,6 +318,30 @@ export function Section4to14Declarations({
             placeholder: "e.g. Started a new side-business in February; sold a flat; moved abroad in July...",
           }}
         />
+
+        <DeclarationCard
+          caseId={caseId}
+          editable={editable}
+          sectionKey="other_employment"
+          numberLabel="Extra"
+          title="Income from another job (PAYE)"
+          subtitle="If you had any PAYE employment income alongside your driving work this year. Figures off your P60 or your last payslip of the year."
+          initialStatus={initial.statuses.other_employment ?? null}
+          moneyFields={[
+            {
+              field: "employment_income_pence",
+              label: "Gross pay for the year",
+              value: initial.employment_income_pence,
+              help: "Total pay before tax, box 1 on your P60.",
+            },
+            {
+              field: "paye_pence",
+              label: "Tax already deducted (PAYE)",
+              value: initial.paye_pence,
+              help: "Total tax your employer took off, box 2 on your P60.",
+            },
+          ]}
+        />
       </div>
     </section>
   );
@@ -328,14 +367,15 @@ type EnumFieldConfig = {
 };
 
 function DeclarationCard({
-  caseId, editable, sectionKey, number, title, subtitle, initialStatus,
+  caseId, editable, sectionKey, number, numberLabel, title, subtitle, initialStatus,
   moneyField, moneyFields, headTextField, noteField, longTextField, enumField,
   evidenceColumn, evidencePath,
 }: {
   caseId: string;
   editable: boolean;
   sectionKey: DeclarationKey;
-  number: number;
+  number?: number;
+  numberLabel?: string;
   title: string;
   subtitle: string;
   initialStatus: DeclarationStatus;
@@ -375,7 +415,7 @@ function DeclarationCard({
             className="text-[10px] font-semibold uppercase tracking-widest text-slate-500"
             style={{ fontFamily: "var(--font-mono)" }}
           >
-            Section {number}
+            Section {numberLabel ?? number}
           </div>
           <div className="mt-0.5 text-sm font-bold text-ink">{title}</div>
           <p className="mt-1 text-xs text-slate-600">{subtitle}</p>

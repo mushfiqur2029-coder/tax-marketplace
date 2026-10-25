@@ -234,6 +234,10 @@ export default async function PchClientPage({
             (vehicleRes.data?.previous_method as string | null) ?? null,
           wdv_brought_forward_pence:
             (vehicleRes.data?.wdv_brought_forward_pence as number | null) ?? null,
+          private_use_declared:
+            (vehicleRes.data?.private_use_declared as boolean | null) ?? null,
+          private_use_amount_pence:
+            (vehicleRes.data?.private_use_amount_pence as number | null) ?? null,
         }}
         caseFeePence={caseFeePence}
         declarationsInitial={{
@@ -241,6 +245,7 @@ export default async function PchClientPage({
             string,
             "applicable" | "not_applicable" | undefined
           >),
+          p11d_pence: (head.data?.p11d_pence as number | null) ?? null,
           benefits_note: (head.data?.benefits_note as string | null) ?? null,
           bank_interest_pence: (head.data?.bank_interest_pence as number | null) ?? null,
           dividend_income_pence: (head.data?.dividend_income_pence as number | null) ?? null,
@@ -257,6 +262,9 @@ export default async function PchClientPage({
             (head.data?.overseas_tax_paid_pence as number | null) ?? null,
           student_loan_plan: (head.data?.student_loan_plan as string | null) ?? null,
           anything_else_note: (head.data?.anything_else_note as string | null) ?? null,
+          employment_income_pence:
+            (head.data?.employment_income_pence as number | null) ?? null,
+          paye_pence: (head.data?.paye_pence as number | null) ?? null,
           p11d_evidence: (head.data?.p11d_evidence as string | null) ?? null,
           interest_evidence: (head.data?.interest_evidence as string | null) ?? null,
           dividend_evidence: (head.data?.dividend_evidence as string | null) ?? null,
