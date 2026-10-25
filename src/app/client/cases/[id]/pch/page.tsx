@@ -65,6 +65,7 @@ export default async function PchClientPage({
     vehicleRes,
     giftAidRes,
     generalUploadsRes,
+    intakeAttachmentsRes,
   ] = await Promise.all([
       admin.from("pch_cases").select("*").eq("case_id", id).single(),
       admin
@@ -127,6 +128,17 @@ export default async function PchClientPage({
         .eq("case_id", id)
         .eq("requirement_key", "intake-general")
         .order("uploaded_at", { ascending: false }),
+      // Phase K: multi-file attachments on "Others income" and "Other
+      // expense" rows. Each row gets its own requirement_key suffixed
+      // with the line id (intake-income-attach-<id>, intake-expense-
+      // attach-<id>); we fetch both prefixes in one go and the client
+      // components match on their own line id.
+      admin
+        .from("case_documents")
+        .select("id, file_name, requirement_key, uploaded_at")
+        .eq("case_id", id)
+        .or("requirement_key.like.intake-income-attach-%,requirement_key.like.intake-expense-attach-%")
+        .order("uploaded_at", { ascending: true }),
     ]);
 
   // Accountancy Fees row prefills with what this client is paying us
@@ -154,6 +166,24 @@ export default async function PchClientPage({
 
   const messages = await loadCaseMessages(admin, id);
   const supportThread = await loadSupportThreadForCaseAndUser(id, me.id);
+
+  // Phase K: group Phase-K attachments by their line id so each
+  // multi-file row only sees its own.
+  const intakeAttachmentsByLine = new Map<string, Array<{ docId: string; fileName: string }>>();
+  for (const d of intakeAttachmentsRes.data ?? []) {
+    const key = (d.requirement_key as string | null) ?? "";
+    const prefixIncome = "intake-income-attach-";
+    const prefixExpense = "intake-expense-attach-";
+    const lineId = key.startsWith(prefixIncome)
+      ? key.slice(prefixIncome.length)
+      : key.startsWith(prefixExpense)
+        ? key.slice(prefixExpense.length)
+        : null;
+    if (!lineId) continue;
+    const list = intakeAttachmentsByLine.get(lineId) ?? [];
+    list.push({ docId: d.id as string, fileName: d.file_name as string });
+    intakeAttachmentsByLine.set(lineId, list);
+  }
 
   return (
     <>
@@ -215,6 +245,7 @@ export default async function PchClientPage({
           sa103s_box: Number(l.sa103s_box),
           car_cost: (l.car_cost ?? "No") as "Yes" | "No" | "Phone",
         }))}
+        intakeAttachments={Object.fromEntries(intakeAttachmentsByLine)}
         vehicleInitial={{
           status: (vehicleRes.data?.status as string | null) ?? null,
           fuel: (vehicleRes.data?.fuel as string | null) ?? null,

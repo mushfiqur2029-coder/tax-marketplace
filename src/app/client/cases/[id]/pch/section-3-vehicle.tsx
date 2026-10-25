@@ -162,7 +162,19 @@ export function Section4Vehicle({
         it if not.
       </p>
       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <div className="mb-4 flex justify-end">
+        <div
+          className={
+            "mb-4 flex items-center gap-3 "
+            + (applicable === "applicable" ? "justify-end" : "justify-between")
+          }
+        >
+          {applicable === null ? (
+            <p className="text-sm text-slate-600">Choose one to continue.</p>
+          ) : applicable === "not_applicable" ? (
+            <p className="text-sm text-slate-600">
+              No vehicle this year. Nothing more to fill in here.
+            </p>
+          ) : null}
           <OuterApplicableToggle
             status={applicable}
             pending={togglePending}

@@ -882,6 +882,209 @@ async function extractAmountForLine(
 }
 
 // -------------------------------------------------------------------
+// Phase K: multi-file attachments for "Others income" (section 2) and
+// "Other expense" (section 3). Each upload lands as its OWN
+// case_documents row (so a second upload doesn't clobber the first)
+// and the extracted amount is returned to the client instead of
+// written to pch_income_lines / pch_expense_lines. The client sums
+// the extracted amounts into the row's £ total via its existing
+// debounced save path.
+//
+// The single-file extractAmountForLine above is unchanged; the other
+// four income rows and twelve expense rows still use it.
+// -------------------------------------------------------------------
+
+type IntakeAttachLineType = "income" | "expense";
+
+function attachRequirementKey(lineType: IntakeAttachLineType, lineId: string): string {
+  return `intake-${lineType}-attach-${lineId}`;
+}
+
+const INCOME_ATTACH_PROMPT =
+  "Find the TOTAL gross income (fares plus incentives, before fees) on this platform tax summary or statement. "
+  + "Return a single number in pounds, no currency symbol and no commas. "
+  + "If several totals are shown, pick the ANNUAL gross earnings total. "
+  + "If you cannot find it, return null.";
+
+const EXPENSE_ATTACH_PROMPT =
+  "Find the TOTAL AMOUNT PAID on this receipt or invoice. "
+  + "Return a single number in pounds, no currency symbol and no commas. "
+  + "If several totals are shown, pick the final total paid including any VAT. "
+  + "If you cannot find it, return null.";
+
+export async function uploadIntakeAttachmentAction(
+  caseId: string,
+  lineType: IntakeAttachLineType,
+  lineId: string,
+  formData: FormData,
+): Promise<
+  IntakeActionResultWith<{
+    doc_id: string;
+    file_name: string;
+    extracted_pence: number | null;
+  }>
+> {
+  try {
+    if (lineType !== "income" && lineType !== "expense") {
+      return { ok: false, error: "Unknown lineType." };
+    }
+    const { me, admin } = await requirePchIntakeEditable(caseId);
+
+    const table = lineType === "income" ? "pch_income_lines" : "pch_expense_lines";
+    const check = await admin
+      .from(table)
+      .select("id")
+      .eq("id", lineId)
+      .eq("case_id", caseId)
+      .maybeSingle();
+    if (check.error) return { ok: false, error: check.error.message };
+    if (!check.data) return { ok: false, error: "Row not found." };
+
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
+
+    const typeLower = (file.type || "").toLowerCase();
+    const nameLower = file.name.toLowerCase();
+    const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+    const isJpeg = typeLower === "image/jpeg" || /\.jpe?g$/.test(nameLower);
+    const isPng = typeLower === "image/png" || /\.png$/.test(nameLower);
+    const isWebp = typeLower === "image/webp" || /\.webp$/.test(nameLower);
+    if (!isPdf && !isJpeg && !isPng && !isWebp) {
+      return { ok: false, error: "Upload a PDF, JPG, PNG or WebP." };
+    }
+
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const requirementKey = attachRequirementKey(lineType, lineId);
+    const path = `${caseId}/intake/${requirementKey}-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const docIns = await admin
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_name: file.name,
+        file_url: path,
+        requirement_key: requirementKey,
+      })
+      .select("id, file_name")
+      .single();
+    if (docIns.error) return { ok: false, error: docIns.error.message };
+
+    const docId = docIns.data.id as string;
+    const fileName = docIns.data.file_name as string;
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+
+    const prompt = lineType === "income" ? INCOME_ATTACH_PROMPT : EXPENSE_ATTACH_PROMPT;
+    const base64 = Buffer.from(bytes).toString("base64");
+    const mediaType = isPdf
+      ? "application/pdf"
+      : isPng
+        ? "image/png"
+        : isWebp
+          ? "image/webp"
+          : "image/jpeg";
+    const contentBlock: Record<string, unknown> = isPdf
+      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 128,
+        messages: [
+          {
+            role: "user",
+            content: [contentBlock, { type: "text", text: prompt }],
+          },
+        ],
+      }),
+    });
+    if (!resp.ok) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
+    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
+
+    let candidate: string | null = null;
+    const asNum = Number(raw.trim());
+    if (Number.isFinite(asNum) && asNum >= 0) {
+      candidate = String(asNum);
+    } else {
+      const m = AMOUNT_REGEX.exec(raw);
+      if (m) candidate = m[1];
+    }
+    if (!candidate) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+    const pounds = Number(candidate.replace(/,/g, ""));
+    if (!Number.isFinite(pounds) || pounds < 0) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+    const pence = Math.round(pounds * 100);
+    return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: pence };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
+  }
+}
+
+export async function deleteIntakeAttachmentAction(
+  caseId: string,
+  docId: string,
+): Promise<IntakeActionResult> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const { data: row, error: readErr } = await admin
+      .from("case_documents")
+      .select("file_url, case_id, requirement_key")
+      .eq("id", docId)
+      .maybeSingle();
+    if (readErr) return { ok: false, error: readErr.message };
+    if (!row) return { ok: false, error: "Attachment not found." };
+    if (row.case_id !== caseId) return { ok: false, error: "Not your attachment." };
+    const key = (row.requirement_key as string | null) ?? "";
+    if (
+      !key.startsWith("intake-income-attach-")
+      && !key.startsWith("intake-expense-attach-")
+    ) {
+      return { ok: false, error: "Not a removable intake attachment." };
+    }
+
+    const path = row.file_url as string | null;
+    if (path) {
+      await admin.storage.from("case-documents").remove([path]);
+    }
+    const del = await admin
+      .from("case_documents")
+      .delete()
+      .eq("id", docId)
+      .eq("case_id", caseId);
+    if (del.error) return { ok: false, error: del.error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Remove failed." };
+  }
+}
+
+// -------------------------------------------------------------------
 // Gift Aid entries (section 10): one row per donation. Re-syncs the
 // total into pch_cases.gift_aid_net_pence after every upsert/delete
 // so the engine (which reads that single column) stays accurate.

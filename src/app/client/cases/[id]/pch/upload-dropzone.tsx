@@ -25,8 +25,17 @@ import { useRef, useState } from "react";
 const DEFAULT_ACCEPT =
   "application/pdf,image/jpeg,image/png,image/webp,image/heic";
 
+// Default useFileDrop takes exactly one file (first in the drop/pick)
+// and runs onFile against it. Multi-file sites use useMultiFileDrop
+// below instead, which iterates every file in the drop/selection.
 type FileDropOpts = {
   onFile: (file: File) => void | Promise<void>;
+  accept?: string;
+  disabled?: boolean;
+};
+
+type MultiFileDropOpts = {
+  onFiles: (files: File[]) => void | Promise<void>;
   accept?: string;
   disabled?: boolean;
 };
@@ -71,6 +80,51 @@ export function useFileDrop({ onFile, accept, disabled }: FileDropOpts): {
       if (!file) return;
       if (accept && !acceptsFile(file, accept)) return;
       void onFile(file);
+    },
+  };
+
+  return { dropProps, isDragOver };
+}
+
+// Phase K: multi-file variant for sites that collect many files into
+// one running total (Others income / Other expense). Iterates every
+// file in the drop/selection and filters each against accept.
+export function useMultiFileDrop({
+  onFiles, accept, disabled,
+}: MultiFileDropOpts): {
+  dropProps: DropProps;
+  isDragOver: boolean;
+} {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const dropProps: DropProps = {
+    onDragOver: (e) => {
+      if (disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(true);
+    },
+    onDragLeave: (e) => {
+      if (disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+    },
+    onDragEnd: (e) => {
+      if (disabled) return;
+      e.preventDefault();
+      setIsDragOver(false);
+    },
+    onDrop: (e) => {
+      if (disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      const files = Array.from(e.dataTransfer.files ?? []).filter(
+        (f) => !accept || acceptsFile(f, accept),
+      );
+      if (files.length === 0) return;
+      void onFiles(files);
     },
   };
 

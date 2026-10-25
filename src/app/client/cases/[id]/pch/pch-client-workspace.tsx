@@ -90,6 +90,7 @@ export function PchClientWorkspace(props: {
   pch24Extractions: Section1Pch24Extraction[];
   incomeLines: IncomeLine[];
   expenseLines: ExpenseLine[];
+  intakeAttachments: Record<string, Array<{ docId: string; fileName: string }>>;
   vehicleInitial: VehicleInitial;
   caseFeePence: number;
   declarationsInitial: DeclarationsInitial;
@@ -272,6 +273,7 @@ export function PchClientWorkspace(props: {
             caseId={props.caseId}
             editable={editable}
             initial={props.incomeLines}
+            attachmentsByLineId={props.intakeAttachments}
           />
 
           <Section3Expenses
@@ -279,6 +281,7 @@ export function PchClientWorkspace(props: {
             editable={editable}
             initial={props.expenseLines}
             caseFeePence={props.caseFeePence}
+            attachmentsByLineId={props.intakeAttachments}
           />
 
           <Section4Vehicle
