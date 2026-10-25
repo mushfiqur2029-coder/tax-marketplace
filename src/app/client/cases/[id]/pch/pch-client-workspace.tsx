@@ -8,6 +8,7 @@ import { startAddonCheckoutAction } from "@/app/client/actions";
 import { AddonPayBanner } from "../addon-pay-banner";
 import { FinalPackReview } from "./final-pack-review";
 import { PriorYearPrompt, type PriorYearOption } from "./prior-year-prompt";
+import { Section1Identity, type Section1InitialHead } from "./section-1-identity";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 // Status-aware workspace for the automated PCH flow.
@@ -32,6 +33,18 @@ import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 type Head = Record<string, string | number | boolean | null>;
 
+type Section1LicenceDoc = {
+  id: string;
+  file_name: string;
+  uploaded_at: string;
+  photo_id_side: "front" | "back" | null;
+};
+type Section1Pch24Extraction = {
+  id: string;
+  status: string;
+  photo_id_side: "front" | "back" | null;
+};
+
 export function PchClientWorkspace(props: {
   caseId: string;
   caseStatus: string;
@@ -45,6 +58,9 @@ export function PchClientWorkspace(props: {
   engineSnapshotAt: string | null;
   approvalAt: string | null;
   approvalName: string | null;
+  section1Initial: Section1InitialHead;
+  licenceDocs: Section1LicenceDoc[];
+  pch24Extractions: Section1Pch24Extraction[];
   messagesPanel: React.ReactNode;
 }) {
   // Live-tracked state so the whole workspace stays current without
@@ -207,7 +223,15 @@ export function PchClientWorkspace(props: {
             />
           ) : null}
 
-          <IntakePlaceholder editable={editable} />
+          <Section1Identity
+            caseId={props.caseId}
+            editable={editable}
+            initial={props.section1Initial}
+            licenceDocs={props.licenceDocs}
+            pch24Extractions={props.pch24Extractions}
+          />
+
+          <IntakeRestPlaceholder editable={editable} />
         </>
       )}
 
@@ -216,31 +240,31 @@ export function PchClientWorkspace(props: {
   );
 }
 
-// Phase A placeholder: the fifteen-section intake lands in phases B-D
-// of the rebuild. The schema it writes against (migration 0113) is
-// already live, so the sections can be dropped in behind this card
-// one at a time without touching the surrounding workspace shell.
-function IntakePlaceholder({ editable }: { editable: boolean }) {
+// Placeholder for the still-to-land sections (2 income, 3 expenses +
+// vehicle, 4-14 declarations, 15 last-year SA, final uploads, submit
+// for review). Phase B wires section 1; phase C adds income + expenses
+// + vehicle; phase D adds the declaration cards + last-year SA +
+// general uploads + Submit for review.
+function IntakeRestPlaceholder({ editable }: { editable: boolean }) {
   return (
     <section
-      className="mb-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5"
-      aria-label="Intake under rebuild"
+      className="mb-6 mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5"
+      aria-label="Rest of intake under rebuild"
     >
       <div
         className="text-[11px] font-semibold uppercase tracking-widest text-slate-700"
         style={{ fontFamily: "var(--font-mono)" }}
       >
-        Intake under rebuild
+        More sections coming
       </div>
       <h2 className="mt-1 text-base font-semibold text-ink">
-        We&apos;re replacing this intake with a new, mobile-first one.
+        Income, expenses, and the rest land in the next updates.
       </h2>
       <p className="mt-2 text-sm text-slate-700">
-        The identity, income, expenses, vehicle, and sections 4-15 cards
-        land in the next few updates. Your previously-saved data is kept
-        in place; nothing is lost. If you were mid-way through the old
-        chat flow and need to pick back up now, send a message to your
-        accountant on this case and they&apos;ll help directly.
+        You can keep going with your identity details above now; the
+        income rows (Uber / Bolt / Free Now), expenses (fuel, insurance
+        and the rest), vehicle details and declarations are being
+        wired up next. Nothing you&apos;ve entered is lost.
       </p>
       {!editable ? (
         <p className="mt-3 text-xs text-slate-600">

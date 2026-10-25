@@ -52,22 +52,41 @@ export default async function PchClientPage({
   // Make sure the head row exists so every subsequent save finds a row.
   await ensurePchHeadRow(id);
 
-  const [head, snapshot, pendingAddons] = await Promise.all([
-    admin.from("pch_cases").select("*").eq("case_id", id).single(),
-    admin
-      .from("pch_cases")
-      .select(
-        "engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name",
-      )
-      .eq("case_id", id)
-      .single(),
-    admin
-      .from("case_addons")
-      .select("id, description, amount_pence, status")
-      .eq("case_id", id)
-      .eq("status", "pending_payment")
-      .order("created_at", { ascending: true }),
-  ]);
+  const [head, snapshot, pendingAddons, licenceDocsRes, pch24ExtRes] =
+    await Promise.all([
+      admin.from("pch_cases").select("*").eq("case_id", id).single(),
+      admin
+        .from("pch_cases")
+        .select(
+          "engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name",
+        )
+        .eq("case_id", id)
+        .single(),
+      admin
+        .from("case_addons")
+        .select("id, description, amount_pence, status")
+        .eq("case_id", id)
+        .eq("status", "pending_payment")
+        .order("created_at", { ascending: true }),
+      // Section 1: licence front + back uploads land under requirement
+      // _key='PCH-24'. We only need their file-name + which side.
+      admin
+        .from("case_documents")
+        .select("id, file_name, uploaded_at, photo_id_side")
+        .eq("case_id", id)
+        .eq("requirement_key", "PCH-24")
+        .order("uploaded_at", { ascending: false }),
+      // Section 1: PCH-24 extraction rows so the licence card can show
+      // "AI is reading your ID" / auto-apply when a done extraction
+      // lands.
+      admin
+        .from("pch_doc_extractions")
+        .select("id, status, photo_id_side")
+        .eq("case_id", id)
+        .eq("slot_code", "PCH-24")
+        .order("created_at", { ascending: false })
+        .limit(5),
+    ]);
 
   const priorYearOptions = await buildPriorYearOptions({
     admin,
@@ -110,6 +129,29 @@ export default async function PchClientPage({
         engineSnapshotAt={showFigures ? (snapshot.data?.engine_snapshot_at ?? null) : null}
         approvalAt={snapshot.data?.client_approval_at ?? null}
         approvalName={snapshot.data?.client_approval_name ?? null}
+        section1Initial={{
+          cl_name: (head.data?.cl_name as string | null) ?? null,
+          cl_dob: (head.data?.cl_dob as string | null) ?? null,
+          cl_address: (head.data?.cl_address as string | null) ?? null,
+          cl_postcode: (head.data?.cl_postcode as string | null) ?? null,
+          cl_phone: (head.data?.cl_phone as string | null) ?? null,
+          cl_email: (head.data?.cl_email as string | null) ?? null,
+          cl_utr: (head.data?.cl_utr as string | null) ?? null,
+          cl_nino: (head.data?.cl_nino as string | null) ?? null,
+          photo_id_kind:
+            (head.data?.photo_id_kind as "passport" | "licence" | null) ?? null,
+        }}
+        licenceDocs={(licenceDocsRes.data ?? []).map((d) => ({
+          id: d.id as string,
+          file_name: d.file_name as string,
+          uploaded_at: d.uploaded_at as string,
+          photo_id_side: (d.photo_id_side ?? null) as "front" | "back" | null,
+        }))}
+        pch24Extractions={(pch24ExtRes.data ?? []).map((e) => ({
+          id: e.id as string,
+          status: e.status as string,
+          photo_id_side: (e.photo_id_side ?? null) as "front" | "back" | null,
+        }))}
         messagesPanel={
           <CaseConversationsPanel
             caseId={id}

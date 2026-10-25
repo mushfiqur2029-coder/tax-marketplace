@@ -1,0 +1,422 @@
+"use server";
+
+// Server actions for the rebuilt PCH client intake (migration 0113).
+// Every input in sections 1-15 lives-saves through savePchHeadFieldAction
+// (whitelisted single-column updates to pch_cases) or one of the
+// repeatable-row actions (income/expense/gift-aid - land in phase C/D).
+//
+// All writes go through the admin client with the standard ownership
+// guard: case belongs to this client, tier=uber_phv_automated, status
+// in {submitted, in_review, prepared}. The guard is centralised in
+// requirePchIntakeEditable; every exported action threads through it so
+// the policy stays in one place.
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireRole } from "@/lib/auth";
+import { randomUUID } from "node:crypto";
+
+type ActionOk = { ok: true };
+type ActionErr = { ok: false; error: string };
+export type IntakeActionResult = ActionOk | ActionErr;
+export type IntakeActionResultWith<T> = (ActionOk & T) | ActionErr;
+
+async function requirePchIntakeEditable(caseId: string) {
+  const me = await requireRole("client");
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("cases")
+    .select("id, client_id, status, tier")
+    .eq("id", caseId)
+    .single();
+  if (error || !data) throw new Error("Case not found.");
+  if (data.client_id !== me.id) throw new Error("Not your case.");
+  if (data.tier !== "uber_phv_automated") throw new Error("Not a PCH case.");
+  if (
+    data.status !== "submitted"
+    && data.status !== "in_review"
+    && data.status !== "prepared"
+  ) {
+    throw new Error(
+      "This return has moved to the approval stage. Message your accountant if something needs to change.",
+    );
+  }
+  return { me, admin, caseRow: data };
+}
+
+// -------------------------------------------------------------------
+// Head field saves (sections 1, 4-15 scalar fields)
+// -------------------------------------------------------------------
+//
+// Allow-list of pch_cases columns the client is permitted to write.
+// Anything NOT in this set is rejected; this both documents the
+// client-writable surface of pch_cases and stops a UI bug from writing
+// to an accountant-only column (engine_snapshot, bookkeeping_confirmed_*,
+// approval_at, etc.) by typo.
+const HEAD_FIELDS: Record<string, "string" | "integer_pence" | "boolean" | "string_enum"> = {
+  // Section 1 identity
+  cl_name: "string",
+  cl_dob: "string",             // ISO date yyyy-mm-dd
+  cl_address: "string",
+  cl_postcode: "string",
+  cl_phone: "string",
+  cl_email: "string",
+  cl_utr: "string",
+  cl_nino: "string",
+
+  // Section 4 (P11D benefits) - evidence only, no numeric figure on head
+  // Section 5 (Interest income)
+  bank_interest_pence: "integer_pence",
+  // Section 6 (Dividend income)
+  dividend_income_pence: "integer_pence",
+  // Section 7 (Capital gains)
+  capital_gains_pence: "integer_pence",
+  capital_gains_note: "string",
+  // Section 8 (Rental)
+  rental_profit_pence: "integer_pence",
+  gross_rent_received_pence: "integer_pence",
+  // Section 9 (Private pension)
+  personal_pension_net_pence: "integer_pence",
+  // Section 11 (Child benefit)
+  child_benefit_pence: "integer_pence",
+  // Section 12 (Overseas)
+  overseas_income_pence: "integer_pence",
+  overseas_tax_paid_pence: "integer_pence",
+  // Section 13 (Student loan)
+  student_loan_plan: "string",
+  // Section 14 (anything else)
+  anything_else_note: "string",
+  // Section 15 (Last year's SA)
+  last_year_sa_status: "string_enum",
+  last_year_sa_paid: "boolean",
+
+  // Keeping these writable too since they stay on the intake surface
+  // from the old flow (not shown in sections 1-15 but accountant may
+  // ask the client to fill them via chat): employment income + PAYE,
+  // gift aid total, benefits note, marriage allowance, spouse details.
+  employment_income_pence: "integer_pence",
+  paye_pence: "integer_pence",
+  gift_aid_net_pence: "integer_pence",
+  benefits_note: "string",
+};
+
+export async function savePchHeadFieldAction(
+  caseId: string,
+  field: string,
+  value: string | number | boolean | null,
+): Promise<IntakeActionResult> {
+  try {
+    const kind = HEAD_FIELDS[field];
+    if (!kind) return { ok: false, error: "Field " + field + " is not writable." };
+
+    // Normalise + validate value against the declared field kind.
+    let dbValue: string | number | boolean | null = value;
+    if (value === "" || value === undefined) dbValue = null;
+    if (kind === "integer_pence" && dbValue !== null) {
+      const n = typeof dbValue === "number" ? dbValue : Number(dbValue);
+      if (!Number.isFinite(n) || n < 0) return { ok: false, error: "Must be zero or more." };
+      dbValue = Math.round(n);
+    }
+    if (kind === "boolean" && dbValue !== null) {
+      dbValue = dbValue === true || dbValue === "true";
+    }
+    if (kind === "string_enum" && dbValue !== null && typeof dbValue !== "string") {
+      return { ok: false, error: "Invalid value for " + field };
+    }
+    if (field === "last_year_sa_status" && dbValue !== null) {
+      if (dbValue !== "yes" && dbValue !== "no" && dbValue !== "not_applicable") {
+        return { ok: false, error: "Invalid last_year_sa_status value." };
+      }
+    }
+
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const { error } = await admin
+      .from("pch_cases")
+      .update({ [field]: dbValue })
+      .eq("case_id", caseId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Declaration status: sections 4-14 applicable / not_applicable toggle
+// -------------------------------------------------------------------
+const DECLARATION_KEYS = new Set([
+  "p11d",
+  "interest",
+  "dividend",
+  "capital_gains",
+  "rental",
+  "pension",
+  "gift_aid",
+  "child_benefit",
+  "overseas",
+  "student_loan",
+  "anything_else",
+]);
+
+export async function setDeclarationStatusAction(
+  caseId: string,
+  sectionKey: string,
+  status: "applicable" | "not_applicable",
+): Promise<IntakeActionResult> {
+  try {
+    if (!DECLARATION_KEYS.has(sectionKey)) {
+      return { ok: false, error: "Unknown section: " + sectionKey };
+    }
+    if (status !== "applicable" && status !== "not_applicable") {
+      return { ok: false, error: "Invalid status." };
+    }
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const { data: head } = await admin
+      .from("pch_cases")
+      .select("cl_declaration_status")
+      .eq("case_id", caseId)
+      .single();
+    const current = (head?.cl_declaration_status ?? {}) as Record<string, string>;
+    current[sectionKey] = status;
+    const { error } = await admin
+      .from("pch_cases")
+      .update({ cl_declaration_status: current })
+      .eq("case_id", caseId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Single-field OCR autofill: section 1 UTR / NI inline uploads
+// -------------------------------------------------------------------
+//
+// Spec: "upload -> extract -> prefill this one field, client can
+// edit." We don't want the full extraction-review infrastructure for
+// this; a one-shot vision call per upload is enough. Uploads land in
+// the case-documents bucket with a non-slot requirement_key so the
+// accountant can still open them on review.
+
+const UTR_REGEX = /\b(\d{10})\b/;
+const NINO_REGEX = /\b([A-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D])\b/i;
+
+export async function extractUtrFromUploadAction(
+  caseId: string,
+  formData: FormData,
+): Promise<IntakeActionResultWith<{ utr: string | null }>> {
+  const r = await extractSingleField(caseId, formData, {
+    label: "UTR",
+    requirementKey: "intake-utr",
+    headColumn: "cl_utr",
+    prompt:
+      "Find the UK Unique Taxpayer Reference (UTR) on this document. It is a 10-digit number, "
+      + "usually printed on an HMRC letter after the word 'UTR' or 'Unique Taxpayer Reference'. "
+      + "Return just the 10 digits, no spaces or punctuation. If you cannot find it, return null.",
+    patternHint: UTR_REGEX,
+    normalise: (v) => {
+      const digits = v.replace(/\D/g, "");
+      return digits.length === 10 ? digits : null;
+    },
+  });
+  if (!r.ok) return r;
+  return { ok: true, utr: r.value };
+}
+
+export async function extractNinoFromUploadAction(
+  caseId: string,
+  formData: FormData,
+): Promise<IntakeActionResultWith<{ nino: string | null }>> {
+  const r = await extractSingleField(caseId, formData, {
+    label: "NI number",
+    requirementKey: "intake-ni",
+    headColumn: "cl_nino",
+    prompt:
+      "Find the UK National Insurance number on this document. It is formatted as two letters, "
+      + "six digits, one trailing letter (A to D), e.g. 'AB 12 34 56 C'. Return just the nine "
+      + "characters without spaces, uppercase. If you cannot find it, return null.",
+    patternHint: NINO_REGEX,
+    normalise: (v) => {
+      const compact = v.replace(/\s/g, "").toUpperCase();
+      return /^[A-Z]{2}\d{6}[A-D]$/.test(compact) ? compact : null;
+    },
+  });
+  if (!r.ok) return r;
+  return { ok: true, nino: r.value };
+}
+
+async function extractSingleField(
+  caseId: string,
+  formData: FormData,
+  cfg: {
+    label: string;
+    requirementKey: string;
+    headColumn: "cl_utr" | "cl_nino";
+    prompt: string;
+    patternHint: RegExp;
+    normalise: (raw: string) => string | null;
+  },
+): Promise<IntakeActionResultWith<{ value: string | null }>> {
+  try {
+    const { me, admin } = await requirePchIntakeEditable(caseId);
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
+
+    const typeLower = (file.type || "").toLowerCase();
+    const nameLower = file.name.toLowerCase();
+    const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+    const isJpeg = typeLower === "image/jpeg" || /\.jpe?g$/.test(nameLower);
+    const isPng = typeLower === "image/png" || /\.png$/.test(nameLower);
+    const isWebp = typeLower === "image/webp" || /\.webp$/.test(nameLower);
+    if (!isPdf && !isJpeg && !isPng && !isWebp) {
+      return { ok: false, error: "Upload a PDF, JPG, PNG or WebP." };
+    }
+
+    // Upload the file to storage first so it's recorded as a reference
+    // for the accountant whether or not OCR succeeds.
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const path = `${caseId}/intake/${cfg.requirementKey}-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const insert = await admin
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_name: file.name,
+        file_url: path,
+        requirement_key: cfg.requirementKey,
+      })
+      .select("id")
+      .single();
+    if (insert.error) return { ok: false, error: insert.error.message };
+
+    // Run OCR via Claude vision. Keep the call shape minimal: one
+    // field, one short prompt, no tool-use.
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return { ok: false, error: "OCR temporarily unavailable." };
+
+    const base64 = Buffer.from(bytes).toString("base64");
+    const mediaType = isPdf
+      ? "application/pdf"
+      : isPng
+        ? "image/png"
+        : isWebp
+          ? "image/webp"
+          : "image/jpeg";
+    const sourceType = isPdf ? "base64" : "base64";
+    const contentBlock: Record<string, unknown> = isPdf
+      ? { type: "document", source: { type: sourceType, media_type: mediaType, data: base64 } }
+      : { type: "image", source: { type: sourceType, media_type: mediaType, data: base64 } };
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 128,
+        messages: [
+          {
+            role: "user",
+            content: [
+              contentBlock,
+              { type: "text", text: cfg.prompt },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!resp.ok) {
+      // Partial success: file is stored, OCR failed. Don't fail the
+      // action; the client's typed value stays the source of truth.
+      return { ok: true, value: null };
+    }
+    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
+    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
+
+    // Try to normalise the model's answer; fall back to pattern-match
+    // against the full raw string in case the model wrapped the value
+    // in prose instead of returning it bare.
+    let normalised = cfg.normalise(raw.trim());
+    if (!normalised) {
+      const m = cfg.patternHint.exec(raw);
+      if (m) normalised = cfg.normalise(m[1] ?? m[0]);
+    }
+
+    if (normalised) {
+      await admin
+        .from("pch_cases")
+        .update({ [cfg.headColumn]: normalised })
+        .eq("case_id", caseId);
+    }
+
+    return { ok: true, value: normalised };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Extract failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Auto-apply the latest completed PCH-24 (photo ID) extraction so
+// the identity inputs populate the moment the vision call finishes.
+// Called by the UI once it sees the extraction row flip to status=done.
+// Writes extracted fields straight to pch_cases.cl_name / cl_dob /
+// cl_address / cl_postcode and marks the extraction row as applied
+// so the accountant-side review surface doesn't re-prompt for it.
+// -------------------------------------------------------------------
+export async function autoApplyPch24ExtractionAction(
+  caseId: string,
+): Promise<IntakeActionResultWith<{ applied: Record<string, string> }>> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const { data: ext } = await admin
+      .from("pch_doc_extractions")
+      .select("id, fields, status, photo_id_side")
+      .eq("case_id", caseId)
+      .eq("slot_code", "PCH-24")
+      .eq("status", "done")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!ext) return { ok: true, applied: {} };
+
+    const fields = (ext.fields ?? {}) as Record<string, { value?: unknown }>;
+    const headPatch: Record<string, string> = {};
+    const applied: Record<string, string> = {};
+    const copy = (key: string, col: string) => {
+      const raw = fields[key]?.value;
+      if (typeof raw === "string" && raw.trim().length > 0) {
+        headPatch[col] = raw.trim();
+        applied[col] = raw.trim();
+      }
+    };
+    copy("fullName", "cl_name");
+    copy("dateOfBirth", "cl_dob");
+    copy("address", "cl_address");
+    copy("postcode", "cl_postcode");
+    if (Object.keys(headPatch).length > 0) {
+      await admin.from("pch_cases").update(headPatch).eq("case_id", caseId);
+      // Mark the extraction as applied so the review UI (if still
+      // mounted anywhere) stops prompting.
+      await admin
+        .from("pch_doc_extractions")
+        .update({ status: "applied" })
+        .eq("id", ext.id);
+    }
+    return { ok: true, applied };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Apply failed." };
+  }
+}
