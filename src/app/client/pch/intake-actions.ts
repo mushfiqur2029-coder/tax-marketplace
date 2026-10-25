@@ -325,7 +325,10 @@ async function extractSingleField(
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        // Same model id the proven ai-extract.ts pipeline uses, so a
+        // model-id typo can't quietly take the UTR/NI OCR offline for
+        // every client with nothing in logs pointing at why.
+        model: "claude-sonnet-4-6",
         max_tokens: 128,
         messages: [
           {
@@ -356,10 +359,11 @@ async function extractSingleField(
     }
 
     if (normalised) {
-      await admin
+      const upd = await admin
         .from("pch_cases")
         .update({ [cfg.headColumn]: normalised })
         .eq("case_id", caseId);
+      if (upd.error) return { ok: false, error: upd.error.message };
     }
 
     return { ok: true, value: normalised };
@@ -381,15 +385,21 @@ export async function autoApplyPch24ExtractionAction(
 ): Promise<IntakeActionResultWith<{ applied: Record<string, string> }>> {
   try {
     const { admin } = await requirePchIntakeEditable(caseId);
-    const { data: ext } = await admin
+    // Only pick extractions we haven't applied before. The applied_at
+    // boolean marker is the one source of truth; status stays on the
+    // enum ('pending' | 'done' | 'error' | 'skipped') the rest of the
+    // extraction pipeline relies on. See migration 0114.
+    const { data: ext, error: readErr } = await admin
       .from("pch_doc_extractions")
-      .select("id, fields, status, photo_id_side")
+      .select("id, fields, status, photo_id_side, applied_at")
       .eq("case_id", caseId)
       .eq("slot_code", "PCH-24")
       .eq("status", "done")
+      .is("applied_at", null)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (readErr) return { ok: false, error: readErr.message };
     if (!ext) return { ok: true, applied: {} };
 
     const fields = (ext.fields ?? {}) as Record<string, { value?: unknown }>;
@@ -407,13 +417,24 @@ export async function autoApplyPch24ExtractionAction(
     copy("address", "cl_address");
     copy("postcode", "cl_postcode");
     if (Object.keys(headPatch).length > 0) {
-      await admin.from("pch_cases").update(headPatch).eq("case_id", caseId);
-      // Mark the extraction as applied so the review UI (if still
-      // mounted anywhere) stops prompting.
-      await admin
-        .from("pch_doc_extractions")
-        .update({ status: "applied" })
-        .eq("id", ext.id);
+      const headUpdate = await admin
+        .from("pch_cases")
+        .update(headPatch)
+        .eq("case_id", caseId);
+      if (headUpdate.error) {
+        return { ok: false, error: headUpdate.error.message };
+      }
+    }
+    // Mark the extraction as applied either way: a 'done' extraction
+    // with no copyable fields (model returned nothing useful) should
+    // still be considered handled so we don't re-check it on every
+    // page load. Clients can re-upload if they need another pass.
+    const markUpdate = await admin
+      .from("pch_doc_extractions")
+      .update({ applied_at: new Date().toISOString() })
+      .eq("id", ext.id);
+    if (markUpdate.error) {
+      return { ok: false, error: markUpdate.error.message };
     }
     return { ok: true, applied };
   } catch (e) {

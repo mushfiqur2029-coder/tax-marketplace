@@ -43,6 +43,7 @@ type Section1Pch24Extraction = {
   id: string;
   status: string;
   photo_id_side: "front" | "back" | null;
+  applied_at: string | null;
 };
 
 export function PchClientWorkspace(props: {

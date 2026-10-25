@@ -33,6 +33,7 @@ type Pch24Extraction = {
   id: string;
   status: string;
   photo_id_side: "front" | "back" | null;
+  applied_at: string | null;
 };
 
 export type Section1InitialHead = {
@@ -458,13 +459,16 @@ function LicenceCard({
         id: row.id as string,
         status: row.status as string,
         photo_id_side: (row.photo_id_side as "front" | "back" | null) ?? null,
+        applied_at: (row.applied_at as string | null) ?? null,
       };
     },
   });
 
   // When a new 'done' extraction appears, fire the server-side
-  // auto-apply exactly once per extraction id. useRef remembers which
-  // ids we've already handled so a re-render doesn't re-fire.
+  // auto-apply exactly once per extraction id. We filter on applied_at
+  // (migration 0114) as well as a client-side ref so a re-render
+  // doesn't re-fire and a refresh with the server still thinking the
+  // row is handled doesn't clobber a client edit.
   const [applied, setApplied] = useState<Record<string, string> | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyPending, setApplyPending] = useState(false);
@@ -473,6 +477,7 @@ function LicenceCard({
     const target = liveExtractions.find((e) => {
       if (e.status !== "done") return false;
       if (e.photo_id_side === "back") return false;
+      if (e.applied_at !== null) return false;
       return !handledIdsRef.current.has(e.id);
     });
     if (!target) return;

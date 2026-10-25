@@ -78,10 +78,12 @@ export default async function PchClientPage({
         .order("uploaded_at", { ascending: false }),
       // Section 1: PCH-24 extraction rows so the licence card can show
       // "AI is reading your ID" / auto-apply when a done extraction
-      // lands.
+      // lands. applied_at (migration 0114) gates the client-side
+      // re-apply logic so a refreshed page can't clobber a client's
+      // edit back to the OCR value.
       admin
         .from("pch_doc_extractions")
-        .select("id, status, photo_id_side")
+        .select("id, status, photo_id_side, applied_at")
         .eq("case_id", id)
         .eq("slot_code", "PCH-24")
         .order("created_at", { ascending: false })
@@ -151,6 +153,7 @@ export default async function PchClientPage({
           id: e.id as string,
           status: e.status as string,
           photo_id_side: (e.photo_id_side ?? null) as "front" | "back" | null,
+          applied_at: (e.applied_at as string | null) ?? null,
         }))}
         messagesPanel={
           <CaseConversationsPanel
