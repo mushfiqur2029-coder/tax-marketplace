@@ -38,8 +38,9 @@ type ExpenseSlot = {
   sa103s_box: 12 | 14 | 16 | 17 | 18 | 19;
   car_cost: "Yes" | "No" | "Phone";
   helpText?: string;
-  // Phase K: Other expense is a multi-file row like Others income.
-  // All twelve other cards stay single-file.
+  // Phase K/L: Cash expense and Other expense are multi-file rows
+  // like Cash receipt / Others income on the income side. The other
+  // eleven cards stay single-file.
   multiFile?: boolean;
 };
 
@@ -59,7 +60,14 @@ const FIXED_SLOTS: ExpenseSlot[] = [
   { label: "Mobile", category: "Phone & technology", sa103s_box: 18, car_cost: "Phone", helpText: "Phone bills for the year." },
   { label: "Accountancy Fees", category: "Accountancy & insurance", sa103s_box: 14, car_cost: "No", helpText: "Prefilled with what you're paying us for this return. Edit if you paid other fees too." },
   { label: "Parking, Congestion & ULEZ", category: "Congestion, ULEZ, tolls & parking", sa103s_box: 12, car_cost: "Yes", helpText: "Parking, congestion charge, ULEZ, and airport drop-off fees. Not fines." },
-  { label: "Cash expense", category: "Other expenses", sa103s_box: 19, car_cost: "No" },
+  {
+    label: "Cash expense",
+    category: "Other expenses",
+    sa103s_box: 19,
+    car_cost: "No",
+    helpText: "Cash receipts you kept across the year. Drop multiple files; we read each one and add it to the total.",
+    multiFile: true,
+  },
   {
     label: "Other expense",
     category: "Other expenses",
@@ -303,9 +311,10 @@ function FixedExpenseRow({
   );
 }
 
-// Phase K: multi-file variant used by the "Other expense" slot. Each
-// dropped/picked receipt lands as its own case_documents attachment
-// and its extracted amount is added to whatever the £ total currently
+// Phase K/L: multi-file variant used by every slot with
+// multiFile:true (Cash expense, Other expense). Each dropped/picked
+// receipt lands as its own case_documents attachment and its
+// extracted amount is added to whatever the £ total currently
 // shows. The £ input stays fully editable.
 function MultiFileExpenseRow({
   caseId, editable, row, initialAttachments, onPatch,
@@ -354,6 +363,12 @@ function MultiFileExpenseRow({
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
 
+  // See section-2-income.tsx MultiFileIncomeRow for the matching
+  // comment: ref keeps the running total correct across awaits so a
+  // multi-file loop accumulates instead of overwriting.
+  const amountRef = useRef(amount.value);
+  useEffect(() => { amountRef.current = amount.value; }, [amount.value]);
+
   const ensureLineId = async (): Promise<string | null> => {
     const current = latestRef.current.id;
     if (current) return current;
@@ -374,9 +389,11 @@ function MultiFileExpenseRow({
 
   const addAttachmentExtracted = (extractedPence: number) => {
     if (extractedPence <= 0) return;
-    const currentPence = strToPence(amount.value);
+    const currentPence = strToPence(amountRef.current);
     const next = currentPence + extractedPence;
-    amount.onChange(penceToStr(next));
+    const nextStr = penceToStr(next);
+    amountRef.current = nextStr;
+    amount.onChange(nextStr);
   };
 
   const uploadFiles = async (files: File[]) => {

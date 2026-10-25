@@ -128,11 +128,13 @@ export default async function PchClientPage({
         .eq("case_id", id)
         .eq("requirement_key", "intake-general")
         .order("uploaded_at", { ascending: false }),
-      // Phase K: multi-file attachments on "Others income" and "Other
-      // expense" rows. Each row gets its own requirement_key suffixed
-      // with the line id (intake-income-attach-<id>, intake-expense-
-      // attach-<id>); we fetch both prefixes in one go and the client
-      // components match on their own line id.
+      // Phase K/L: multi-file attachments on the Cash receipt +
+      // Others income rows (section 2) and the Cash expense + Other
+      // expense rows (section 3). Each row gets its own
+      // requirement_key suffixed with the line id
+      // (intake-income-attach-<id>, intake-expense-attach-<id>); we
+      // fetch both prefixes in one go and the client components
+      // match on their own line id.
       admin
         .from("case_documents")
         .select("id, file_name, requirement_key, uploaded_at")

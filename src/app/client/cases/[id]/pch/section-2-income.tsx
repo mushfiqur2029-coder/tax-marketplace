@@ -8,10 +8,11 @@
 // layout mirrors the expense cards: label on top, £ amount below, an
 // Upload receipt button for optional OCR.
 //
-// Phase K: "Others income" is a multi-file row. Each file is uploaded
-// as its own case_documents attachment (intake-income-attach-<lineId>)
-// and its extracted amount is added to the running £ total. The other
-// four rows stay single-file.
+// Phase K/L: "Cash receipt" and "Others income" are multi-file rows.
+// Each file is uploaded as its own case_documents attachment
+// (intake-income-attach-<lineId>) and its extracted amount is added
+// to the running £ total. The three platform rows (Uber / Bolt /
+// Free Now) stay single-file.
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -44,7 +45,11 @@ const FIXED_SLOTS: IncomeSlot[] = [
   { label: "Uber" },
   { label: "Bolt" },
   { label: "Free Now" },
-  { label: "Cash receipt", helpText: "Fares taken in cash across the year." },
+  {
+    label: "Cash receipt",
+    helpText: "Fares taken in cash across the year. Drop multiple files; we read each one and add it to the total.",
+    multiFile: true,
+  },
   {
     label: "Others income",
     helpText: "Anything from a platform not listed above. Drop multiple files; we read each one and add it to the total.",
@@ -276,12 +281,13 @@ function FixedIncomeRow({
   );
 }
 
-// Phase K: multi-file variant used by the "Others income" slot. Each
-// dropped/picked file lands as its own case_documents attachment and
-// its extracted amount is added to whatever the £ total currently
-// shows. The £ input stays fully editable; the client can override
-// the running total at any time and a subsequent file will add to
-// their typed value instead of silently resetting it.
+// Phase K/L: multi-file variant used by every slot with
+// multiFile:true (Cash receipt, Others income). Each dropped/picked
+// file lands as its own case_documents attachment and its extracted
+// amount is added to whatever the £ total currently shows. The £
+// input stays fully editable; the client can override the running
+// total at any time and a subsequent file will add to their typed
+// value instead of silently resetting it.
 function MultiFileIncomeRow({
   caseId, editable, row, initialAttachments, onPatch,
 }: {
@@ -326,6 +332,15 @@ function MultiFileIncomeRow({
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
 
+  // Ref mirror of amount.value so that a multi-file upload loop
+  // accumulates correctly across awaits. Reading amount.value from
+  // the closure would see the pre-loop snapshot every iteration and
+  // each new file would overwrite the previous file's addition
+  // instead of adding to it. The useEffect keeps the ref in sync
+  // with the input (both OCR-driven and user-driven changes).
+  const amountRef = useRef(amount.value);
+  useEffect(() => { amountRef.current = amount.value; }, [amount.value]);
+
   const ensureLineId = async (): Promise<string | null> => {
     const current = latestRef.current.id;
     if (current) return current;
@@ -343,9 +358,11 @@ function MultiFileIncomeRow({
 
   const addAttachmentExtracted = (extractedPence: number) => {
     if (extractedPence <= 0) return;
-    const currentPence = strToPence(amount.value);
+    const currentPence = strToPence(amountRef.current);
     const next = currentPence + extractedPence;
-    amount.onChange(penceToStr(next));
+    const nextStr = penceToStr(next);
+    amountRef.current = nextStr;
+    amount.onChange(nextStr);
   };
 
   const uploadFiles = async (files: File[]) => {
