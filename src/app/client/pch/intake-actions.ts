@@ -448,24 +448,6 @@ export async function upsertPchIncomeLineAction(
   }
 }
 
-export async function deletePchIncomeLineAction(
-  caseId: string,
-  lineId: string,
-): Promise<IntakeActionResult> {
-  try {
-    const { admin } = await requirePchIntakeEditable(caseId);
-    const del = await admin
-      .from("pch_income_lines")
-      .delete()
-      .eq("id", lineId)
-      .eq("case_id", caseId);
-    if (del.error) return { ok: false, error: del.error.message };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
-  }
-}
-
 // -------------------------------------------------------------------
 // Expense row upserts (section 3)
 // -------------------------------------------------------------------
@@ -562,24 +544,6 @@ export async function upsertPchExpenseLineAction(
     return { ok: true, id: ins.data.id as string };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
-  }
-}
-
-export async function deletePchExpenseLineAction(
-  caseId: string,
-  lineId: string,
-): Promise<IntakeActionResult> {
-  try {
-    const { admin } = await requirePchIntakeEditable(caseId);
-    const del = await admin
-      .from("pch_expense_lines")
-      .delete()
-      .eq("id", lineId)
-      .eq("case_id", caseId);
-    if (del.error) return { ok: false, error: del.error.message };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
   }
 }
 

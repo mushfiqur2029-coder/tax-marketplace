@@ -77,8 +77,15 @@ export function isIncomeComplete(lines: readonly IncomeLine[]): boolean {
   return lines.some((l) => (l.gross_takings_pence ?? 0) > 0);
 }
 
+// Phase M: Accountancy Fees is prefilled with the case fee on page
+// load, so a bare "any line > 0" check would mark the Expenses chip
+// green before the client has touched anything in the section. Only
+// client-entered amounts (i.e. anything other than Accountancy Fees)
+// count toward completion.
 export function isExpensesComplete(lines: readonly ExpenseLine[]): boolean {
-  return lines.some((l) => (l.amount_paid_pence ?? 0) > 0);
+  return lines.some(
+    (l) => l.label !== "Accountancy Fees" && (l.amount_paid_pence ?? 0) > 0,
+  );
 }
 
 // Phase G: private-use is a single money field now. We treat
