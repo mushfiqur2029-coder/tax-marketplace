@@ -252,13 +252,14 @@ export async function uploadPchDocumentAction(
   // anything with; skip it outright and keep the upload as a plain
   // record, same as any other document whose content we don't read.
   const isLicenceBack = slotCode === "PCH-24" && photoIdSide === "back";
-  if (slotCode === "PCH-14") {
-    const { ingestBankStatement } = await import("@/lib/pch/bank-trigger");
-    const documentId = inserted.id;
-    after(async () => {
-      await ingestBankStatement({ caseId, documentId });
-    });
-  } else if (!isLicenceBack) {
+  // Migration 0113 rebuild dropped the auto-parse/categorise pipeline
+  // that used to run on PCH-14 bank-statement uploads to populate
+  // pch_income_lines/pch_expense_lines from the raw transactions. The
+  // client now types the figures directly; bank statements are kept as
+  // reference material the accountant opens on review. Same keep-the-
+  // file-only treatment the licence back has always had.
+  const isBankStatement = slotCode === "PCH-14";
+  if (!isLicenceBack && !isBankStatement) {
     const scheduled = await schedulePchExtraction({
       caseId,
       slotCode,

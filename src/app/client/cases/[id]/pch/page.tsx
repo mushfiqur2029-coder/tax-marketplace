@@ -3,18 +3,14 @@ import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensurePchHeadRow } from "@/app/client/pch/actions";
 import { PchClientWorkspace } from "./pch-client-workspace";
-import type { ExtractionReviewPayload } from "./extraction-review";
 import type { PriorYearOption } from "./prior-year-prompt";
-import { SLOT_APPLY_MAPS } from "@/lib/pch/extraction-apply";
 import {
   computeReturnsOwed,
   hasRatePackFor,
   type TaxEngineOutput,
   type UkTaxYear,
 } from "@/lib/tax-engine";
-import {
-  type CaseMessageView,
-} from "@/components/case/case-messages-panel";
+import { type CaseMessageView } from "@/components/case/case-messages-panel";
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
 
@@ -24,8 +20,10 @@ import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
 export const dynamic = "force-dynamic";
 
 // Entry point for the automated PCH flow (phase 2a). One page with
-// collapsible sections: Documents, Tab 1 Client, Tab 2 Income,
-// Tab 3 Expenses, Tab 4 Vehicle, Draft output, Approval.
+// collapsible sections: identity, income, expenses, vehicle (as a
+// subsection of expenses), sections 4-15, final general uploads.
+// Phase A ships the status-aware shell; the intake sections land in
+// phases B-D of the rebuild.
 //
 // Authenticated client only; redirects to the generic case detail if
 // this isn't a uber_phv_automated case.
@@ -48,65 +46,29 @@ export default async function PchClientPage({
   if (!caseRow) notFound();
   if (caseRow.client_id !== me.id) notFound();
   if (caseRow.tier !== "uber_phv_automated") {
-    // Not a PCH case; punt back to the generic case detail.
     redirect(`/client/cases/${id}`);
   }
 
   // Make sure the head row exists so every subsequent save finds a row.
   await ensurePchHeadRow(id);
 
-  const [head, income, expenses, vehicle, slots, docStatus, snapshot, bankTxns, pendingAddons] =
-    await Promise.all([
-      admin.from("pch_cases").select("*").eq("case_id", id).single(),
-      admin.from("pch_income_lines").select("*").eq("case_id", id).order("sort_order"),
-      admin.from("pch_expense_lines").select("*").eq("case_id", id).order("sort_order"),
-      admin.from("pch_vehicle").select("*").eq("case_id", id).maybeSingle(),
-      admin.from("pch_doc_slots").select("*").eq("active", true).order("sort_order"),
-      admin.from("pch_doc_status").select("*").eq("case_id", id),
-      admin.from("pch_cases").select("engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name")
-        .eq("case_id", id).single(),
-      // Slice 3: live ledger feed. Ordered newest-first so the ledger
-      // view's grouped render shows the most recent transaction at the
-      // top of each category when expanded.
-      admin.from("pch_bank_transactions")
-        .select("id, txn_date, description, amount_pence, category, category_confidence")
-        .eq("case_id", id)
-        .order("txn_date", { ascending: false, nullsFirst: false }),
-      // Phase 6 Slice 5: add-ons the client still owes payment on.
-      admin.from("case_addons")
-        .select("id, description, amount_pence, status")
-        .eq("case_id", id)
-        .eq("status", "pending_payment")
-        .order("created_at", { ascending: true }),
-    ]);
+  const [head, snapshot, pendingAddons] = await Promise.all([
+    admin.from("pch_cases").select("*").eq("case_id", id).single(),
+    admin
+      .from("pch_cases")
+      .select(
+        "engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name",
+      )
+      .eq("case_id", id)
+      .single(),
+    admin
+      .from("case_addons")
+      .select("id, description, amount_pence, status")
+      .eq("case_id", id)
+      .eq("status", "pending_payment")
+      .order("created_at", { ascending: true }),
+  ]);
 
-  const { data: uploadedDocs } = await admin
-    .from("case_documents")
-    .select("id, file_name, uploaded_at, requirement_key, photo_id_side")
-    .eq("case_id", id)
-    .order("uploaded_at", { ascending: false });
-
-  // Checklist items the card-level skip buttons on sections 5-8 flip
-  // to Done. The sections render a "Marked as not applicable" state
-  // when the matching item is in this set, so the client sees the
-  // skip persist across refresh (previously the UI stayed in empty
-  // state because the *_note column wasn't touched by the skip action).
-  const { data: skipRows } = await admin
-    .from("pch_check_status")
-    .select("item_number, note")
-    .eq("case_id", id)
-    .in("item_number", [5, 11, 19, 27, 31])
-    .eq("status", "Done");
-  const skippedItems = new Set<number>(
-    (skipRows ?? [])
-      .filter((r) => typeof r.note === "string" && r.note.includes("not applicable"))
-      .map((r) => r.item_number as number),
-  );
-
-  // Compute outstanding prior-year returns. We filter the output so we
-  // only show years OLDER than this case's own tax year (the current
-  // year's deadline is tracked on the case itself, not here) and we
-  // omit any year the client has already spawned a child case for.
   const priorYearOptions = await buildPriorYearOptions({
     admin,
     parentCaseId: id,
@@ -115,126 +77,48 @@ export default async function PchClientPage({
     tradingEndDate: head.data?.cl_stop_date ? new Date(head.data.cl_stop_date) : null,
   });
 
-  // Build the per-document extraction review payloads. We attach the
-  // slot's apply-map labels + targetable flags here so the client UI
-  // can render friendly field names and know which fields will actually
-  // write to the intake tables.
-  const { data: extractionsRaw } = await admin
-    .from("pch_doc_extractions")
-    .select("id, slot_code, status, overall_confidence, document_type, fields, field_states, error_message, source, photo_id_side")
-    .eq("case_id", id)
-    .order("created_at", { ascending: false });
-  const extractions: ExtractionReviewPayload[] = (extractionsRaw ?? []).map((e) => {
-    const applyMap = SLOT_APPLY_MAPS[e.slot_code];
-    const targetable: Record<string, boolean> = {};
-    if (applyMap) {
-      for (const [key, target] of Object.entries(applyMap.targets)) {
-        targetable[key] = target.table !== "none";
-      }
-    }
-    return {
-      id: e.id,
-      slotCode: e.slot_code,
-      status: e.status,
-      overallConfidence: e.overall_confidence,
-      documentType: e.document_type,
-      fields: (e.fields ?? {}) as ExtractionReviewPayload["fields"],
-      fieldStates: (e.field_states ?? {}) as ExtractionReviewPayload["fieldStates"],
-      errorMessage: e.error_message,
-      source: (e.source ?? "document") as ExtractionReviewPayload["source"],
-      photoIdSide: (e.photo_id_side ?? null) as "front" | "back" | null,
-      labels: applyMap?.label ?? {},
-      targetable,
-    };
-  });
-
   // Hide the engine snapshot from the client until the accountant has
-  // explicitly moved the case to client_approval. Up to that point the
-  // client sees intake only, editable throughout (submitted, in_review,
-  // prepared); the figures are first shown on the approval screen.
+  // explicitly moved the case to client_approval.
   const showFigures =
-    caseRow.status === "client_approval" ||
-    caseRow.status === "filed" ||
-    caseRow.status === "complete";
+    caseRow.status === "client_approval"
+    || caseRow.status === "filed"
+    || caseRow.status === "complete";
 
   const messages = await loadCaseMessages(admin, id);
   const supportThread = await loadSupportThreadForCaseAndUser(id, me.id);
 
-  // Slice 3: shape pch_bank_transactions rows for the ledger view.
-  const bankTransactions = (bankTxns.data ?? []).map((r) => ({
-    id: r.id as string,
-    txnDate: (r.txn_date as string | null) ?? null,
-    description: r.description as string,
-    amountPence: Number(r.amount_pence),
-    category: (r.category as string | null) ?? null,
-    categoryConfidence: ((r.category_confidence as string | null) ?? null) as
-      | "high" | "medium" | "low" | "missing" | null,
-  }));
-
-  // No page-level RealtimeRefresh here anymore. The workspace now
-  // live-merges the only cross-party updates that matter during an
-  // active client session:
-  //   - cases.status (useLiveRow in PchClientWorkspace)
-  //   - pch_cases head: final_pack_sent_at, final_pack_confirmed_at
-  //     + name, client_approval_at + name (useLiveRow in
-  //     PchClientWorkspace)
-  //   - case_addons: new addon raised by the accountant (useLiveList
-  //     in PchClientWorkspace, drives the Pay banner)
-  //   - case_messages (live-merge inside CaseMessagesPanel)
-  //   - case_documents (nothing to live-merge for the client, their
-  //     own uploads are updated locally; the server-side docs list
-  //     isn't rendered here)
-  // Dropped from the subscription list (self-driven writes updated
-  // locally the moment the client makes them, so they didn't need
-  // another route in from Supabase):
-  //   - pch_check_status (interview commits by client)
-  //   - pch_doc_extractions (own uploads' extraction state is tracked
-  //     on the extraction review card itself)
-  //   - pch_bank_transactions (streams in after own upload; ingest
-  //     calls router-free local-state updates on the ledger section)
-  //   - pch_income_lines / pch_expense_lines / pch_vehicle (own
-  //     writes via AI interview + extraction auto-apply)
   return (
     <>
       <PchClientWorkspace
-      caseId={id}
-      caseStatus={caseRow.status}
-      head={head.data ?? null}
-      incomeLines={income.data ?? []}
-      expenseLines={expenses.data ?? []}
-      vehicle={vehicle.data ?? null}
-      docSlots={slots.data ?? []}
-      docStatus={docStatus.data ?? []}
-      uploadedDocs={uploadedDocs ?? []}
-      extractions={extractions}
-      priorYearOptions={priorYearOptions}
-      bankTransactions={bankTransactions}
-      skippedItems={Array.from(skippedItems)}
-      pendingAddons={(pendingAddons.data ?? []).map((a) => ({
-        id: a.id as string,
-        description: a.description as string,
-        amount_pence: Number(a.amount_pence),
-      }))}
-      finalPackSentAt={(head.data?.final_pack_sent_at as string | null) ?? null}
-      finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
-      finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
-      engineSnapshot={
-        showFigures
-          ? ((snapshot.data?.engine_snapshot ?? null) as TaxEngineOutput | null)
-          : null
-      }
-      engineSnapshotAt={showFigures ? (snapshot.data?.engine_snapshot_at ?? null) : null}
-      approvalAt={snapshot.data?.client_approval_at ?? null}
-      approvalName={snapshot.data?.client_approval_name ?? null}
-      messagesPanel={
-        <CaseConversationsPanel
-          caseId={id}
-          caseMessages={messages}
-          supportThread={supportThread}
-          viewerRole="client"
-          viewerUserId={me.id}
-        />
-      }
+        caseId={id}
+        caseStatus={caseRow.status}
+        head={head.data ?? null}
+        priorYearOptions={priorYearOptions}
+        pendingAddons={(pendingAddons.data ?? []).map((a) => ({
+          id: a.id as string,
+          description: a.description as string,
+          amount_pence: Number(a.amount_pence),
+        }))}
+        finalPackSentAt={(head.data?.final_pack_sent_at as string | null) ?? null}
+        finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
+        finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
+        engineSnapshot={
+          showFigures
+            ? ((snapshot.data?.engine_snapshot ?? null) as TaxEngineOutput | null)
+            : null
+        }
+        engineSnapshotAt={showFigures ? (snapshot.data?.engine_snapshot_at ?? null) : null}
+        approvalAt={snapshot.data?.client_approval_at ?? null}
+        approvalName={snapshot.data?.client_approval_name ?? null}
+        messagesPanel={
+          <CaseConversationsPanel
+            caseId={id}
+            caseMessages={messages}
+            supportThread={supportThread}
+            viewerRole="client"
+            viewerUserId={me.id}
+          />
+        }
       />
     </>
   );
@@ -249,7 +133,14 @@ async function loadCaseMessages(
     .select("id, author_id, author_role, body, created_at, attachments")
     .eq("case_id", caseId)
     .order("created_at", { ascending: true });
-  const list = (rows ?? []) as { id: string; author_id: string; author_role: "client" | "accountant" | "admin"; body: string; created_at: string; attachments: unknown }[];
+  const list = (rows ?? []) as {
+    id: string;
+    author_id: string;
+    author_role: "client" | "accountant" | "admin";
+    body: string;
+    created_at: string;
+    attachments: unknown;
+  }[];
   if (list.length === 0) return [];
   const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
   const { data: users } = await admin
@@ -269,12 +160,9 @@ async function loadCaseMessages(
   }));
 }
 
-// Build the per-year list of prior-year options for the prompt panel.
-// Scope: years strictly OLDER than the current case's own tax year
-// (the current year is tracked by the case itself). Marks each year as
-// supported (we have a rate pack) and alreadySpawned (a child case
-// already exists for it).
-async function buildPriorYearOptions({ admin, parentCaseId, currentTaxYear, tradingStartDate, tradingEndDate }: {
+async function buildPriorYearOptions({
+  admin, parentCaseId, currentTaxYear, tradingStartDate, tradingEndDate,
+}: {
   admin: ReturnType<typeof createAdminClient>;
   parentCaseId: string;
   currentTaxYear: UkTaxYear;
@@ -299,8 +187,6 @@ async function buildPriorYearOptions({ admin, parentCaseId, currentTaxYear, trad
     (existingChildren ?? []).map((c) => c.tax_year_label).filter(Boolean) as string[],
   );
 
-  // Oldest first (same order as returns-owed), capped at 5 to keep the
-  // panel sane for very old clients.
   return owed.years.slice(0, 5).map((y) => ({
     taxYear: y.taxYear,
     filingDeadline: y.filingDeadline.toISOString(),
