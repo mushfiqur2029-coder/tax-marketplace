@@ -12,6 +12,14 @@ import { Section1Identity, type Section1InitialHead } from "./section-1-identity
 import { Section2Income, type IncomeLine } from "./section-2-income";
 import { Section3Expenses, type ExpenseLine } from "./section-3-expenses";
 import { type VehicleInitial } from "./section-3-vehicle";
+import {
+  Section4to14Declarations,
+  type DeclarationsInitial,
+  type GiftAidEntry,
+} from "./section-4-14-declarations";
+import { Section15LastYearSA, type Section15Initial } from "./section-15-last-year-sa";
+import { SectionGeneralUploads, type GeneralUpload } from "./section-general-uploads";
+import { submitForReviewAction } from "@/app/client/pch/actions";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
 // Status-aware workspace for the automated PCH flow.
@@ -69,6 +77,10 @@ export function PchClientWorkspace(props: {
   expenseLines: ExpenseLine[];
   vehicleInitial: VehicleInitial;
   caseFeePence: number;
+  declarationsInitial: DeclarationsInitial;
+  giftAidEntries: GiftAidEntry[];
+  section15Initial: Section15Initial;
+  generalUploads: GeneralUpload[];
   messagesPanel: React.ReactNode;
 }) {
   // Live-tracked state so the whole workspace stays current without
@@ -253,7 +265,29 @@ export function PchClientWorkspace(props: {
             vehicleInitial={props.vehicleInitial}
           />
 
-          <IntakeRestPlaceholder editable={editable} />
+          <Section4to14Declarations
+            caseId={props.caseId}
+            editable={editable}
+            initial={props.declarationsInitial}
+            giftAidEntries={props.giftAidEntries}
+          />
+
+          <Section15LastYearSA
+            caseId={props.caseId}
+            editable={editable}
+            initial={props.section15Initial}
+          />
+
+          <SectionGeneralUploads
+            caseId={props.caseId}
+            editable={editable}
+            initial={props.generalUploads}
+          />
+
+          <SubmitForReviewSection
+            caseId={props.caseId}
+            status={status}
+          />
         </>
       )}
 
@@ -262,37 +296,62 @@ export function PchClientWorkspace(props: {
   );
 }
 
-// Placeholder for the still-to-land sections 4 to 14 (declaration
-// cards), section 15 (last year's SA), the general multi-file upload,
-// and the Submit for review button. Phase D wires them up.
-function IntakeRestPlaceholder({ editable }: { editable: boolean }) {
+// Submit for review: runs the engine server-side and parks the case
+// in the shared accountant queue. Status flip to in_review happens
+// on accountant pickup, not here. Only renders while the case is
+// still at status='submitted'; after that the accountant has it
+// and the submit path is irrelevant.
+function SubmitForReviewSection({
+  caseId, status,
+}: {
+  caseId: string;
+  status: string;
+}) {
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<boolean>(status !== "submitted");
+
+  if (status !== "submitted" && !submitted) return null;
+
+  const submit = () => start(async () => {
+    // Same mark-around-the-write pattern that the old submit button
+    // used: cases + pch_cases are live-merged across the workspace,
+    // so without a mark on either side the "someone else changed
+    // this" filter in realtime-live-merge can double-fire.
+    markLocalMutation();
+    const r = await submitForReviewAction(caseId);
+    markLocalMutation();
+    if (!r.ok) { setErr(r.error); return; }
+    setErr(null);
+    setSubmitted(true);
+  });
+
   return (
-    <section
-      className="mb-6 mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5"
-      aria-label="Rest of intake under rebuild"
-    >
-      <div
-        className="text-[11px] font-semibold uppercase tracking-widest text-slate-700"
-        style={{ fontFamily: "var(--font-mono)" }}
-      >
-        More sections coming
-      </div>
-      <h2 className="mt-1 text-base font-semibold text-ink">
-        Declarations, last-year SA and submit coming next.
-      </h2>
-      <p className="mt-2 text-sm text-slate-700">
-        Sections 4-14 (interest, dividends, capital gains, rental,
-        pension, Gift Aid, child benefit, overseas, student loan, plus
-        a free-text &quot;anything else&quot; note), last year&apos;s
-        Self Assessment status and the Submit for review button all
-        land in the next update. Nothing you&apos;ve entered is lost.
+    <section className="mt-10 rounded-xl border border-slate-200 bg-white p-5">
+      <h2 className="mb-1 text-lg font-bold">Ready to send to your accountant?</h2>
+      <p className="mb-3 text-sm text-slate-600">
+        One click runs the engine and sends your return into the queue
+        for one of our accountants to pick up. You&apos;ll get an email
+        when they take it on, and another when the figures are ready
+        for your approval. You can keep editing until they pick it up.
       </p>
-      {!editable ? (
-        <p className="mt-3 text-xs text-slate-600">
-          This return has moved to the approval stage, so the intake is
-          read-only from here on.
-        </p>
-      ) : null}
+      {submitted ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          Submitted. Your return is in the queue for an accountant to pick up.
+        </div>
+      ) : (
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={pending}
+            className="rounded-lg bg-ink px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {pending ? "Submitting..." : "Submit for accountant review"}
+          </button>
+          {err ? <span className="text-xs text-rose-700">{err}</span> : null}
+        </div>
+      )}
     </section>
   );
 }

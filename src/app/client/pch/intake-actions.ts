@@ -864,6 +864,235 @@ async function extractAmountForLine(
 }
 
 // -------------------------------------------------------------------
+// Gift Aid entries (section 10): one row per donation. Re-syncs the
+// total into pch_cases.gift_aid_net_pence after every upsert/delete
+// so the engine (which reads that single column) stays accurate.
+// -------------------------------------------------------------------
+
+async function resyncGiftAidTotal(
+  admin: ReturnType<typeof createAdminClient>,
+  caseId: string,
+): Promise<{ error?: string }> {
+  const { data, error } = await admin
+    .from("pch_gift_aid_entries")
+    .select("amount_pence")
+    .eq("case_id", caseId);
+  if (error) return { error: error.message };
+  const total = (data ?? []).reduce(
+    (sum, r) => sum + Number(r.amount_pence ?? 0),
+    0,
+  );
+  const upd = await admin
+    .from("pch_cases")
+    .update({ gift_aid_net_pence: total })
+    .eq("case_id", caseId);
+  if (upd.error) return { error: upd.error.message };
+  return {};
+}
+
+export async function upsertPchGiftAidEntryAction(
+  caseId: string,
+  entryId: string | null,
+  patch: {
+    charity_name?: string | null;
+    donation_date?: string | null;
+    amount_pence?: number | null;
+  },
+): Promise<IntakeActionResultWith<{ id: string }>> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const row: Record<string, unknown> = {};
+    if (patch.charity_name !== undefined) {
+      row.charity_name =
+        patch.charity_name === null || patch.charity_name.trim() === ""
+          ? null
+          : patch.charity_name.trim();
+    }
+    if (patch.donation_date !== undefined) {
+      row.donation_date =
+        patch.donation_date === null || patch.donation_date === ""
+          ? null
+          : patch.donation_date;
+    }
+    if (patch.amount_pence !== undefined) {
+      row.amount_pence =
+        patch.amount_pence === null
+          ? null
+          : Math.max(0, Math.round(patch.amount_pence));
+    }
+    let id = entryId;
+    if (id) {
+      const upd = await admin
+        .from("pch_gift_aid_entries")
+        .update(row)
+        .eq("id", id)
+        .eq("case_id", caseId)
+        .select("id")
+        .single();
+      if (upd.error) return { ok: false, error: upd.error.message };
+    } else {
+      const { data: existing } = await admin
+        .from("pch_gift_aid_entries")
+        .select("sort_order")
+        .eq("case_id", caseId)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextSort = ((existing?.sort_order as number | undefined) ?? -1) + 1;
+      const ins = await admin
+        .from("pch_gift_aid_entries")
+        .insert({ case_id: caseId, sort_order: nextSort, ...row })
+        .select("id")
+        .single();
+      if (ins.error) return { ok: false, error: ins.error.message };
+      id = ins.data.id as string;
+    }
+    const sync = await resyncGiftAidTotal(admin, caseId);
+    if (sync.error) return { ok: false, error: sync.error };
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
+export async function deletePchGiftAidEntryAction(
+  caseId: string,
+  entryId: string,
+): Promise<IntakeActionResult> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    const del = await admin
+      .from("pch_gift_aid_entries")
+      .delete()
+      .eq("id", entryId)
+      .eq("case_id", caseId);
+    if (del.error) return { ok: false, error: del.error.message };
+    const sync = await resyncGiftAidTotal(admin, caseId);
+    if (sync.error) return { ok: false, error: sync.error };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Section 4-15 evidence uploads: one storage path per pch_cases
+// evidence column. Whitelisted so a bad UI call can't type its way
+// into writing storage paths into a non-evidence column.
+// -------------------------------------------------------------------
+
+const EVIDENCE_COLUMNS = new Set([
+  "p11d_evidence",
+  "interest_evidence",
+  "dividend_evidence",
+  "capital_gains_evidence",
+  "rental_evidence",
+  "pension_evidence",
+  "child_benefit_evidence",
+  "overseas_evidence",
+  "student_loan_evidence",
+  "last_year_sa302_evidence",
+]);
+
+export async function uploadPchSectionEvidenceAction(
+  caseId: string,
+  column: string,
+  formData: FormData,
+): Promise<IntakeActionResultWith<{ path: string }>> {
+  try {
+    if (!EVIDENCE_COLUMNS.has(column)) {
+      return { ok: false, error: "Not a whitelisted evidence column." };
+    }
+    const { me, admin } = await requirePchIntakeEditable(caseId);
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
+
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const path = `${caseId}/intake/${column}-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const ins = await admin
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_name: file.name,
+        file_url: path,
+        requirement_key: "intake-" + column,
+      });
+    if (ins.error) return { ok: false, error: ins.error.message };
+
+    const upd = await admin
+      .from("pch_cases")
+      .update({ [column]: path })
+      .eq("case_id", caseId);
+    if (upd.error) return { ok: false, error: upd.error.message };
+    return { ok: true, path };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Final section: general multi-file dropzone (bank statements and
+// any other receipts/invoices/documents relevant to the return).
+// Deliberately NOT a slot write; files just land in case_documents
+// with requirement_key='intake-general' and the accountant can open
+// them on review.
+// -------------------------------------------------------------------
+
+export async function uploadPchGeneralDocumentAction(
+  caseId: string,
+  formData: FormData,
+): Promise<IntakeActionResultWith<{ id: string; file_name: string }>> {
+  try {
+    const { me, admin } = await requirePchIntakeEditable(caseId);
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 50 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 50 MB." };
+
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const path = `${caseId}/intake/general-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const ins = await admin
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_name: file.name,
+        file_url: path,
+        requirement_key: "intake-general",
+      })
+      .select("id, file_name")
+      .single();
+    if (ins.error) return { ok: false, error: ins.error.message };
+    return {
+      ok: true,
+      id: ins.data.id as string,
+      file_name: ins.data.file_name as string,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
+  }
+}
+
+// -------------------------------------------------------------------
 // Auto-apply the latest completed PCH-24 (photo ID) extraction so
 // the identity inputs populate the moment the vision call finishes.
 // Called by the UI once it sees the extraction row flip to status=done.

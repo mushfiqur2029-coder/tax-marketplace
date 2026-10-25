@@ -63,6 +63,8 @@ export default async function PchClientPage({
     incomeRes,
     expenseRes,
     vehicleRes,
+    giftAidRes,
+    generalUploadsRes,
   ] = await Promise.all([
       admin.from("pch_cases").select("*").eq("case_id", id).single(),
       admin
@@ -112,6 +114,19 @@ export default async function PchClientPage({
         .order("sort_order"),
       // Section 3 vehicle subsection: pch_vehicle row keyed on case_id.
       admin.from("pch_vehicle").select("*").eq("case_id", id).maybeSingle(),
+      // Section 10 Gift Aid: repeatable mini-list.
+      admin
+        .from("pch_gift_aid_entries")
+        .select("id, charity_name, donation_date, amount_pence")
+        .eq("case_id", id)
+        .order("sort_order"),
+      // Final section: existing general uploads (requirement_key='intake-general').
+      admin
+        .from("case_documents")
+        .select("id, file_name, uploaded_at")
+        .eq("case_id", id)
+        .eq("requirement_key", "intake-general")
+        .order("uploaded_at", { ascending: false }),
     ]);
 
   // Accountancy Fees row prefills with what this client is paying us
@@ -221,6 +236,58 @@ export default async function PchClientPage({
             (vehicleRes.data?.wdv_brought_forward_pence as number | null) ?? null,
         }}
         caseFeePence={caseFeePence}
+        declarationsInitial={{
+          statuses: ((head.data?.cl_declaration_status ?? {}) as Record<
+            string,
+            "applicable" | "not_applicable" | undefined
+          >),
+          benefits_note: (head.data?.benefits_note as string | null) ?? null,
+          bank_interest_pence: (head.data?.bank_interest_pence as number | null) ?? null,
+          dividend_income_pence: (head.data?.dividend_income_pence as number | null) ?? null,
+          capital_gains_pence: (head.data?.capital_gains_pence as number | null) ?? null,
+          capital_gains_note: (head.data?.capital_gains_note as string | null) ?? null,
+          rental_profit_pence: (head.data?.rental_profit_pence as number | null) ?? null,
+          gross_rent_received_pence:
+            (head.data?.gross_rent_received_pence as number | null) ?? null,
+          personal_pension_net_pence:
+            (head.data?.personal_pension_net_pence as number | null) ?? null,
+          child_benefit_pence: (head.data?.child_benefit_pence as number | null) ?? null,
+          overseas_income_pence: (head.data?.overseas_income_pence as number | null) ?? null,
+          overseas_tax_paid_pence:
+            (head.data?.overseas_tax_paid_pence as number | null) ?? null,
+          student_loan_plan: (head.data?.student_loan_plan as string | null) ?? null,
+          anything_else_note: (head.data?.anything_else_note as string | null) ?? null,
+          p11d_evidence: (head.data?.p11d_evidence as string | null) ?? null,
+          interest_evidence: (head.data?.interest_evidence as string | null) ?? null,
+          dividend_evidence: (head.data?.dividend_evidence as string | null) ?? null,
+          capital_gains_evidence:
+            (head.data?.capital_gains_evidence as string | null) ?? null,
+          rental_evidence: (head.data?.rental_evidence as string | null) ?? null,
+          pension_evidence: (head.data?.pension_evidence as string | null) ?? null,
+          child_benefit_evidence:
+            (head.data?.child_benefit_evidence as string | null) ?? null,
+          overseas_evidence: (head.data?.overseas_evidence as string | null) ?? null,
+          student_loan_evidence:
+            (head.data?.student_loan_evidence as string | null) ?? null,
+        }}
+        giftAidEntries={(giftAidRes.data ?? []).map((e) => ({
+          id: e.id as string,
+          charity_name: (e.charity_name as string | null) ?? null,
+          donation_date: (e.donation_date as string | null) ?? null,
+          amount_pence: Number(e.amount_pence ?? 0),
+        }))}
+        section15Initial={{
+          last_year_sa_status:
+            (head.data?.last_year_sa_status as "yes" | "no" | "not_applicable" | null) ?? null,
+          last_year_sa_paid: (head.data?.last_year_sa_paid as boolean | null) ?? null,
+          last_year_sa302_evidence:
+            (head.data?.last_year_sa302_evidence as string | null) ?? null,
+        }}
+        generalUploads={(generalUploadsRes.data ?? []).map((d) => ({
+          id: d.id as string,
+          file_name: d.file_name as string,
+          uploaded_at: d.uploaded_at as string,
+        }))}
         messagesPanel={
           <CaseConversationsPanel
             caseId={id}
