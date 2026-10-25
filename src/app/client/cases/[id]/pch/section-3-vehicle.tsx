@@ -31,9 +31,14 @@
 // disposal_proceeds (rare mid-year, accountant adds on review),
 // purchase_date (bought_this_year flag is enough for the engine).
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
-import { savePchVehicleFieldAction } from "@/app/client/pch/intake-actions";
+import {
+  savePchVehicleFieldAction,
+  uploadPchVehicleEvidenceAction,
+} from "@/app/client/pch/intake-actions";
+import { useOptionalIntakeProgress } from "./intake-progress-context";
+import { isVehicleComplete } from "./intake-completion";
 
 export type VehicleInitial = {
   status: string | null;
@@ -48,11 +53,12 @@ export type VehicleInitial = {
   other_business_miles: number | null;
   previous_method: string | null;
   wdv_brought_forward_pence: number | null;
-  // Phase F (migration 0115): client-declared private-use flag +
-  // the client's own estimate of the private-use value. Not the same
-  // as business_pct_override, which stays accountant-only tuning.
-  private_use_declared: boolean | null;
+  // Phase F -> G: private-use estimate (migration 0115) + optional
+  // supporting doc (migration 0117). The client no longer picks a
+  // Yes/No; private_use_declared is derived server-side as
+  // (amount > 0) in savePchVehicleFieldAction.
   private_use_amount_pence: number | null;
+  private_use_evidence: string | null;
 };
 
 // Must match pch_vehicle.status check constraint exactly (migration
@@ -93,6 +99,11 @@ export function Section3Vehicle({
   const patch = (p: Partial<VehicleInitial>) => setV((prev) => ({ ...prev, ...p }));
 
   const noVehicle = v.status === "No vehicle";
+
+  const { setSectionDone } = useOptionalIntakeProgress();
+  useEffect(() => {
+    setSectionDone("vehicle", isVehicleComplete(v));
+  }, [v, setSectionDone]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
@@ -246,27 +257,28 @@ export function Section3Vehicle({
           ) : null}
 
           <div className="mt-6 border-t border-slate-100 pt-5">
-            <YesNoField
+            <div className="mb-3 text-xs text-slate-600">
+              If you used this vehicle, or anything you&apos;re claiming
+              as an expense, for personal use too, give us a rough
+              figure. Leave blank or zero if everything was for work.
+            </div>
+            <MoneyField
               caseId={caseId}
-              field="private_use_declared"
-              label="Did you use this vehicle, or anything you&apos;re claiming as an expense, for personal use too?"
-              value={v.private_use_declared}
-              onSaved={(val) => patch({ private_use_declared: val })}
+              field="private_use_amount_pence"
+              label="Private use amount (if any)"
+              value={v.private_use_amount_pence}
+              onSaved={(val) => patch({ private_use_amount_pence: val })}
               editable={editable}
+              helpText="Your estimate of the personal-use portion over the year. Your accountant will factor it in on review."
             />
-            {v.private_use_declared === true ? (
-              <div className="mt-4">
-                <MoneyField
-                  caseId={caseId}
-                  field="private_use_amount_pence"
-                  label="Roughly how much was that worth?"
-                  value={v.private_use_amount_pence}
-                  onSaved={(val) => patch({ private_use_amount_pence: val })}
-                  editable={editable}
-                  helpText="Your estimate of the personal-use portion over the year. Your accountant will factor it in on review."
-                />
-              </div>
-            ) : null}
+            <div className="mt-4">
+              <PrivateUseEvidenceUpload
+                caseId={caseId}
+                editable={editable}
+                current={v.private_use_evidence}
+                onUploaded={(path) => patch({ private_use_evidence: path })}
+              />
+            </div>
           </div>
         </>
       ) : null}
@@ -548,4 +560,66 @@ function SaveStatusPill({
   if (status === "saved") return <span className="text-[11px] font-medium text-emerald-700">Saved</span>;
   if (status === "error") return <span className="text-[11px] font-medium text-rose-700">{error ?? "Save failed"}</span>;
   return null;
+}
+
+// Phase G: optional supporting-doc upload for the vehicle private-use
+// amount. Shape mirrors EvidenceUpload in section-4-14-declarations.tsx
+// but routes through uploadPchVehicleEvidenceAction so the storage
+// path lands on pch_vehicle.private_use_evidence (migration 0117).
+function PrivateUseEvidenceUpload({
+  caseId, editable, current, onUploaded,
+}: {
+  caseId: string;
+  editable: boolean;
+  current: string | null;
+  onUploaded: (path: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const open = () => fileRef.current?.click();
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setUploading(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await uploadPchVehicleEvidenceAction(caseId, "private_use_evidence", fd);
+      if (!r.ok) setErr(r.error);
+      else onUploaded(r.path);
+    } finally {
+      setUploading(false);
+    }
+  };
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700">
+        Supporting document (optional)
+      </div>
+      {current ? (
+        <p className="mb-2 text-xs text-emerald-700">
+          File uploaded. Pick another to replace it.
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={open}
+        disabled={!editable || uploading}
+        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
+      >
+        {uploading ? "Uploading..." : current ? "Replace file" : "Upload"}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        onChange={onFile}
+        className="hidden"
+      />
+      {err ? <p className="mt-1 text-xs text-rose-700">{err}</p> : null}
+    </div>
+  );
 }

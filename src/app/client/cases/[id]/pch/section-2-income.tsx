@@ -22,6 +22,8 @@ import {
   upsertPchIncomeLineAction,
 } from "@/app/client/pch/intake-actions";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
+import { useOptionalIntakeProgress } from "./intake-progress-context";
+import { isIncomeComplete } from "./intake-completion";
 
 export type IncomeLine = {
   id: string;
@@ -118,6 +120,16 @@ export function Section2Income({
   const patchRow = (key: string, patch: Partial<UiRow>) => {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   };
+
+  const { setSectionDone } = useOptionalIntakeProgress();
+  useEffect(() => {
+    const lines: IncomeLine[] = rows.map((r) => ({
+      id: r.id ?? r.key,
+      source: r.source,
+      gross_takings_pence: r.gross_takings_pence,
+    }));
+    setSectionDone("income", isIncomeComplete(lines));
+  }, [rows, setSectionDone]);
 
   return (
     <section className="mb-8">

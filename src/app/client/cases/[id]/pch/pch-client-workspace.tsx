@@ -19,7 +19,21 @@ import {
 } from "./section-4-14-declarations";
 import { Section15LastYearSA, type Section15Initial } from "./section-15-last-year-sa";
 import { SectionGeneralUploads, type GeneralUpload } from "./section-general-uploads";
-import { IntakeProgress } from "./intake-progress";
+import { IntakeProgress, INTAKE_PROGRESS_ANCHOR_ID } from "./intake-progress";
+import {
+  IntakeProgressProvider,
+  useIntakeProgress,
+} from "./intake-progress-context";
+import {
+  INTAKE_SECTION_LABELS,
+  areDeclarationsComplete,
+  isExpensesComplete,
+  isIdentityComplete,
+  isIncomeComplete,
+  isSection15Complete,
+  isVehicleComplete,
+  type IntakeCompletion,
+} from "./intake-completion";
 import { submitForReviewAction } from "@/app/client/pch/actions";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
@@ -221,7 +235,7 @@ export function PchClientWorkspace(props: {
           approvalName={liveHead.client_approval_name}
         />
       ) : (
-        <>
+        <IntakeProgressProvider initial={initialCompletionFromProps(props)}>
           {withAccountant ? <WithAccountantBanner /> : null}
 
           {liveAddons.length > 0
@@ -244,15 +258,7 @@ export function PchClientWorkspace(props: {
             />
           ) : null}
 
-          <IntakeProgress
-            section1={props.section1Initial}
-            licenceDocs={props.licenceDocs}
-            incomeLines={props.incomeLines}
-            expenseLines={props.expenseLines}
-            vehicle={props.vehicleInitial}
-            declarations={props.declarationsInitial}
-            section15={props.section15Initial}
-          />
+          <IntakeProgress />
 
           <Section1Identity
             caseId={props.caseId}
@@ -299,7 +305,7 @@ export function PchClientWorkspace(props: {
             caseId={props.caseId}
             status={status}
           />
-        </>
+        </IntakeProgressProvider>
       )}
 
       <div className="mt-10">{props.messagesPanel}</div>
@@ -312,6 +318,11 @@ export function PchClientWorkspace(props: {
 // on accountant pickup, not here. Only renders while the case is
 // still at status='submitted'; after that the accountant has it
 // and the submit path is irrelevant.
+//
+// Phase G: the button is disabled while any section is still amber
+// in the progress bar. If a server-side rejection ever beats the
+// client-side gate (stale state, race), highlightPending() paints
+// the matching chips amber and we smooth-scroll back to the bar.
 function SubmitForReviewSection({
   caseId, status,
 }: {
@@ -321,10 +332,22 @@ function SubmitForReviewSection({
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<boolean>(status !== "submitted");
+  const { pendingKeys, highlightPending } = useIntakeProgress();
 
   if (status !== "submitted" && !submitted) return null;
 
+  const scrollToProgress = () => {
+    if (typeof window === "undefined") return;
+    const el = window.document.getElementById(INTAKE_PROGRESS_ANCHOR_ID);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const submit = () => start(async () => {
+    if (pendingKeys.length > 0) {
+      highlightPending();
+      scrollToProgress();
+      return;
+    }
     // Same mark-around-the-write pattern that the old submit button
     // used: cases + pch_cases are live-merged across the workspace,
     // so without a mark on either side the "someone else changed
@@ -332,10 +355,18 @@ function SubmitForReviewSection({
     markLocalMutation();
     const r = await submitForReviewAction(caseId);
     markLocalMutation();
-    if (!r.ok) { setErr(r.error); return; }
+    if (!r.ok) {
+      setErr(r.error);
+      highlightPending();
+      scrollToProgress();
+      return;
+    }
     setErr(null);
     setSubmitted(true);
   });
+
+  const pendingLabels = pendingKeys.map((k) => INTAKE_SECTION_LABELS[k]);
+  const blocked = pendingKeys.length > 0;
 
   return (
     <section className="mt-10 rounded-xl border border-slate-200 bg-white p-5">
@@ -351,16 +382,24 @@ function SubmitForReviewSection({
           Submitted. Your return is in the queue for an accountant to pick up.
         </div>
       ) : (
-        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-          <button
-            type="button"
-            onClick={submit}
-            disabled={pending}
-            className="rounded-lg bg-ink px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {pending ? "Submitting..." : "Submit for accountant review"}
-          </button>
-          {err ? <span className="text-xs text-rose-700">{err}</span> : null}
+        <div className="flex flex-col items-start gap-2">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={submit}
+              disabled={pending || blocked}
+              className="rounded-lg bg-ink px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {pending ? "Submitting..." : "Submit for accountant review"}
+            </button>
+            {err ? <span className="text-xs text-rose-700">{err}</span> : null}
+          </div>
+          {blocked ? (
+            <p className="text-xs text-amber-900">
+              {pendingLabels.length} section{pendingLabels.length === 1 ? "" : "s"} still need
+              {pendingLabels.length === 1 ? "s" : ""} attention: {pendingLabels.join(", ")}.
+            </p>
+          ) : null}
         </div>
       )}
     </section>
@@ -548,4 +587,27 @@ function ApprovalSection({
       {err && <p className="text-red-600 text-xs">{err}</p>}
     </div>
   );
+}
+
+// Compute the starting completion vector from server-rendered props,
+// so the progress bar's chips render in the right colour on first
+// paint. Each section's own useEffect then takes over and keeps the
+// context in sync with the user's local edits.
+function initialCompletionFromProps(props: {
+  section1Initial: Section1InitialHead;
+  licenceDocs: Section1LicenceDoc[];
+  incomeLines: IncomeLine[];
+  expenseLines: ExpenseLine[];
+  vehicleInitial: VehicleInitial;
+  declarationsInitial: DeclarationsInitial;
+  section15Initial: Section15Initial;
+}): IntakeCompletion {
+  return {
+    identity: isIdentityComplete(props.section1Initial, props.licenceDocs),
+    income: isIncomeComplete(props.incomeLines),
+    expenses: isExpensesComplete(props.expenseLines),
+    vehicle: isVehicleComplete(props.vehicleInitial),
+    declarations: areDeclarationsComplete(props.declarationsInitial.statuses),
+    lastYearSa: isSection15Complete(props.section15Initial),
+  };
 }

@@ -28,6 +28,8 @@ import {
   uploadPchSectionEvidenceAction,
 } from "@/app/client/pch/intake-actions";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
+import { useOptionalIntakeProgress } from "./intake-progress-context";
+import { areDeclarationsComplete } from "./intake-completion";
 
 export type DeclarationKey =
   | "p11d"
@@ -67,9 +69,12 @@ export type DeclarationsInitial = {
   overseas_tax_paid_pence: number | null;
   student_loan_plan: string | null;
   anything_else_note: string | null;
-  // Phase F: another-PAYE-job card writes these two.
+  // Phase F -> G: the another-PAYE-job card is now a single amount
+  // field (employment_income_pence) plus an optional P60/payslip
+  // upload. paye_pence remains on pch_cases and the engine, but the
+  // client no longer types it in; the accountant lifts it off the
+  // uploaded doc on review.
   employment_income_pence: number | null;
-  paye_pence: number | null;
   // Evidence storage paths (null = not uploaded).
   p11d_evidence: string | null;
   interest_evidence: string | null;
@@ -80,6 +85,7 @@ export type DeclarationsInitial = {
   child_benefit_evidence: string | null;
   overseas_evidence: string | null;
   student_loan_evidence: string | null;
+  other_employment_evidence: string | null;
 };
 
 export type GiftAidEntry = {
@@ -102,6 +108,23 @@ export function Section4to14Declarations({
   initial: DeclarationsInitial;
   giftAidEntries: GiftAidEntry[];
 }) {
+  // Phase G: aggregated statuses mirrored at the section level so the
+  // progress bar flips amber -> green the moment any card is answered,
+  // without each card having to reach into the context itself.
+  const [statuses, setStatuses] = useState<DeclarationsInitial["statuses"]>(
+    () => ({ ...initial.statuses }),
+  );
+  const noteStatus = (key: DeclarationKey, next: DeclarationStatus) => {
+    setStatuses((prev) =>
+      prev[key] === next ? prev : { ...prev, [key]: next ?? undefined },
+    );
+  };
+
+  const { setSectionDone } = useOptionalIntakeProgress();
+  useEffect(() => {
+    setSectionDone("declarations", areDeclarationsComplete(statuses));
+  }, [statuses, setSectionDone]);
+
   return (
     <section className="mb-8">
       <h2 className="mb-1 text-lg font-bold">4-14. Other declarations</h2>
@@ -121,6 +144,7 @@ export function Section4to14Declarations({
           title="Employment benefits P11D"
           subtitle="If your employer gave you benefits like a company car, medical insurance or interest-free loan AND those weren't payrolled, we need the P11D form."
           initialStatus={initial.statuses.p11d ?? null}
+          onStatusChange={(s) => noteStatus("p11d", s)}
           moneyField={{
             field: "p11d_pence",
             label: "Total cash equivalent of benefits",
@@ -145,6 +169,7 @@ export function Section4to14Declarations({
           title="Interest income"
           subtitle="Interest from UK bank or building society accounts in the tax year. Get it off the annual certificate of interest."
           initialStatus={initial.statuses.interest ?? null}
+          onStatusChange={(s) => noteStatus("interest", s)}
           moneyField={{
             field: "bank_interest_pence",
             label: "Total interest for the year",
@@ -162,6 +187,7 @@ export function Section4to14Declarations({
           title="Dividend income"
           subtitle="UK or overseas dividends you received. Get the figures off your dividend vouchers or portfolio year-end summary."
           initialStatus={initial.statuses.dividend ?? null}
+          onStatusChange={(s) => noteStatus("dividend", s)}
           moneyField={{
             field: "dividend_income_pence",
             label: "Total dividends for the year",
@@ -179,6 +205,7 @@ export function Section4to14Declarations({
           title="Capital gains for the year"
           subtitle="If you sold shares, crypto, a second property or any other asset at a gain. Upload any supporting documents."
           initialStatus={initial.statuses.capital_gains ?? null}
+          onStatusChange={(s) => noteStatus("capital_gains", s)}
           moneyField={{
             field: "capital_gains_pence",
             label: "Approximate total gain",
@@ -202,6 +229,7 @@ export function Section4to14Declarations({
           title="Rental income (UK or overseas)"
           subtitle="If you let out a property. Upload the income and expenditure summary plus any mortgage statement."
           initialStatus={initial.statuses.rental ?? null}
+          onStatusChange={(s) => noteStatus("rental", s)}
           moneyFields={[
             {
               field: "gross_rent_received_pence",
@@ -227,6 +255,7 @@ export function Section4to14Declarations({
           title="Private pension contributions"
           subtitle="A SIPP or private pension you paid into yourself. NOT the workplace pension that comes out of a salary before tax."
           initialStatus={initial.statuses.pension ?? null}
+          onStatusChange={(s) => noteStatus("pension", s)}
           moneyField={{
             field: "personal_pension_net_pence",
             label: "Net amount paid for the year",
@@ -241,6 +270,7 @@ export function Section4to14Declarations({
           caseId={caseId}
           editable={editable}
           initialStatus={initial.statuses.gift_aid ?? null}
+          onStatusChange={(s) => noteStatus("gift_aid", s)}
           entries={giftAidEntries}
         />
 
@@ -252,6 +282,7 @@ export function Section4to14Declarations({
           title="Child benefit received"
           subtitle="If you (or your partner) claimed Child Benefit this tax year. HMRC uses it to calculate the High Income Child Benefit Charge."
           initialStatus={initial.statuses.child_benefit ?? null}
+          onStatusChange={(s) => noteStatus("child_benefit", s)}
           moneyField={{
             field: "child_benefit_pence",
             label: "Total received for the year",
@@ -269,6 +300,7 @@ export function Section4to14Declarations({
           title="Overseas income and overseas tax paid"
           subtitle="Any income from outside the UK, plus any tax you already paid overseas on it (double-tax relief)."
           initialStatus={initial.statuses.overseas ?? null}
+          onStatusChange={(s) => noteStatus("overseas", s)}
           moneyFields={[
             {
               field: "overseas_income_pence",
@@ -293,6 +325,7 @@ export function Section4to14Declarations({
           title="Student loan plan"
           subtitle="If you have a UK student or postgraduate loan. HMRC collects repayments through Self Assessment."
           initialStatus={initial.statuses.student_loan ?? null}
+          onStatusChange={(s) => noteStatus("student_loan", s)}
           enumField={{
             field: "student_loan_plan",
             label: "Which plan?",
@@ -311,6 +344,7 @@ export function Section4to14Declarations({
           title="Anything else relevant"
           subtitle="Anything we haven&apos;t asked about. Just type a note; your accountant will follow up if it matters."
           initialStatus={initial.statuses.anything_else ?? null}
+          onStatusChange={(s) => noteStatus("anything_else", s)}
           longTextField={{
             field: "anything_else_note",
             label: "Note",
@@ -325,22 +359,17 @@ export function Section4to14Declarations({
           sectionKey="other_employment"
           numberLabel="Extra"
           title="Income from another job (PAYE)"
-          subtitle="If you had any PAYE employment income alongside your driving work this year. Figures off your P60 or your last payslip of the year."
+          subtitle="If you had any PAYE employment income alongside your driving work this year. Upload a P60 or payslip and we'll lift the figures off it on review."
           initialStatus={initial.statuses.other_employment ?? null}
-          moneyFields={[
-            {
-              field: "employment_income_pence",
-              label: "Gross pay for the year",
-              value: initial.employment_income_pence,
-              help: "Total pay before tax, box 1 on your P60.",
-            },
-            {
-              field: "paye_pence",
-              label: "Tax already deducted (PAYE)",
-              value: initial.paye_pence,
-              help: "Total tax your employer took off, box 2 on your P60.",
-            },
-          ]}
+          onStatusChange={(s) => noteStatus("other_employment", s)}
+          moneyField={{
+            field: "employment_income_pence",
+            label: "Income from this job (if any)",
+            value: initial.employment_income_pence,
+            help: "Gross pay for the year before tax. Rough figure fine; we'll check it against your P60 or payslip.",
+          }}
+          evidenceColumn="other_employment_evidence"
+          evidencePath={initial.other_employment_evidence}
         />
       </div>
     </section>
@@ -369,7 +398,7 @@ type EnumFieldConfig = {
 function DeclarationCard({
   caseId, editable, sectionKey, number, numberLabel, title, subtitle, initialStatus,
   moneyField, moneyFields, headTextField, noteField, longTextField, enumField,
-  evidenceColumn, evidencePath,
+  evidenceColumn, evidencePath, onStatusChange,
 }: {
   caseId: string;
   editable: boolean;
@@ -387,6 +416,7 @@ function DeclarationCard({
   enumField?: EnumFieldConfig;
   evidenceColumn?: string;
   evidencePath?: string | null;
+  onStatusChange?: (next: DeclarationStatus) => void;
 }) {
   const [status, setStatus] = useState<DeclarationStatus>(initialStatus);
   const [statusErr, setStatusErr] = useState<string | null>(null);
@@ -398,7 +428,10 @@ function DeclarationCard({
     try {
       const r = await setDeclarationStatusAction(caseId, sectionKey, next);
       if (!r.ok) setStatusErr(r.error);
-      else setStatus(next);
+      else {
+        setStatus(next);
+        onStatusChange?.(next);
+      }
     } finally {
       setStatusPending(false);
     }
@@ -411,11 +444,14 @@ function DeclarationCard({
     <article className="rounded-xl border border-slate-200 bg-white p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div
-            className="text-[10px] font-semibold uppercase tracking-widest text-slate-500"
-            style={{ fontFamily: "var(--font-mono)" }}
-          >
-            Section {numberLabel ?? number}
+          <div className="flex items-center gap-2">
+            <div
+              className="text-[10px] font-semibold uppercase tracking-widest text-slate-500"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              Section {numberLabel ?? number}
+            </div>
+            <StatusPill status={status} />
           </div>
           <div className="mt-0.5 text-sm font-bold text-ink">{title}</div>
           <p className="mt-1 text-xs text-slate-600">{subtitle}</p>
@@ -509,6 +545,25 @@ function DeclarationCard({
         </div>
       ) : null}
     </article>
+  );
+}
+
+// Phase G: amber-when-unanswered / green-when-answered pill, same
+// visual grammar as the progress bar at the top. The two toggle
+// buttons still carry the action, this just gives a persistent
+// at-a-glance read of where each card is in the sweep.
+function StatusPill({ status }: { status: DeclarationStatus }) {
+  if (status === null) {
+    return (
+      <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-900">
+        Needs answer
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-800">
+      ✓ Answered
+    </span>
   );
 }
 
@@ -786,12 +841,13 @@ function EvidenceUpload({
 // -------------------------------------------------------------------
 
 function GiftAidCard({
-  caseId, editable, initialStatus, entries,
+  caseId, editable, initialStatus, entries, onStatusChange,
 }: {
   caseId: string;
   editable: boolean;
   initialStatus: DeclarationStatus;
   entries: GiftAidEntry[];
+  onStatusChange?: (next: DeclarationStatus) => void;
 }) {
   const [status, setStatus] = useState<DeclarationStatus>(initialStatus);
   const [statusErr, setStatusErr] = useState<string | null>(null);
@@ -802,7 +858,10 @@ function GiftAidCard({
     try {
       const r = await setDeclarationStatusAction(caseId, "gift_aid", next);
       if (!r.ok) setStatusErr(r.error);
-      else setStatus(next);
+      else {
+        setStatus(next);
+        onStatusChange?.(next);
+      }
     } finally {
       setStatusPending(false);
     }
@@ -851,11 +910,14 @@ function GiftAidCard({
     <article className="rounded-xl border border-slate-200 bg-white p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div
-            className="text-[10px] font-semibold uppercase tracking-widest text-slate-500"
-            style={{ fontFamily: "var(--font-mono)" }}
-          >
-            Section 10
+          <div className="flex items-center gap-2">
+            <div
+              className="text-[10px] font-semibold uppercase tracking-widest text-slate-500"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              Section 10
+            </div>
+            <StatusPill status={status} />
           </div>
           <div className="mt-0.5 text-sm font-bold text-ink">Gift Aid charitable donations</div>
           <p className="mt-1 text-xs text-slate-600">

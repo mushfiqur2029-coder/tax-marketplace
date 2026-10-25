@@ -606,8 +606,10 @@ const VEHICLE_FIELDS: Record<string, "string" | "integer_pence" | "integer" | "b
   other_business_miles: "integer",
   previous_method: "string_enum",
   wdv_brought_forward_pence: "integer_pence",
-  // Phase F: client-declared private-use flag + estimate (migration 0115).
-  private_use_declared: "boolean",
+  // Phase F: private-use estimate (migration 0115). Phase G dropped
+  // the client-facing Yes/No; private_use_declared is now derived
+  // server-side as (amount > 0) in savePchVehicleFieldAction below,
+  // so it is intentionally NOT allow-listed for direct client write.
   private_use_amount_pence: "integer_pence",
 };
 
@@ -670,11 +672,18 @@ export async function savePchVehicleFieldAction(
     }
 
     const { admin } = await requirePchIntakeEditable(caseId);
-    // Upsert on case_id since pch_vehicle has case_id as primary key.
+    // Phase G: the private-use card dropped its client-facing Yes/No.
+    // The amount field is now the single source of truth; derive the
+    // boolean flag server-side so the accountant side still has a
+    // clean (amount, declared) pair to read off.
+    const patch: Record<string, string | number | boolean | null> = { [field]: dbValue };
+    if (field === "private_use_amount_pence") {
+      patch.private_use_declared = typeof dbValue === "number" && dbValue > 0;
+    }
     const upsert = await admin
       .from("pch_vehicle")
       .upsert(
-        { case_id: caseId, [field]: dbValue },
+        { case_id: caseId, ...patch },
         { onConflict: "case_id" },
       );
     if (upsert.error) return { ok: false, error: upsert.error.message };
@@ -1001,6 +1010,9 @@ const EVIDENCE_COLUMNS = new Set([
   "overseas_evidence",
   "student_loan_evidence",
   "last_year_sa302_evidence",
+  // Phase G: optional P60/payslip for the simplified "Income from
+  // another job" card (migration 0117).
+  "other_employment_evidence",
 ]);
 
 export async function uploadPchSectionEvidenceAction(
@@ -1044,6 +1056,62 @@ export async function uploadPchSectionEvidenceAction(
       .update({ [column]: path })
       .eq("case_id", caseId);
     if (upd.error) return { ok: false, error: upd.error.message };
+    return { ok: true, path };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
+  }
+}
+
+// Phase G: parallel of uploadPchSectionEvidenceAction for the vehicle
+// private-use evidence column (migration 0117). Separate from the
+// pch_cases evidence helper above because the storage column lives on
+// pch_vehicle, not pch_cases; also upserts the row to guard against
+// the private-use upload being the client's first touch of vehicle.
+const VEHICLE_EVIDENCE_COLUMNS = new Set(["private_use_evidence"]);
+
+export async function uploadPchVehicleEvidenceAction(
+  caseId: string,
+  column: string,
+  formData: FormData,
+): Promise<IntakeActionResultWith<{ path: string }>> {
+  try {
+    if (!VEHICLE_EVIDENCE_COLUMNS.has(column)) {
+      return { ok: false, error: "Not a whitelisted vehicle evidence column." };
+    }
+    const { me, admin } = await requirePchIntakeEditable(caseId);
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
+
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const path = `${caseId}/intake/${column}-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const ins = await admin
+      .from("case_documents")
+      .insert({
+        case_id: caseId,
+        uploaded_by: me.id,
+        file_name: file.name,
+        file_url: path,
+        requirement_key: "intake-" + column,
+      });
+    if (ins.error) return { ok: false, error: ins.error.message };
+
+    const upsert = await admin
+      .from("pch_vehicle")
+      .upsert(
+        { case_id: caseId, [column]: path },
+        { onConflict: "case_id" },
+      );
+    if (upsert.error) return { ok: false, error: upsert.error.message };
     return { ok: true, path };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };

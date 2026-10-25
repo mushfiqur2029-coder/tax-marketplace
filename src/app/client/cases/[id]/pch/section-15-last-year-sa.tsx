@@ -10,11 +10,13 @@
 //   last_year_sa_paid boolean       (only meaningful when status=yes)
 //   last_year_sa302_evidence text   (storage path to the SA302 PDF)
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   savePchHeadFieldAction,
   uploadPchSectionEvidenceAction,
 } from "@/app/client/pch/intake-actions";
+import { useOptionalIntakeProgress } from "./intake-progress-context";
+import { isSection15Complete } from "./intake-completion";
 
 export type Section15Initial = {
   last_year_sa_status: "yes" | "no" | "not_applicable" | null;
@@ -35,6 +37,15 @@ export function Section15LastYearSA({
   const [paid, setPaid] = useState(initial.last_year_sa_paid);
   const [sa302Path, setSa302Path] = useState(initial.last_year_sa302_evidence);
   const [err, setErr] = useState<string | null>(null);
+
+  const { setSectionDone } = useOptionalIntakeProgress();
+  useEffect(() => {
+    setSectionDone("lastYearSa", isSection15Complete({
+      last_year_sa_status: status,
+      last_year_sa_paid: paid,
+      last_year_sa302_evidence: sa302Path,
+    }));
+  }, [status, paid, sa302Path, setSectionDone]);
 
   const pickStatus = async (next: "yes" | "no" | "not_applicable") => {
     setStatus(next);

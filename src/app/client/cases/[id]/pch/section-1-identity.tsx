@@ -21,6 +21,8 @@ import {
   autoApplyPch24ExtractionAction,
 } from "@/app/client/pch/intake-actions";
 import { uploadPchDocumentAction, setPchPhotoIdKindAction } from "@/app/client/pch/actions";
+import { useOptionalIntakeProgress } from "./intake-progress-context";
+import { isIdentityComplete } from "./intake-completion";
 
 type LicenceDoc = {
   id: string;
@@ -86,6 +88,29 @@ export function Section1Identity({
     }),
   });
 
+  // Phase G: track which licence sides are uploaded locally so the
+  // progress bar flips to green the moment either tile reports a
+  // successful upload, without waiting for a page refresh. Each
+  // save path on this section also runs through useLiveRow so the
+  // field-level values are already live-synced.
+  const [uploadedSides, setUploadedSides] = useState<Set<"front" | "back">>(() => {
+    const s = new Set<"front" | "back">();
+    for (const d of licenceDocs) {
+      if (d.photo_id_side === "front") s.add("front");
+      if (d.photo_id_side === "back") s.add("back");
+    }
+    return s;
+  });
+  const noteUploadedSide = (side: "front" | "back") => {
+    setUploadedSides((prev) => (prev.has(side) ? prev : new Set(prev).add(side)));
+  };
+
+  const { setSectionDone } = useOptionalIntakeProgress();
+  useEffect(() => {
+    const sides = Array.from(uploadedSides).map((s) => ({ photo_id_side: s }));
+    setSectionDone("identity", isIdentityComplete(live, sides));
+  }, [live, uploadedSides, setSectionDone]);
+
   return (
     <section className="mb-8">
       <h2 className="mb-1 text-lg font-bold">1. Identity</h2>
@@ -101,6 +126,7 @@ export function Section1Identity({
         docs={licenceDocs}
         extractions={pch24Extractions}
         photoIdKind={live.photo_id_kind}
+        onUploadedSide={noteUploadedSide}
       />
 
       <FieldGrid>
@@ -434,13 +460,14 @@ function SavedTick() {
 // Licence upload card: the one mandatory upload in the whole flow.
 // -------------------------------------------------------------------
 function LicenceCard({
-  caseId, editable, docs, extractions, photoIdKind,
+  caseId, editable, docs, extractions, photoIdKind, onUploadedSide,
 }: {
   caseId: string;
   editable: boolean;
   docs: LicenceDoc[];
   extractions: Pch24Extraction[];
   photoIdKind: "passport" | "licence" | null;
+  onUploadedSide?: (side: "front" | "back") => void;
 }) {
   // Phase F: driving licence is the only ID we accept. Call
   // setPchPhotoIdKindAction once on first mount so the existing
@@ -537,12 +564,14 @@ function LicenceCard({
           side="front"
           uploaded={frontDoc}
           runsOcr
+          onUploaded={() => onUploadedSide?.("front")}
         />
         <LicenceSideTile
           caseId={caseId}
           editable={editable}
           side="back"
           uploaded={backDoc}
+          onUploaded={() => onUploadedSide?.("back")}
         />
       </div>
 
@@ -567,13 +596,14 @@ function LicenceCard({
 }
 
 function LicenceSideTile({
-  caseId, editable, side, uploaded, runsOcr,
+  caseId, editable, side, uploaded, runsOcr, onUploaded,
 }: {
   caseId: string;
   editable: boolean;
   side: "front" | "back";
   uploaded: LicenceDoc | null;
   runsOcr?: boolean;
+  onUploaded?: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -593,6 +623,7 @@ function LicenceSideTile({
       fd.append("photo_id_side", side);
       const r = await uploadPchDocumentAction(caseId, "PCH-24", fd);
       if (!r.ok) setErr(r.error);
+      else onUploaded?.();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Upload failed.");
     } finally {

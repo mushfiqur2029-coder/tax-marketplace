@@ -23,6 +23,8 @@ import {
 } from "@/app/client/pch/intake-actions";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
 import { Section3Vehicle, type VehicleInitial } from "./section-3-vehicle";
+import { useOptionalIntakeProgress } from "./intake-progress-context";
+import { isExpensesComplete } from "./intake-completion";
 
 export type ExpenseLine = {
   id: string;
@@ -152,6 +154,33 @@ export function Section3Expenses({
   const patchAirport = (key: string, patch: Partial<UiAirportRow>) => {
     setAirportRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   };
+
+  const { setSectionDone } = useOptionalIntakeProgress();
+  useEffect(() => {
+    // Flatten fixed slots + airport rows into the shared ExpenseLine
+    // shape the completion helper expects. Fields other than
+    // amount_paid_pence don't influence the check, so defaults are
+    // fine where the UI doesn't track them (e.g. category/box).
+    const lines: ExpenseLine[] = [
+      ...fixedRows.map((r) => ({
+        id: r.id ?? r.slot.label,
+        label: r.slot.label,
+        amount_paid_pence: r.amount_pence,
+        category: r.slot.category,
+        sa103s_box: r.slot.sa103s_box,
+        car_cost: r.slot.car_cost,
+      })),
+      ...airportRows.map((r) => ({
+        id: r.id ?? r.key,
+        label: AIRPORT_PREFIX + r.airport,
+        amount_paid_pence: r.amount_pence,
+        category: "Congestion, ULEZ, tolls & parking",
+        sa103s_box: 12 as const,
+        car_cost: "Yes" as const,
+      })),
+    ];
+    setSectionDone("expenses", isExpensesComplete(lines));
+  }, [fixedRows, airportRows, setSectionDone]);
 
   return (
     <section className="mb-8">
