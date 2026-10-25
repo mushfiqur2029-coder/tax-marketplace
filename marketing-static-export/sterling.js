@@ -6,6 +6,7 @@
   "use strict";
 
   var API_PRICING_URL = "https://apisterlingledger.co.uk/api/public/pricing";
+  var API_PLATFORM_STATS_URL = "https://apisterlingledger.co.uk/api/public/platform-stats";
   var API_BOOKING_SLOTS = "https://apisterlingledger.co.uk/api/public/booking/slots";
   var API_BOOKING_CREATE = "https://apisterlingledger.co.uk/api/public/booking/create";
   var CONTACT_FORM_URL = "https://script.google.com/macros/s/AKfycbyCpxrGTxr5C19pPUjkoJsO19LuHzKRjZwa_ZE2u4v0E8Zho4N8q23BDCjWbP4OkNrr/exec";
@@ -228,6 +229,44 @@
     document.addEventListener("DOMContentLoaded", fetchPricing);
   } else {
     fetchPricing();
+  }
+
+  // --- Live platform-stats fetcher ---------------------------------
+  // Looks for elements marked data-stat="{key}" (the homepage "proof"
+  // band) and swaps in the latest figure from the live database.
+  // Same fail-soft pattern as fetchPricing: the HTML already has a
+  // fallback number at build time, so a failed/slow fetch just means
+  // the visitor sees that fallback a little longer, never a blank or
+  // broken number.
+  var STAT_KEYS = {
+    vetted_accountants: "vettedAccountants",
+    filed_before_deadline_pct: "filedBeforeDeadlinePct",
+    avg_first_response_hours: "avgFirstResponseHours",
+    accuracy_guaranteed_pct: "accuracyGuaranteedPct",
+  };
+
+  function fetchPlatformStats() {
+    fetch(API_PLATFORM_STATS_URL, { credentials: "omit" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        Object.keys(STAT_KEYS).forEach(function (attr) {
+          var value = data[STAT_KEYS[attr]];
+          if (value === undefined || value === null) return;
+          document
+            .querySelectorAll('[data-stat="' + attr + '"]')
+            .forEach(function (el) { el.textContent = String(value); });
+        });
+      })
+      .catch(function () {
+        // Silent failure, static fallback figures stay on screen.
+      });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", fetchPlatformStats);
+  } else {
+    fetchPlatformStats();
   }
 
   // --- Booking picker (contact page step 2) ------------------------
