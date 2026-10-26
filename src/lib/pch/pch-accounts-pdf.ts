@@ -69,10 +69,6 @@ type HeadRow = {
   client_approved_signature_name: string | null;
 };
 
-type VehicleRow = {
-  private_use_amount_pence: number | null;
-};
-
 type GiftAidEntry = {
   charity_name: string | null;
   donation_date: string | null;
@@ -85,8 +81,11 @@ export type PchAccountsPdfInputs = {
   postcode: string;
   utr: string;
   taxYear: string;
+  // Private use is read from snapshot.pl.privateUseAmount, no longer
+  // a separate input - the "Less: Private use" row on the PDF and
+  // the Taxable profit figure now share a single source of truth,
+  // so they can't drift apart.
   snapshot: TaxEngineOutput;
-  privateUsePence: number;
   declarationStatuses: DeclarationStatuses;
   // Scalar fields consulted by the declaration pages.
   decl: {
@@ -124,7 +123,12 @@ export async function generatePchAccountsPdf(
   caseId: string,
   admin: ReturnType<typeof createAdminClient>,
 ): Promise<Uint8Array> {
-  const [{ data: head, error: headErr }, { data: vehicle }, { data: giftAid }] =
+  // Private use lives on snapshot.pl.privateUseAmount (post the Phase
+  // M+5 engine wiring), so we no longer need a separate pch_vehicle
+  // read here. One source of truth: the "Less: Private use" row and
+  // the Taxable profit figure both read from the same snapshot and
+  // can't drift apart.
+  const [{ data: head, error: headErr }, { data: giftAid }] =
     await Promise.all([
       admin
         .from("pch_cases")
@@ -133,11 +137,6 @@ export async function generatePchAccountsPdf(
         )
         .eq("case_id", caseId)
         .single(),
-      admin
-        .from("pch_vehicle")
-        .select("private_use_amount_pence")
-        .eq("case_id", caseId)
-        .maybeSingle(),
       admin
         .from("pch_gift_aid_entries")
         .select("charity_name, donation_date, amount_pence")
@@ -149,7 +148,6 @@ export async function generatePchAccountsPdf(
     throw new Error("Could not load pch_cases head for PCH Accounts.");
   }
   const row = head as HeadRow;
-  const veh = (vehicle as VehicleRow | null) ?? null;
   const snapshot = (row.engine_snapshot ?? null) as TaxEngineOutput | null;
   if (!snapshot) {
     throw new Error("Engine snapshot missing. Confirm the P&L before generating documents.");
@@ -162,7 +160,6 @@ export async function generatePchAccountsPdf(
     utr: row.cl_utr ?? "",
     taxYear: row.tax_year ?? "",
     snapshot,
-    privateUsePence: Number(veh?.private_use_amount_pence ?? 0),
     declarationStatuses:
       (row.cl_declaration_status ?? {}) as DeclarationStatuses,
     decl: {
@@ -369,7 +366,6 @@ export function renderPchAccountsHtml(p: PchAccountsPdfInputs): string {
     taxpayerName: p.taxpayerName,
     periodLabel,
     snapshot: p.snapshot,
-    privateUsePence: p.privateUsePence,
   })}
   ${renderDeclarationPages(p.declarationStatuses, p.decl, periodLabel)}
 </body>
@@ -443,11 +439,13 @@ function renderProfitAndLoss(args: {
   taxpayerName: string;
   periodLabel: string;
   snapshot: TaxEngineOutput;
-  privateUsePence: number;
 }): string {
   const r = args.snapshot.pl.rows;
   const t = args.snapshot.pl;
-  const privateUse = args.privateUsePence / 100;
+  // Read straight off the snapshot so the "Less: Private use" row and
+  // t.taxableProfit (which already includes this subtraction) can't
+  // disagree.
+  const privateUse = t.privateUseAmount;
 
   // Three-column layout mirrors the accountant portal's PlSummaryTable
   // (sans the % column, since this is a formal accounts document rather

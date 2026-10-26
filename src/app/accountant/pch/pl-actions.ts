@@ -588,22 +588,23 @@ export async function createAccountantFixedExpenseLineAction(
 }
 
 // -------------------------------------------------------------------
-// Private use (pch_vehicle.private_use_amount_pence). Advisory-only;
-// the tax engine already reduces car-cost expenses by its own
-// business-use-percentage calculation, so this figure never feeds
-// computeAll. The P&L Summary table reads it as a disclosure "Less:
-// Private use" line and the accountant factors it in on review.
+// Private use (pch_vehicle.private_use_amount_pence). Phase M+5
+// wiring: this figure now feeds taxable profit via buildPL (and
+// through to computeTax, the SA302, and the PCH Accounts PDF), so
+// an edit must re-run the engine so the stored snapshot and the
+// Summary row re-render in step.
 //
-// Shape mirrors the edit actions above: same guard, same lock, same
-// edited_by stamp. Does NOT re-run the engine - returns the written
-// pence back so the panel can refresh the Summary row without a
-// second round-trip or an unnecessary computeAll call.
+// Shape mirrors the edit actions above: same guard, same lock.
+// Returns the fresh TaxEngineOutput so the caller doesn't need a
+// second round-trip.
 // -------------------------------------------------------------------
 
 export async function editAccountantPrivateUseAction(
   caseId: string,
   amountPence: number,
-): Promise<ActionResultWith<{ amountPence: number }>> {
+): Promise<
+  ActionResultWith<{ snapshot: TaxEngineOutput; amountPence: number }>
+> {
   try {
     const { admin } = await requireAccountantPchCase(caseId);
     const locked = await assertPlEditable(admin, caseId);
@@ -626,8 +627,10 @@ export async function editAccountantPrivateUseAction(
         { onConflict: "case_id" },
       );
     if (upsert.error) return { ok: false, error: upsert.error.message };
+
+    const snapshot = await runEngine(caseId, admin);
     revalidatePath(`/accountant/cases/${caseId}/pch`);
-    return { ok: true, amountPence: value };
+    return { ok: true, snapshot, amountPence: value };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
   }

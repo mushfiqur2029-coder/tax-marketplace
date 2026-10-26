@@ -124,6 +124,12 @@ export type VehicleInputs = {
   methodChoice?: "Simplified mileage" | "Actual costs"; // Blank = recommended
   realMpg?: number;              // For E2 fuel-estimate reasonableness check
   fuelPricePerLitre?: number;    // Defaults handled per rate pack
+  // Client-typed private-use adjustment in pounds (pch_vehicle.
+  // private_use_amount_pence / 100). Subtracted from taxable profit
+  // in buildPL alongside capital allowances. Independent of the
+  // odo-derived businessPct mechanism, which handles the separate
+  // business-use split on car-cost expenses.
+  privateUseAmount: number;
 };
 
 // The full computation input bundle.
@@ -178,6 +184,7 @@ export type VehicleOutputs = {
   recommendedMethod: "Simplified mileage" | "Actual costs";
   methodUsed: "Simplified mileage" | "Actual costs";
   mileageUsedInPL: number;          // Mileage_Used (= Mileage_Allow if mileage method, else 0)
+  privateUseAmount: number;         // Pass-through of VehicleInputs.privateUseAmount
 };
 
 export type ProfitAndLoss = {
@@ -185,6 +192,11 @@ export type ProfitAndLoss = {
   expensesTotal: number;            // PL_Expenses
   netProfit: number;                // PL_NetProfit
   capitalAllowances: number;        // CA_Claim
+  // Client-typed private-use adjustment, subtracted from taxable
+  // profit alongside capitalAllowances. Independent of the odo-
+  // derived businessPct mechanism, which already splits car-cost
+  // expenses by business use % at computeExpenses time.
+  privateUseAmount: number;
   taxableProfit: number;            // PL_Taxable
   // Per-row breakdown for the P&L statement
   rows: {

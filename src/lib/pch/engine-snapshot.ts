@@ -99,6 +99,12 @@ export async function hydrateInputsFromDb(
       realMpg: veh?.real_mpg ? Number(veh.real_mpg) : undefined,
       fuelPricePerLitre: veh?.fuel_price_per_litre
         ? Number(veh.fuel_price_per_litre) : undefined,
+      // Pence -> pounds, same pattern as every other money field here.
+      // buildPL subtracts this from taxable profit alongside capital
+      // allowances, so this change flows through to the stored engine
+      // _snapshot and every downstream reader (PDF, SA302, forwarding
+      // letter).
+      privateUseAmount: (veh?.private_use_amount_pence ?? 0) / 100,
     },
   };
 }

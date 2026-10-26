@@ -67,11 +67,12 @@ export function PlReviewPanel({
   const [income, setIncome] = useState<PlIncomeLine[]>(initialIncome);
   const [expenses, setExpenses] = useState<PlExpenseLine[]>(initialExpenses);
   const [snapshot, setSnapshot] = useState<TaxEngineOutput | null>(initialSnapshot);
-  // Private use lives on pch_vehicle.private_use_amount_pence, not on
-  // engine_snapshot, so we track it independently and refresh the
-  // Summary table off this local state when the accountant edits it.
-  // Advisory field; editAccountantPrivateUseAction does NOT re-run
-  // the engine.
+  // Private use lives on pch_vehicle.private_use_amount_pence. Phase
+  // M+5 wired it into the tax engine (buildPL subtracts it from
+  // taxable profit), so savePrivateUse below re-runs the engine and
+  // applies the fresh snapshot alongside this local state - both
+  // the Summary row and the TotalsStrip taxable-profit figure must
+  // move in step.
   const [privateUsePence, setPrivateUsePence] = useState<number>(initialPrivateUsePence);
   const [confirmedAt, setConfirmedAt] = useState<string | null>(initialPlConfirmedAt);
   const [confirmedByLabel, setConfirmedByLabel] = useState<string | null>(
@@ -165,6 +166,12 @@ export function PlReviewPanel({
       setErr(r.error);
       return;
     }
+    // Private use now feeds taxable profit via buildPL (Phase M+5),
+    // so the server has re-run the engine and returned a fresh
+    // snapshot. Apply it so the TotalsStrip picks up the new
+    // Taxable profit figure in the same render pass as the Summary
+    // row re-reads from privateUsePence.
+    setSnapshot(r.snapshot);
     setErr(null);
   };
 
@@ -587,9 +594,11 @@ function LineRow({
 
 // "Less: Private use" lives outside the Income / Expenses grid because
 // its value is a single pch_vehicle column, not a pch_expense_lines
-// row. Written via editAccountantPrivateUseAction which skips the
-// engine re-run (private use is advisory and never feeds computeAll);
-// the panel's local state refreshes the P&L Summary row below.
+// row. Written via editAccountantPrivateUseAction. Phase M+5 wired
+// the value into buildPL as a subtraction from taxable profit, so
+// the server action re-runs the engine and the panel updates both
+// the local privateUsePence state (feeds the Summary row) and the
+// stored snapshot (feeds the TotalsStrip taxable-profit figure).
 function PrivateUseRow({
   editable, pence, onSave,
 }: {

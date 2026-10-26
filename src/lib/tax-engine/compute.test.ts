@@ -27,6 +27,7 @@ function baseInput(overrides: Partial<TaxEngineInputs> = {}): TaxEngineInputs {
     phoneBusinessPct: 0.8,
     wdvBroughtForward: 0,
     previousMethod: "Simplified mileage",
+    privateUseAmount: 0,
   };
   return {
     rates,
@@ -166,7 +167,7 @@ describe("computeTax (2025/26)", () => {
     const basic = computeTax(
       {
         turnover: 0, expensesTotal: 0, netProfit: 60000,
-        capitalAllowances: 0, taxableProfit: 60000, rows: {} as never,
+        capitalAllowances: 0, privateUseAmount: 0, taxableProfit: 60000, rows: {} as never,
       },
       {
         employmentIncome: 0, paye: 0, rentalProfit: 0, bankInterest: 0,
@@ -180,7 +181,7 @@ describe("computeTax (2025/26)", () => {
     const withPension = computeTax(
       {
         turnover: 0, expensesTotal: 0, netProfit: 60000,
-        capitalAllowances: 0, taxableProfit: 60000, rows: {} as never,
+        capitalAllowances: 0, privateUseAmount: 0, taxableProfit: 60000, rows: {} as never,
       },
       {
         employmentIncome: 0, paye: 0, rentalProfit: 0, bankInterest: 0,
@@ -208,7 +209,7 @@ describe("computeTax (2025/26)", () => {
     const result = computeTax(
       {
         turnover: 0, expensesTotal: 0, netProfit: 120000,
-        capitalAllowances: 0, taxableProfit: 120000, rows: {} as never,
+        capitalAllowances: 0, privateUseAmount: 0, taxableProfit: 120000, rows: {} as never,
       },
       {
         employmentIncome: 0, paye: 0, rentalProfit: 0, bankInterest: 0,
@@ -227,7 +228,7 @@ describe("computeTax (2025/26)", () => {
     const result = computeTax(
       {
         turnover: 0, expensesTotal: 0, netProfit: 30000,
-        capitalAllowances: 0, taxableProfit: 30000, rows: {} as never,
+        capitalAllowances: 0, privateUseAmount: 0, taxableProfit: 30000, rows: {} as never,
       },
       {
         employmentIncome: 0, paye: 0, rentalProfit: 0, bankInterest: 0,
@@ -247,14 +248,14 @@ describe("computeTax (2025/26)", () => {
   it("Class 4 NIC: 6% between 12,570 and 50,270, 2% above", () => {
     const r = UK_TAX_RATES_2025_26;
     const low = computeTax(
-      { turnover: 0, expensesTotal: 0, netProfit: 40000, capitalAllowances: 0, taxableProfit: 40000, rows: {} as never },
+      { turnover: 0, expensesTotal: 0, netProfit: 40000, capitalAllowances: 0, privateUseAmount: 0, taxableProfit: 40000, rows: {} as never },
       { employmentIncome: 0, paye: 0, rentalProfit: 0, bankInterest: 0, personalPensionNet: 0, giftAidNet: 0, marriageAllowanceStatus: "None", poa1Due: 0, poa2Due: 0, poa1Paid: 0, poa2Paid: 0, lastYearQualifyingIncome: 0, grossRentReceived: 0 },
       r,
     );
     // (40000 - 12570) * 0.06 = 1645.80
     expect(low.class4).toBeCloseTo(1645.8, 2);
     const high = computeTax(
-      { turnover: 0, expensesTotal: 0, netProfit: 70000, capitalAllowances: 0, taxableProfit: 70000, rows: {} as never },
+      { turnover: 0, expensesTotal: 0, netProfit: 70000, capitalAllowances: 0, privateUseAmount: 0, taxableProfit: 70000, rows: {} as never },
       { employmentIncome: 0, paye: 0, rentalProfit: 0, bankInterest: 0, personalPensionNet: 0, giftAidNet: 0, marriageAllowanceStatus: "None", poa1Due: 0, poa2Due: 0, poa1Paid: 0, poa2Paid: 0, lastYearQualifyingIncome: 0, grossRentReceived: 0 },
       r,
     );

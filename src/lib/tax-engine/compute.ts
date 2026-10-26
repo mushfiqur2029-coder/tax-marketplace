@@ -157,6 +157,9 @@ export function computeVehicle(
     recommendedMethod,
     methodUsed,
     mileageUsedInPL,
+    // Pass through unchanged; buildPL subtracts it from taxable
+    // profit alongside capitalAllowances.
+    privateUseAmount: v.privateUseAmount,
   };
 }
 
@@ -278,13 +281,21 @@ export function buildPL(
     + expenses.byCategory["VAT paid (Flat Rate Scheme)"];
   const netProfit = turnover - expensesTotal;
   const capitalAllowances = vehicle.caClaim;
-  const taxableProfit = netProfit - capitalAllowances;
+  // Client-typed private-use adjustment: subtracted from taxable
+  // profit alongside capital allowances. Not floored at zero, same
+  // as capitalAllowances - a nonsensical input (private use > net
+  // profit) will show through as a negative taxable profit rather
+  // than being silently clamped, which the accountant should see
+  // and fix on review.
+  const privateUseAmount = vehicle.privateUseAmount;
+  const taxableProfit = netProfit - capitalAllowances - privateUseAmount;
 
   return {
     turnover,
     expensesTotal,
     netProfit,
     capitalAllowances,
+    privateUseAmount,
     taxableProfit,
     rows: {
       fares: income.fares,
