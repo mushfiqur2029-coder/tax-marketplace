@@ -7,23 +7,22 @@
 // touching the row. Pattern matches the existing manual flow.
 //
 // Flow (post-refactor, see docs on the new client workspace):
-//   submitted (paid) → client edits intake (sections 1-5)
-//     → submitForReviewAction runs the engine and saves the snapshot.
-//       Status stays 'submitted' and the case sits in the shared
-//       accountant queue until any approved accountant picks it up
-//       via takeCaseAction (atomic UPDATE, race-safe).
+//   submitted (paid) → client fills intake (sections 1-15)
+//     → submitForReviewAction runs the engine, saves the snapshot,
+//       and stamps pch_cases.intake_submitted_at. The case stays at
+//       status='submitted' and sits in the shared accountant queue
+//       until any approved accountant picks it up via takeCaseAction.
 //   in_review / prepared → accountant works (checklist, overrides,
-//     SA302) via accountant actions. Client intake stays editable
-//     (documents, income, expenses, vehicle) so the client can add
-//     anything the accountant is waiting on without needing a bounce-
-//     back; the accountant's screens read the same live tables.
+//     SA302) via accountant actions. The client intake is locked by
+//     intake_submitted_at from this point on; corrections go via the
+//     messages panel so the accountant can apply them themselves.
 //   client_approval → accountant has advanced the case; the client
 //     sees the figures for the first time and signs off.
 //   filed / complete → done.
 //
-// Edit lock: once a case reaches client_approval or later, every
-// intake-mutating action in this file refuses. Up to that point
-// (submitted, in_review, prepared) the client can keep editing.
+// Edit lock: assertEditableByClient refuses once intake_submitted_at
+// is set (the real lock, migration 0119) OR once the case has
+// reached client_approval or later (belt-and-braces).
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -53,33 +52,68 @@ type ActionResultWith<T> = (ActionOk & T) | ActionErr;
 // -------------------------------------------------------------------
 // Ownership guard: throw if the signed-in client doesn't own this case
 // AND the case isn't a PCH automated one.
+//
+// Also pulls pch_cases.intake_submitted_at in the same round trip so
+// assertEditableByClient below can decide the edit lock without a
+// second query per action.
 // -------------------------------------------------------------------
 async function requirePchCase(caseId: string) {
   const me = await requireRole("client");
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("cases")
-    .select("id, client_id, accountant_id, status, tier")
-    .eq("id", caseId)
-    .single();
-  if (error || !data) throw new Error("Case not found.");
-  if (data.client_id !== me.id) throw new Error("Not your case.");
-  if (data.tier !== "uber_phv_automated") {
+  const [caseRes, pchRes] = await Promise.all([
+    admin
+      .from("cases")
+      .select("id, client_id, accountant_id, status, tier")
+      .eq("id", caseId)
+      .single(),
+    admin
+      .from("pch_cases")
+      .select("intake_submitted_at")
+      .eq("case_id", caseId)
+      .maybeSingle(),
+  ]);
+  if (caseRes.error || !caseRes.data) throw new Error("Case not found.");
+  if (caseRes.data.client_id !== me.id) throw new Error("Not your case.");
+  if (caseRes.data.tier !== "uber_phv_automated") {
     throw new Error("Not a PCH automated case.");
   }
-  return { me, caseRow: data };
+  const caseRow = {
+    ...caseRes.data,
+    intake_submitted_at:
+      (pchRes.data?.intake_submitted_at as string | null) ?? null,
+  };
+  return { me, caseRow };
 }
 
-// Guard for intake-mutating actions: refuse once the case has reached
-// client_approval or later. Up to that point (submitted, in_review,
-// prepared) the client can keep uploading documents and updating their
-// details even after an accountant has taken the case - the accountant's
-// review screen reads the same live tables, so an edit is visible to
-// them immediately. Locked only once the client is reviewing figures
-// that have already been signed off for presentation (client_approval),
-// and for the terminal filed/complete states.
-function assertEditableByClient(status: string): ActionErr | null {
-  if (status === "submitted" || status === "in_review" || status === "prepared") {
+// Guard for intake-mutating actions. Two separate reasons to refuse:
+//
+//   1. intake_submitted_at is set. The client has clicked Submit and
+//      the intake is now locked regardless of what the accountant-side
+//      status happens to be. From here on, any correction has to go
+//      through the accountant via the messages panel.
+//
+//   2. Terminal / approval-stage status (client_approval, filed,
+//      complete). Belt-and-braces: by the time these states are
+//      reached the submit flag is always set too, but keeping the
+//      explicit check means an inconsistent historical row (status
+//      moved past submit but intake_submitted_at is still null for
+//      some reason) still rejects writes rather than silently
+//      allowing a client to overwrite signed-off figures.
+function assertEditableByClient(
+  caseRow: { status: string; intake_submitted_at: string | null },
+): ActionErr | null {
+  if (caseRow.intake_submitted_at) {
+    return {
+      ok: false,
+      error:
+        "Your return is submitted and locked. Message your accountant if something needs to change.",
+    };
+  }
+  if (
+    caseRow.status === "submitted"
+    || caseRow.status === "in_review"
+    || caseRow.status === "prepared"
+  ) {
     return null;
   }
   return {
@@ -102,7 +136,7 @@ export async function uploadPchDocumentAction(
   formData: FormData,
 ): Promise<ActionResultWith<{ id: string; file_name: string; uploaded_at: string }>> {
   const { me, caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   const admin = createAdminClient();
 
@@ -323,7 +357,7 @@ export async function setPchPhotoIdKindAction(
   kind: "passport" | "licence" | null,
 ): Promise<ActionResult> {
   const { caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   if (kind !== null && kind !== "passport" && kind !== "licence") {
     return { ok: false, error: "Pick passport or licence." };
@@ -392,7 +426,7 @@ export async function savePchIdentityFieldsAction(
   },
 ): Promise<ActionResult> {
   const { caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   const toWrite: Record<string, string | null> = {};
   if (patch.cl_utr !== undefined) {
@@ -442,7 +476,7 @@ export async function savePchIncomeLinesAction(
   lines: IncomeLineInput[],
 ): Promise<ActionResult> {
   const { caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   const admin = createAdminClient();
   const { error: delErr } = await admin
@@ -489,7 +523,7 @@ export async function savePchExpenseLinesAction(
   lines: ExpenseLineInput[],
 ): Promise<ActionResult> {
   const { caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   const admin = createAdminClient();
   const { error: delErr } = await admin
@@ -521,7 +555,7 @@ export async function savePchVehicleAction(
   patch: VehiclePatch,
 ): Promise<ActionResult> {
   const { caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   const admin = createAdminClient();
   // Mileage consistency check needs the current income totals from
@@ -560,7 +594,7 @@ export async function setPchDocStatusAction(
   note?: string,
 ): Promise<ActionResult> {
   const { me, caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   const admin = createAdminClient();
   const { error } = await admin.from("pch_doc_status").upsert(
@@ -590,7 +624,7 @@ export async function requestPchAccountantHelpAction(
   note?: string,
 ): Promise<ActionResult> {
   const { me, caseRow } = await requirePchCase(caseId);
-  const lock = assertEditableByClient(caseRow.status);
+  const lock = assertEditableByClient(caseRow);
   if (lock) return lock;
   const admin = createAdminClient();
   const trimmed = typeof note === "string" ? note.trim() : "";
@@ -640,11 +674,18 @@ export async function submitForReviewAction(
   caseId: string,
 ): Promise<ActionResult> {
   const { caseRow } = await requirePchCase(caseId);
-  if (caseRow.status !== "submitted") {
+  // The lock is intake_submitted_at (migration 0119), not cases.status.
+  // Status stays 'submitted' through the entire filling period and
+  // only flips when the accountant claims the case, so it is not a
+  // meaningful "has the client handed off?" signal. intake_submitted
+  // _at is set here and nowhere else, so a stale re-submit from a
+  // second tab is a no-op refusal rather than a silent re-stamp that
+  // would reset the lock point.
+  if (caseRow.intake_submitted_at) {
     return {
       ok: false,
       error:
-        "This return has already been submitted to your accountant.",
+        "Your return has already been submitted to your accountant.",
     };
   }
   const admin = createAdminClient();
@@ -692,11 +733,16 @@ export async function submitForReviewAction(
       return { ok: false, error: readiness.blockers.join(" ") };
     }
     const snapshot = computeAll(inputs);
+    const now = new Date().toISOString();
     const { error: snapErr } = await admin
       .from("pch_cases")
       .update({
         engine_snapshot: snapshot,
-        engine_snapshot_at: new Date().toISOString(),
+        engine_snapshot_at: now,
+        // Lock the intake. Every intake-mutating action in this file
+        // and in intake-actions.ts reads this column through its
+        // guard and refuses writes once it is set.
+        intake_submitted_at: now,
       })
       .eq("case_id", caseId);
     if (snapErr) return { ok: false, error: snapErr.message };

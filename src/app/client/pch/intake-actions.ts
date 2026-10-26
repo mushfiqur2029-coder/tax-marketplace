@@ -7,9 +7,11 @@
 //
 // All writes go through the admin client with the standard ownership
 // guard: case belongs to this client, tier=uber_phv_automated, status
-// in {submitted, in_review, prepared}. The guard is centralised in
-// requirePchIntakeEditable; every exported action threads through it so
-// the policy stays in one place.
+// in {submitted, in_review, prepared}, AND pch_cases.intake_submitted
+// _at is still null (migration 0119: real lock point, independent of
+// the accountant-side status lifecycle). The guard is centralised in
+// requirePchIntakeEditable; every exported action threads through it
+// so the policy stays in one place.
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
@@ -23,24 +25,42 @@ export type IntakeActionResultWith<T> = (ActionOk & T) | ActionErr;
 async function requirePchIntakeEditable(caseId: string) {
   const me = await requireRole("client");
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("cases")
-    .select("id, client_id, status, tier")
-    .eq("id", caseId)
-    .single();
-  if (error || !data) throw new Error("Case not found.");
-  if (data.client_id !== me.id) throw new Error("Not your case.");
-  if (data.tier !== "uber_phv_automated") throw new Error("Not a PCH case.");
+  const [caseRes, pchRes] = await Promise.all([
+    admin
+      .from("cases")
+      .select("id, client_id, status, tier")
+      .eq("id", caseId)
+      .single(),
+    admin
+      .from("pch_cases")
+      .select("intake_submitted_at")
+      .eq("case_id", caseId)
+      .maybeSingle(),
+  ]);
+  if (caseRes.error || !caseRes.data) throw new Error("Case not found.");
+  if (caseRes.data.client_id !== me.id) throw new Error("Not your case.");
+  if (caseRes.data.tier !== "uber_phv_automated") throw new Error("Not a PCH case.");
+  // Primary lock: migration 0119 flag. Independent of cases.status,
+  // which stays at 'submitted' for the entire filling period and
+  // keeps giving the wrong answer here.
+  if (pchRes.data?.intake_submitted_at) {
+    throw new Error(
+      "Your return is submitted and locked. Message your accountant if something needs to change.",
+    );
+  }
+  // Belt-and-braces for terminal / approval-stage status. By then
+  // intake_submitted_at is always set too, but keep the explicit
+  // check so a historical row with the flag mis-null still refuses.
   if (
-    data.status !== "submitted"
-    && data.status !== "in_review"
-    && data.status !== "prepared"
+    caseRes.data.status !== "submitted"
+    && caseRes.data.status !== "in_review"
+    && caseRes.data.status !== "prepared"
   ) {
     throw new Error(
       "This return has moved to the approval stage. Message your accountant if something needs to change.",
     );
   }
-  return { me, admin, caseRow: data };
+  return { me, admin, caseRow: caseRes.data };
 }
 
 // -------------------------------------------------------------------

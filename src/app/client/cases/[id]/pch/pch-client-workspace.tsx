@@ -81,6 +81,10 @@ export function PchClientWorkspace(props: {
   finalPackSentAt: string | null;
   finalPackConfirmedAt: string | null;
   finalPackConfirmedName: string | null;
+  // Migration 0119: real "client has handed off" lock, independent of
+  // cases.status. Null = still editable; a timestamp = locked, every
+  // intake-mutating server action refuses.
+  intakeSubmittedAt: string | null;
   engineSnapshot: TaxEngineOutput | null;
   engineSnapshotAt: string | null;
   approvalAt: string | null;
@@ -126,6 +130,7 @@ export function PchClientWorkspace(props: {
     final_pack_confirmed_name: string | null;
     client_approval_at: string | null;
     client_approval_name: string | null;
+    intake_submitted_at: string | null;
   };
   const initialHead: LiveHead = {
     final_pack_sent_at: props.finalPackSentAt,
@@ -133,6 +138,7 @@ export function PchClientWorkspace(props: {
     final_pack_confirmed_name: props.finalPackConfirmedName,
     client_approval_at: props.approvalAt,
     client_approval_name: props.approvalName,
+    intake_submitted_at: props.intakeSubmittedAt,
   };
   const liveHead = useLiveRow<LiveHead>(initialHead, {
     table: "pch_cases",
@@ -159,6 +165,10 @@ export function PchClientWorkspace(props: {
         row.client_approval_name === undefined
           ? prev.client_approval_name
           : (row.client_approval_name as string | null),
+      intake_submitted_at:
+        row.intake_submitted_at === undefined
+          ? prev.intake_submitted_at
+          : (row.intake_submitted_at as string | null),
     }),
   });
 
@@ -184,9 +194,20 @@ export function PchClientWorkspace(props: {
   );
   const liveAddons = liveAddonsAll.filter((a) => a.status === "pending_payment");
 
-  const editable =
-    status === "submitted" || status === "in_review" || status === "prepared";
-  const withAccountant = status === "in_review" || status === "prepared";
+  // Migration 0119: the real "client can still edit?" test is whether
+  // intake_submitted_at is null. cases.status stays at 'submitted'
+  // for the whole filling period and is NOT a useful lock signal.
+  // Server actions enforce the same check (requirePchIntakeEditable
+  // / assertEditableByClient), so this is UX-only; the real security
+  // boundary is server-side.
+  const intakeSubmittedAt = liveHead.intake_submitted_at;
+  const editable = status === "submitted" && !intakeSubmittedAt;
+  // Banner shows whenever the intake is locked - either because the
+  // client has just submitted (and no accountant has claimed yet) or
+  // because an accountant is already working on the case.
+  const locked = !!intakeSubmittedAt
+    || status === "in_review"
+    || status === "prepared";
   const awaitingApproval = status === "client_approval";
   const filed = status === "filed" || status === "complete";
 
@@ -238,7 +259,7 @@ export function PchClientWorkspace(props: {
         />
       ) : (
         <IntakeProgressProvider initial={initialCompletionFromProps(props)}>
-          {withAccountant ? <WithAccountantBanner /> : null}
+          {locked ? <WithAccountantBanner /> : null}
 
           {liveAddons.length > 0
             ? liveAddons.map((a) => (
@@ -315,35 +336,54 @@ export function PchClientWorkspace(props: {
           <SubmitForReviewSection
             caseId={props.caseId}
             status={status}
+            intakeSubmittedAt={intakeSubmittedAt}
           />
         </IntakeProgressProvider>
       )}
 
-      <div className="mt-10">{props.messagesPanel}</div>
+      <div id={PCH_MESSAGES_ANCHOR_ID} className="mt-10 scroll-mt-24">
+        {props.messagesPanel}
+      </div>
     </main>
   );
 }
 
+// Scroll target the "locked, message your accountant" banner anchors
+// at. Lives on the wrapper around the shared messages panel, which
+// renders unconditionally at the bottom of this page.
+const PCH_MESSAGES_ANCHOR_ID = "pch-messages";
+
 // Submit for review: runs the engine server-side and parks the case
-// in the shared accountant queue. Status flip to in_review happens
-// on accountant pickup, not here. Only renders while the case is
-// still at status='submitted'; after that the accountant has it
-// and the submit path is irrelevant.
+// in the shared accountant queue. Flips pch_cases.intake_submitted_at
+// (migration 0119), which is what gates every intake-mutating action
+// after this. cases.status stays at 'submitted' and only moves when
+// the accountant claims the case, so it is NOT the lock signal here.
+//
+// Renders a "submitted" confirmation whenever intake_submitted_at is
+// set OR the status has already moved past submitted (an accountant
+// has claimed the case). Hides itself before that so the button only
+// appears while the client can still submit.
 //
 // Phase G: the button is disabled while any section is still amber
 // in the progress bar. If a server-side rejection ever beats the
 // client-side gate (stale state, race), highlightPending() paints
 // the matching chips amber and we smooth-scroll back to the bar.
 function SubmitForReviewSection({
-  caseId, status,
+  caseId, status, intakeSubmittedAt,
 }: {
   caseId: string;
   status: string;
+  intakeSubmittedAt: string | null;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState<boolean>(status !== "submitted");
+  const [submittedLocal, setSubmittedLocal] = useState<boolean>(false);
   const { pendingKeys, highlightPending } = useIntakeProgress();
+
+  // "Submitted" means the DB flag is set (live-synced from the parent)
+  // OR this tab just clicked the button (local flip, so the UI
+  // responds instantly even before the realtime echo lands).
+  const submitted = !!intakeSubmittedAt || submittedLocal;
 
   if (status !== "submitted" && !submitted) return null;
 
@@ -373,7 +413,7 @@ function SubmitForReviewSection({
       return;
     }
     setErr(null);
-    setSubmitted(true);
+    setSubmittedLocal(true);
   });
 
   const pendingLabels = pendingKeys.map((k) => INTAKE_SECTION_LABELS[k]);
@@ -386,7 +426,9 @@ function SubmitForReviewSection({
         One click runs the engine and sends your return into the queue
         for one of our accountants to pick up. You'll get an email
         when they take it on, and another when the figures are ready
-        for your approval. You can keep editing until they pick it up.
+        for your approval. Once you submit, the intake above locks;
+        message your accountant below if anything needs to change
+        after that.
       </p>
       {submitted ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
@@ -418,22 +460,34 @@ function SubmitForReviewSection({
 }
 
 function WithAccountantBanner() {
+  const scrollToMessages = () => {
+    if (typeof window === "undefined") return;
+    const el = window.document.getElementById(PCH_MESSAGES_ANCHOR_ID);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
     <section className="mb-6 rounded-xl border border-sky-200 bg-sky-50 p-5">
       <div
         className="text-[11px] font-semibold uppercase tracking-widest text-sky-900"
         style={{ fontFamily: "var(--font-mono)" }}
       >
-        Your accountant is reviewing
+        Your return is with your accountant
       </div>
       <h2 className="mt-1 text-base font-semibold text-ink">
-        We've got your return. No action needed right now.
+        Your return is submitted and locked.
       </h2>
       <p className="mt-2 text-sm text-slate-700">
-        You can still add documents or correct a figure below if you spot
-        something. We'll email you when the figures are ready to
-        approve.
+        Spotted something that needs changing? Message your accountant
+        below and they'll update it for you. We'll email you when the
+        figures are ready to approve.
       </p>
+      <button
+        type="button"
+        onClick={scrollToMessages}
+        className="mt-3 inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-900 hover:border-sky hover:text-sky"
+      >
+        Go to messages ↓
+      </button>
     </section>
   );
 }
