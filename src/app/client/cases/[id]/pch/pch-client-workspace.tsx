@@ -195,19 +195,21 @@ export function PchClientWorkspace(props: {
   const liveAddons = liveAddonsAll.filter((a) => a.status === "pending_payment");
 
   // Migration 0119: the real "client can still edit?" test is whether
-  // intake_submitted_at is null. cases.status stays at 'submitted'
-  // for the whole filling period and is NOT a useful lock signal.
-  // Server actions enforce the same check (requirePchIntakeEditable
-  // / assertEditableByClient), so this is UX-only; the real security
-  // boundary is server-side.
+  // intake_submitted_at is null. The server guards
+  // (requirePchIntakeEditable / assertEditableByClient) accept writes
+  // whenever cases.status is in {submitted, in_review, prepared} AND
+  // intake_submitted_at is null, so the UI must mirror that exact set
+  // or the accountant's Re-open button can clear the DB flag while
+  // the form stays visually disabled (status is already in_review by
+  // the time an accountant is typically prompted to re-open).
   const intakeSubmittedAt = liveHead.intake_submitted_at;
-  const editable = status === "submitted" && !intakeSubmittedAt;
-  // Banner shows whenever the intake is locked - either because the
-  // client has just submitted (and no accountant has claimed yet) or
-  // because an accountant is already working on the case.
-  const locked = !!intakeSubmittedAt
-    || status === "in_review"
-    || status === "prepared";
+  const inIntakeStatus =
+    status === "submitted" || status === "in_review" || status === "prepared";
+  const editable = inIntakeStatus && !intakeSubmittedAt;
+  // Lock banner shows only inside the intake flow when the lock flag
+  // is actually set. Mirrors `editable` so a Re-open hides the banner
+  // AND re-enables the form in the same render pass.
+  const locked = inIntakeStatus && !!intakeSubmittedAt;
   const awaitingApproval = status === "client_approval";
   const filed = status === "filed" || status === "complete";
 
