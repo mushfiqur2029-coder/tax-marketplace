@@ -2,23 +2,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, requireApprovedAccountant } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { PchAccountantView } from "./pch-accountant-view";
-import { computePriorYearAnomalies, type Anomaly } from "@/lib/pch/prior-year-anomalies";
-import {
-  type CaseMessageView,
-} from "@/components/case/case-messages-panel";
+import { type CaseMessageView } from "@/components/case/case-messages-panel";
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
-import { deriveChecklistPrefills, type ChecklistPrefill } from "@/lib/pch/checklist-prefills";
 import { takeCaseAction, getDocSignedUrlForAccountant } from "@/app/accountant/actions";
 import { TakeCaseForm } from "../take-case-form";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { formatDateTime } from "@/lib/format";
 
-// Phase 2a accountant surface: 33-check review + read-only engine
-// snapshot + "request client filing" button. Full override UI + SA
-// boxes side-by-side screen land in phase 2b.
+// Phase I: server page for the PCH accountant workspace. Sub-phase 1
+// of the rebuild deleted the old 33-check / override / SA302
+// comparison / bookkeeping-confirm / final-pack surface along with
+// its data loads; this page now fetches only what the new orchestrator
+// stub needs (identity head + documents + slot meta + chat). Later
+// Phase I slices add back the P&L review feed, final-pack doc paths,
+// and the client-approval status flip.
 
 export default async function PchAccountantPage({
   params,
@@ -35,11 +34,9 @@ export default async function PchAccountantPage({
   const { data: caseRow } = await admin
     .from("cases")
     .select("id, client_id, accountant_id, status, tier, stripe_payment_status, submitted_at, deadline, is_urgent")
-    .eq("id", id).single();
+    .eq("id", id)
+    .single();
   if (!caseRow) {
-    // The row is simply gone (removed by an admin, a cleanup pass, etc).
-    // A plain Next.js 404 reads like a broken link in the app itself, so
-    // render an explanation instead.
     return (
       <>
         <PortalPageHeader
@@ -65,15 +62,9 @@ export default async function PchAccountantPage({
     redirect(`/accountant/cases/${id}`);
   }
 
-  // Queue state: paid PCH case not yet taken by any accountant. Render
-  // a minimal Take Case view with a short preview of what the client
-  // has filled in so far. The atomic UPDATE in takeCaseAction prevents
-  // two accountants from winning a race on the same row.
+  // Queue state: paid PCH case not yet taken by any accountant.
   if (caseRow.accountant_id === null) {
     if (caseRow.status !== "submitted" || caseRow.stripe_payment_status !== "succeeded") {
-      // Reachable but not in a takeable state (e.g. unpaid, or a status/
-      // accountant_id mismatch from manual data edits). Not a removed
-      // case, so a different message, but still no bare 404.
       return (
         <>
           <PortalPageHeader
@@ -134,11 +125,6 @@ export default async function PchAccountantPage({
             </dd>
           </dl>
           {!intakeComplete ? (
-            // Automated (PCH) cases only become takeable once the client
-            // has explicitly submitted their intake for review (same rule
-            // the open queue list filters on). Reaching this page early
-            // (direct link, back button, a stale notification) must not
-            // offer a way around that gate, so no TakeCaseForm here.
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
               Not ready to take yet. The client has paid but hasn't
               clicked "Submit for review" on their intake, so this
@@ -159,12 +145,7 @@ export default async function PchAccountantPage({
     );
   }
 
-  // Case assigned to another accountant. Normally the queue filter
-  // prevents us from showing it in a different accountant's queue, so
-  // this branch only trips on direct URL access (bookmark, chat link
-  // sent from admin, back button after someone else took the case).
-  // Rendering a friendly card beats a bare 404 and gives the
-  // accountant a one-click path back to the queue.
+  // Case assigned to another accountant.
   if (caseRow.accountant_id !== me.id) {
     return (
       <>
@@ -187,108 +168,18 @@ export default async function PchAccountantPage({
     );
   }
 
-  const [checksMeta, checkStatus, head, overrideHistory, users, blockedRows, slotMeta, addonRows, incomeLines, expenseLines, caseDocs] = await Promise.all([
-    admin.from("pch_check_items").select("*").order("sort_order"),
-    admin.from("pch_check_status").select("*").eq("case_id", id),
-    admin.from("pch_cases").select("*").eq("case_id", id).single(),
-    admin.from("pch_overrides").select("*").eq("case_id", id)
-      .order("overridden_at", { ascending: false }),
-    // Resolve the display names for the audit trail author column.
-    // Keep this query cheap; we only need id + full_name.
-    admin.from("users").select("id, full_name"),
-    // Slice 5 (Phase 5): slots the client flagged "I don't have this document".
-    admin.from("pch_doc_status")
-      .select("slot_code, status, note, updated_at")
-      .eq("case_id", id)
-      .eq("status", "Awaiting accountant")
-      .order("updated_at", { ascending: true }),
+  const [head, slotMeta, caseDocs] = await Promise.all([
+    admin.from("pch_cases").select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email").eq("case_id", id).single(),
     admin.from("pch_doc_slots").select("code, section, display_name"),
-    // Phase 6 Slice 5: addons on this case (hide 'rejected' noise).
-    admin.from("case_addons")
-      .select("id, description, amount_pence, status, created_at")
-      .eq("case_id", id)
-      .in("status", ["pending_admin", "pending_payment", "paid"])
-      .order("created_at", { ascending: false }),
-    // Phase 6 Slice 6: line-item P&L edit grid feed.
-    admin.from("pch_income_lines")
-      .select("id, source, gross_takings_pence, platform_fee_pence, on_trip_miles, dead_miles, line_type, ai_proposed_json, edited_by, edited_at")
-      .eq("case_id", id)
-      .order("sort_order", { ascending: true }),
-    admin.from("pch_expense_lines")
-      .select("id, label, amount_paid_pence, category, sa103s_box, evidence, ai_proposed_json, edited_by, edited_at")
-      .eq("case_id", id)
-      .order("sort_order", { ascending: true }),
-    // Documents panel: every file the client has uploaded on this case,
-    // regardless of whether its slot is in the mandatory set. Grouped
-    // client-side by slot section (Identity / Earnings / Expenses /
-    // Other) via the slotMeta join above.
     admin.from("case_documents")
       .select("id, file_name, file_url, uploaded_at, requirement_key")
       .eq("case_id", id)
       .order("uploaded_at", { ascending: false }),
   ]);
 
-  const snapshot = (head.data?.engine_snapshot ?? null) as TaxEngineOutput | null;
-  const snapshotAt = (head.data?.engine_snapshot_at as string | null) ?? null;
-
-  // "Stale snapshot" indicator: any P&L edit after the snapshot time
-  // means the figures the accountant sees in the snapshot panel + SA302
-  // reconciliation table are out of date. The view uses this count to
-  // render a yellow banner with a Refresh button that calls
-  // rerunPchEngineSnapshotAction.
-  const snapshotTs = snapshotAt ? Date.parse(snapshotAt) : 0;
-  const countEditsAfter = (rows: Array<{ edited_at: string | null }>) =>
-    rows.filter((r) => r.edited_at && Date.parse(r.edited_at) > snapshotTs).length;
-  const editsSinceSnapshot =
-    countEditsAfter((incomeLines.data ?? []) as Array<{ edited_at: string | null }>)
-    + countEditsAfter((expenseLines.data ?? []) as Array<{ edited_at: string | null }>);
-
-  const userById = new Map(
-    (users.data ?? []).map((u) => [u.id, u.full_name as string | null]),
-  );
-
-  const { anomalies, priorYearLabel } = await loadPriorYearAnomalies(
-    admin, caseRow.client_id, caseRow.id, head.data?.tax_year ?? null, snapshot,
-  );
-
-  const messages = await loadMessages(admin, id);
-  const supportThread = await loadSupportThreadForCaseAndUser(id, me.id);
-
-  // Phase 7 Slice 7.4: pre-fill map for the 33-point checklist. Shape
-  // is a Map<item_number, ChecklistPrefill>; 7.4 ships a stub that
-  // returns an empty Map (so auto rows render their "AI could not
-  // derive" fallback), 7.5 fills in the 20 auto items cluster by
-  // cluster. Non-blocking: a derivation failure doesn't crash the
-  // page, the UI just falls back to manual Done/N/A on affected rows.
-  const prefills = await deriveChecklistPrefills(id, admin, { anomalies });
-  const prefillList: ChecklistPrefill[] = Array.from(prefills.values());
-
-  // Decorate blocked slots with display name + section from pch_doc_slots.
-  const slotMetaByCode = new Map(
-    (slotMeta.data ?? []).map((s) => [
-      s.code as string,
-      { displayName: s.display_name as string, section: s.section as string },
-    ]),
-  );
-  const blocked = (blockedRows.data ?? []).map((r) => ({
-    slotCode: r.slot_code as string,
-    displayName: slotMetaByCode.get(r.slot_code as string)?.displayName ?? (r.slot_code as string),
-    section: slotMetaByCode.get(r.slot_code as string)?.section ?? "",
-    note: (r.note as string | null) ?? null,
-    updatedAt: (r.updated_at as string | null) ?? null,
-  }));
-
-  // Client identity: the four fields the Photo ID extraction confirmed,
-  // plus the HMRC references the client typed, plus contact. Signed-up
-  // user email is the authoritative email (cl_email mirrors it on
-  // first sync). Phone comes from pch_cases.cl_phone which is populated
-  // by syncPchProfileFromUserAction.
   const { data: clientRow } = await admin
     .from("users").select("email").eq("id", caseRow.client_id).maybeSingle();
 
-  // Signed URL action for the Documents panel. 10-min TTL via the
-  // getDocSignedUrlForAccountant action which already enforces that
-  // the caller is the assigned accountant.
   const signDocUrl = async (path: string) => {
     "use server";
     return getDocSignedUrlForAccountant(id, path);
@@ -307,37 +198,13 @@ export default async function PchAccountantPage({
     displayName: s.display_name as string,
   }));
 
-  // Live merges on this page (see pch-accountant-view.tsx):
-  //   cases          -> useLiveRow for caseStatus
-  //   pch_cases      -> useLiveRow for client_approval_* / bookkeeping_* / final_pack_*
-  //   case_addons    -> useLiveList for the Add-on request widget
-  //   case_messages  -> useLiveList inside CaseMessagesPanel
-  //   case_documents -> useLiveList inside DocumentsPanel
-  // Deliberately dropped (accept F5 until re-visited): pch_check_status,
-  // pch_doc_extractions, pch_doc_status, pch_bank_transactions, pch_overrides.
-  // Those were on the banner-refresh plan originally; most of their
-  // writes are either the viewer's own or infrequent enough that a
-  // reload-on-reopen is a better tradeoff than keeping a page-wide
-  // "new updates available" banner over everything else.
+  const messages = await loadMessages(admin, id);
+  const supportThread = await loadSupportThreadForCaseAndUser(id, me.id);
+
   return (
-    <>
-      <PchAccountantView
+    <PchAccountantView
       caseId={id}
       caseStatus={caseRow.status}
-      checksMeta={checksMeta.data ?? []}
-      checkStatus={checkStatus.data ?? []}
-      checkPrefills={prefillList}
-      snapshot={snapshot}
-      snapshotAt={snapshotAt}
-      editsSinceSnapshot={editsSinceSnapshot}
-      approvalAt={head.data?.client_approval_at ?? null}
-      approvalName={head.data?.client_approval_name ?? null}
-      overrideHistory={overrideHistory.data ?? []}
-      userDisplayNames={Object.fromEntries(userById)}
-      sa302Comparison={head.data?.sa302_comparison ?? null}
-      priorYearAnomalies={anomalies}
-      priorYearLabel={priorYearLabel}
-      awaitingAccountantSlots={blocked}
       identity={{
         name: (head.data?.cl_name as string | null) ?? null,
         dob: (head.data?.cl_dob as string | null) ?? null,
@@ -351,54 +218,6 @@ export default async function PchAccountantPage({
       documents={documents}
       documentSlotMeta={documentSlotMeta}
       signDocUrl={signDocUrl}
-      addons={(addonRows.data ?? []).map((a) => ({
-        id: a.id as string,
-        description: a.description as string,
-        amount_pence: Number(a.amount_pence),
-        status: a.status as "pending_admin" | "pending_payment" | "paid" | "rejected",
-        created_at: a.created_at as string,
-      }))}
-      incomeLines={(incomeLines.data ?? []).map((l) => ({
-        id: l.id as string,
-        source: l.source as string,
-        gross_takings_pence: Number(l.gross_takings_pence ?? 0),
-        platform_fee_pence: Number(l.platform_fee_pence ?? 0),
-        on_trip_miles: Number(l.on_trip_miles ?? 0),
-        dead_miles: Number(l.dead_miles ?? 0),
-        line_type: (l.line_type ?? "Fares") as "Fares" | "Other" | "VAT",
-        ai_proposed_json: (l.ai_proposed_json ?? null) as {
-          source?: string;
-          gross_takings_pence?: number;
-          platform_fee_pence?: number;
-        } | null,
-        edited_by: (l.edited_by as string | null) ?? null,
-        edited_at: (l.edited_at as string | null) ?? null,
-      }))}
-      expenseLines={(expenseLines.data ?? []).map((l) => ({
-        id: l.id as string,
-        label: l.label as string,
-        amount_paid_pence: Number(l.amount_paid_pence ?? 0),
-        category: (l.category as string) ?? "",
-        sa103s_box: Number(l.sa103s_box ?? 0),
-        evidence: (l.evidence as string | null) ?? null,
-        ai_proposed_json: (l.ai_proposed_json ?? null) as {
-          label?: string;
-          amount_paid_pence?: number;
-        } | null,
-        edited_by: (l.edited_by as string | null) ?? null,
-        edited_at: (l.edited_at as string | null) ?? null,
-      }))}
-      bookkeepingConfirmedAt={(head.data?.bookkeeping_confirmed_at as string | null) ?? null}
-      bookkeepingConfirmedByLabel={
-        head.data?.bookkeeping_confirmed_by
-          ? userById.get(head.data.bookkeeping_confirmed_by as string) ?? null
-          : null
-      }
-      clientApprovalAt={(head.data?.client_approval_at as string | null) ?? null}
-      clientApprovalName={(head.data?.client_approval_name as string | null) ?? null}
-      finalPackSentAt={(head.data?.final_pack_sent_at as string | null) ?? null}
-      finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
-      finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
       messagesPanel={
         <CaseConversationsPanel
           caseId={id}
@@ -408,8 +227,7 @@ export default async function PchAccountantPage({
           viewerUserId={me.id}
         />
       }
-      />
-    </>
+    />
   );
 }
 
@@ -422,7 +240,14 @@ async function loadMessages(
     .select("id, author_id, author_role, body, created_at, attachments")
     .eq("case_id", caseId)
     .order("created_at", { ascending: true });
-  const list = (rows ?? []) as { id: string; author_id: string; author_role: "client" | "accountant" | "admin"; body: string; created_at: string; attachments: unknown }[];
+  const list = (rows ?? []) as {
+    id: string;
+    author_id: string;
+    author_role: "client" | "accountant" | "admin";
+    body: string;
+    created_at: string;
+    attachments: unknown;
+  }[];
   if (list.length === 0) return [];
   const authorIds = Array.from(new Set(list.map((m) => m.author_id)));
   const { data: users } = await admin.from("users").select("id, email").in("id", authorIds);
@@ -437,53 +262,4 @@ async function loadMessages(
       ? (m.attachments as CaseMessageView["attachments"])
       : null,
   }));
-}
-
-// Pick the most recent prior tax-year case the same client has had,
-// filtered to the same tier so we're not comparing a PCH year against
-// something unrelated. Returns the empty case when nothing comparable
-// is on file; callers render nothing.
-async function loadPriorYearAnomalies(
-  admin: ReturnType<typeof createAdminClient>,
-  clientId: string,
-  currentCaseId: string,
-  currentTaxYear: string | null,
-  currentSnapshot: TaxEngineOutput | null,
-): Promise<{ anomalies: Anomaly[]; priorYearLabel: string }> {
-  if (!currentSnapshot || !currentTaxYear) return { anomalies: [], priorYearLabel: "" };
-
-  // Same client, same tier, different case, with a snapshot. Order by
-  // tax_year desc so the latest prior year wins.
-  const { data: siblings } = await admin
-    .from("cases")
-    .select("id, tax_year_label")
-    .eq("client_id", clientId)
-    .eq("tier", "uber_phv_automated")
-    .neq("id", currentCaseId);
-  if (!siblings?.length) return { anomalies: [], priorYearLabel: "" };
-
-  const priorCandidates = siblings
-    .map((s) => ({ caseId: s.id, taxYear: s.tax_year_label ?? "" }))
-    .filter((s) => s.taxYear && s.taxYear < currentTaxYear);
-  if (priorCandidates.length === 0) return { anomalies: [], priorYearLabel: "" };
-  priorCandidates.sort((a, b) => b.taxYear.localeCompare(a.taxYear));
-  const prior = priorCandidates[0];
-
-  const [{ data: priorHead }, { data: currVehicle }, { data: priorVehicle }] = await Promise.all([
-    admin.from("pch_cases").select("engine_snapshot").eq("case_id", prior.caseId).maybeSingle(),
-    admin.from("pch_vehicle").select("odo_start, odo_end, other_business_miles").eq("case_id", currentCaseId).maybeSingle(),
-    admin.from("pch_vehicle").select("odo_start, odo_end, other_business_miles").eq("case_id", prior.caseId).maybeSingle(),
-  ]);
-  const priorSnapshot = (priorHead?.engine_snapshot ?? null) as TaxEngineOutput | null;
-  if (!priorSnapshot) return { anomalies: [], priorYearLabel: "" };
-
-  const miles = (v: typeof currVehicle): number =>
-    v ? Math.max(0, (v.odo_end ?? 0) - (v.odo_start ?? 0)) + (v.other_business_miles ?? 0) : 0;
-
-  const anomalies = computePriorYearAnomalies(
-    currentSnapshot,
-    priorSnapshot,
-    { current: miles(currVehicle), prior: miles(priorVehicle) },
-  );
-  return { anomalies, priorYearLabel: prior.taxYear };
 }
