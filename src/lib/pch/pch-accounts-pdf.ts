@@ -405,7 +405,6 @@ function renderProfitAndLoss(args: {
 }): string {
   const r = args.snapshot.pl.rows;
   const t = args.snapshot.pl;
-  const tax = args.snapshot.tax;
   const privateUse = args.privateUsePence / 100;
 
   const incomeRows: Array<[string, number]> = [
@@ -479,18 +478,9 @@ function renderProfitAndLoss(args: {
             <td class="amount">(${fmtMoneyWhole(t.capitalAllowances)})</td>
           </tr>`
         : ""}
-      <tr class="total">
+      <tr class="grand">
         <td class="item">Taxable profit</td>
         <td class="amount">${fmtMoneyWhole(t.taxableProfit)}</td>
-      </tr>
-
-      <tr class="less">
-        <td class="item">Less: Personal allowance applied</td>
-        <td class="amount">(${fmtMoneyWhole(tax.personalAllowance)})</td>
-      </tr>
-      <tr class="grand">
-        <td class="item">Taxable income after PA</td>
-        <td class="amount">${fmtMoneyWhole(tax.taxableIncome)}</td>
       </tr>
     </table>
   </section>`;

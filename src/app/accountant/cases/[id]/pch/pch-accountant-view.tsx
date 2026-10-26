@@ -33,6 +33,7 @@ import {
   type PlExpenseLine,
   type PlIncomeLine,
 } from "./pl-review-panel";
+import { FinalDocumentsPanel } from "./final-documents-panel";
 
 export function PchAccountantView(props: {
   caseId: string;
@@ -80,9 +81,17 @@ export function PchAccountantView(props: {
           initialPlConfirmedByLabel={props.plConfirmedByLabel}
         />
 
-        <PlaceholderBand id="pch-acc-docs-generate" title="Generate final documents" slice="I.4a + I.4b" />
-        <PlaceholderBand id="pch-acc-docs-upload" title="Upload SA302 + SA100" slice="I.4c" />
-        <PlaceholderBand id="pch-acc-send" title="Send for client confirmation" slice="I.4d" />
+        <FinalDocumentsPanel
+          caseId={props.caseId}
+          plConfirmed={!!props.plConfirmedAt}
+          initialSaForwardingPdfPath={props.progress.saForwardingPdfPath}
+          initialPchAccountsPdfPath={props.progress.pchAccountsPdfPath}
+          initialSa302UploadPath={props.progress.sa302UploadPath}
+          initialSa100UploadPath={props.progress.sa100UploadPath}
+          initialDocsSentForApprovalAt={props.progress.docsSentForApprovalAt}
+          signUrl={props.signDocUrl}
+        />
+
         <PlaceholderBand id="pch-acc-approval" title="Awaiting client approval" slice="I.6" />
         <PlaceholderBand id="pch-acc-file" title="Ready to file" slice="I.6" />
 
