@@ -44,6 +44,7 @@ import {
   AwaitingClientApprovalPanel,
   ReadyToFilePanel,
 } from "./approval-and-file-panels";
+import { IntakeLockPanel } from "./intake-lock-panel";
 
 // Shape of the live state the orchestrator keeps in sync with
 // pch_cases. Mirrors AccountantProgressInputs + the two signature
@@ -51,6 +52,12 @@ import {
 type LiveHead = AccountantProgressInputs & {
   clientApprovedAt: string | null;
   clientApprovedSignatureName: string | null;
+  // Migration 0119: null = intake is editable by the client; a
+  // timestamp = client has submitted and the intake is locked.
+  // Threaded here so the IntakeLockPanel below can live-flip between
+  // its "locked" banner and nothing without a page reload when the
+  // accountant clicks Re-open or the client re-submits.
+  intakeSubmittedAt: string | null;
 };
 
 export function PchAccountantView(props: {
@@ -69,6 +76,7 @@ export function PchAccountantView(props: {
   plConfirmedByLabel: string | null;
   clientApprovedAt: string | null;
   clientApprovedSignatureName: string | null;
+  intakeSubmittedAt: string | null;
   updateCaseStatus: (
     caseId: string,
     next: "complete",
@@ -100,6 +108,7 @@ export function PchAccountantView(props: {
       ...props.progress,
       clientApprovedAt: props.clientApprovedAt,
       clientApprovedSignatureName: props.clientApprovedSignatureName,
+      intakeSubmittedAt: props.intakeSubmittedAt,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -124,6 +133,7 @@ export function PchAccountantView(props: {
         row.client_approved_signature_name,
         prev.clientApprovedSignatureName,
       ),
+      intakeSubmittedAt: pick(row.intake_submitted_at, prev.intakeSubmittedAt),
     }),
   });
 
@@ -153,6 +163,12 @@ export function PchAccountantView(props: {
             Case {props.caseId.slice(0, 8)}. Status <strong>{liveStatus}</strong>.
           </p>
         </div>
+
+        <IntakeLockPanel
+          caseId={props.caseId}
+          intakeSubmittedAt={liveHead.intakeSubmittedAt}
+          caseStatus={liveStatus}
+        />
 
         <IdentityPanel {...props.identity} />
 

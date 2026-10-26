@@ -185,7 +185,7 @@ export default async function PchAccountantPage({
   const [head, slotMeta, caseDocs, incomeLines, expenseLines, vehicleRes] = await Promise.all([
     admin
       .from("pch_cases")
-      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, client_approved_signature_name, engine_snapshot")
+      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, client_approved_signature_name, engine_snapshot, intake_submitted_at")
       .eq("case_id", id)
       .single(),
     admin.from("pch_doc_slots").select("code, section, display_name"),
@@ -309,6 +309,7 @@ export default async function PchAccountantPage({
       clientApprovedSignatureName={
         (head.data?.client_approved_signature_name as string | null) ?? null
       }
+      intakeSubmittedAt={(head.data?.intake_submitted_at as string | null) ?? null}
       updateCaseStatus={updateCaseStatus}
       messagesPanel={
         <CaseConversationsPanel
