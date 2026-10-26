@@ -14,22 +14,22 @@ import "server-only";
 //   {DueBy31Jan}          -> snapshot.tax.dueBy31Jan
 //                           (balancingPayment + poaForNextYear)
 //   {DueBy31Jul}          -> snapshot.tax.dueBy31Jul (= poaForNextYear)
-//   {PaymentRef}          -> UTR + "K" (no space), e.g. 1234567890K
+//   {PaymentRef}          -> plain UTR digits (no K suffix). This
+//                           reverses the Phase I.2 "K-suffix confirmed"
+//                           decision after the user attached a sample
+//                           showing a plain-UTR reference.
 //
-// Firm block (confirmed with the user in Phase I.2 report):
-//   "NAFH ACCOUNTANTS, trading name of SHANN ACCOUNTANCY AND
-//    FINANCIAL SERVICES LTD"
-//   "6 Havering Gardens, Romford, England, RM6 5AA"
+// Letterhead: Sterling Ledger logo on the left, generated date on the
+// right, same horizontal band. Firm block (name + legal + address)
+// stacked under the logo on the left.
 //
-// Static boilerplate wording below is a best-read of a standard UK
-// SA Tax Return forwarding letter and has NOT been confirmed against
-// the attached SA_Tax_return_forwarding.docx.pdf template. The I.4a
-// report shows the full rendered copy so the user can diff + correct.
-//
-// Rendered as HTML + puppeteer, same pattern as src/lib/pch/export-
-// pdf.ts and src/lib/engagement/pdf.ts.
+// Letter body copy is a verbatim transcription of the sample the user
+// attached. Only {TaxpayerName}, {UTR}, {TaxYear}, {EndYear}, {YearPlus1}
+// and the three money amounts are mail-merged; every other sentence is
+// identical across cases.
 
 import { renderPdfFromHtml } from "@/lib/engagement/pdf";
+import { logoDataUrl } from "@/lib/branding/logo";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 
@@ -74,11 +74,10 @@ export async function generateSaForwardingLetterPdf(
   return renderPdfFromHtml(html);
 }
 
-// Pure HTML renderer, exported for the I.4a dry-run report so the
-// final wording can be previewed without round-tripping through
-// puppeteer. All merge-field values pass through esc() so a client
-// name or address with "<", ">", "&", "'" or '"' can't break the
-// template.
+// Pure HTML renderer, exported for the preview script so wording can
+// be sanity-checked without round-tripping through puppeteer. All
+// merge values pass through esc() so a client name or address with
+// "<", ">", "&", "'" or '"' can't break the template.
 export function renderSaForwardingLetterHtml(fields: {
   taxpayerName: string;
   address: string;
@@ -90,16 +89,18 @@ export function renderSaForwardingLetterHtml(fields: {
   const { endYear } = parseTaxYear(fields.taxYear);
   const yearPlus1 = endYear + 1;
   const paymentRef = buildPaymentRef(fields.utr);
-  const lines = {
-    taxLiability: fmtMoney(fields.snapshot.tax.totalTaxAndNic),
-    dueBy31Jan: fmtMoney(fields.snapshot.tax.dueBy31Jan),
-    dueBy31Jul: fmtMoney(fields.snapshot.tax.dueBy31Jul),
-  };
+  const taxLiability = fmtMoney(fields.snapshot.tax.totalTaxAndNic);
+  const dueBy31Jan = fmtMoney(fields.snapshot.tax.dueBy31Jan);
+  const dueBy31Jul = fmtMoney(fields.snapshot.tax.dueBy31Jul);
   const todayFmt = new Date().toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
+  const logo = logoDataUrl();
+  const logoBlock = logo
+    ? `<img class="logo" alt="Sterling Ledger" src="${logo}" />`
+    : `<div class="logo-fallback">STERLING LEDGER</div>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -116,36 +117,36 @@ export function renderSaForwardingLetterHtml(fields: {
     line-height: 1.5;
     margin: 0;
   }
-  .firm-block {
-    text-align: right;
-    font-size: 10pt;
-    line-height: 1.35;
-    margin-bottom: 8mm;
+  .letterhead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10mm;
+    margin-bottom: 10mm;
   }
-  .firm-trading { font-weight: 700; letter-spacing: 0.02em; }
+  .letterhead-left { text-align: left; }
+  .letterhead-right { text-align: right; font-size: 10.5pt; color: #333; padding-top: 2mm; }
+  .logo { height: 16mm; width: auto; margin-bottom: 3mm; display: block; }
+  .logo-fallback {
+    font-weight: 700;
+    font-size: 14pt;
+    letter-spacing: 0.03em;
+    color: #0f1e4d;
+    margin-bottom: 3mm;
+  }
+  .firm-trading { font-weight: 700; letter-spacing: 0.02em; font-size: 10.5pt; }
   .firm-legal { color: #333; font-size: 9.5pt; }
   .firm-address { color: #555; font-size: 9.5pt; }
-  .date { margin: 4mm 0 8mm 0; }
-  .recipient { margin-bottom: 10mm; }
+  .recipient { margin-bottom: 8mm; }
   .recipient-line { display: block; }
-  .subject { font-weight: 700; margin: 6mm 0; }
-  .amounts {
-    margin: 6mm 0;
-    padding: 4mm 5mm;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: #fafafa;
-  }
-  .amount-row { display: flex; justify-content: space-between; margin: 1mm 0; }
-  .amount-label { color: #333; }
-  .amount-value { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .pay-ref {
+  .pay-details {
     margin: 6mm 0;
     padding: 3mm 4mm;
     border-left: 3px solid #333;
     background: #f5f5f5;
     font-size: 10.5pt;
   }
+  .pay-details .line { margin: 0.6mm 0; }
   .pay-ref-code { font-family: "Courier New", monospace; font-weight: 700; }
   p { margin: 3mm 0; }
   .signoff { margin-top: 10mm; }
@@ -153,13 +154,15 @@ export function renderSaForwardingLetterHtml(fields: {
 </style>
 </head>
 <body>
-  <div class="firm-block">
-    <div class="firm-trading">${esc(FIRM_TRADING_NAME)}</div>
-    <div class="firm-legal">trading name of ${esc(FIRM_LEGAL_NAME)}</div>
-    <div class="firm-address">${esc(FIRM_ADDRESS)}</div>
+  <div class="letterhead">
+    <div class="letterhead-left">
+      ${logoBlock}
+      <div class="firm-trading">${esc(FIRM_TRADING_NAME)}</div>
+      <div class="firm-legal">trading name of ${esc(FIRM_LEGAL_NAME)}</div>
+      <div class="firm-address">${esc(FIRM_ADDRESS)}</div>
+    </div>
+    <div class="letterhead-right">${esc(todayFmt)}</div>
   </div>
-
-  <div class="date">${esc(todayFmt)}</div>
 
   <div class="recipient">
     <span class="recipient-line">${esc(fields.taxpayerName)}</span>
@@ -171,65 +174,78 @@ export function renderSaForwardingLetterHtml(fields: {
       : ""}
   </div>
 
-  <p>Dear ${esc(firstNameOrFallback(fields.taxpayerName))},</p>
-
-  <div class="subject">
-    Self Assessment Tax Return for the year ended 5 April ${endYear}
-  </div>
+  <p>Hi ${esc(fields.taxpayerName)},</p>
+  <p>I hope this email finds you well!</p>
 
   <p>
-    We enclose for your approval your Self Assessment Tax Return for the
-    tax year ${esc(fields.taxYear)} (year ended 5 April ${endYear}),
-    together with the supporting accounts and schedules we have prepared
-    on your behalf.
+    I hereby attach your Personal Tax Return and Tax Calculation (SA302)
+    for the year ended 5 April ${endYear}.
+  </p>
+
+  <p>Your tax liability for the year is as follows:</p>
+
+  <p>
+    <strong>Tax Payer Name:</strong> ${esc(fields.taxpayerName)}<br />
+    <strong>UTR Number:</strong> ${esc(fields.utr)}<br />
+    <strong>Tax liability ${esc(fields.taxYear)}:</strong> ${taxLiability}<br />
+    <strong>Tax due and payable by 31 January ${yearPlus1} is</strong> ${dueBy31Jan}<br />
+    <strong>Tax due and payable by 31 July ${yearPlus1} is</strong> ${dueBy31Jul}
   </p>
 
   <p>
-    Your tax liability for the year is set out below. Please pay HMRC
-    directly, using the payment reference shown further down. Nothing
-    will be filed with HMRC until you have approved the figures.
-  </p>
-
-  <div class="amounts">
-    <div class="amount-row">
-      <span class="amount-label">Tax liability for the year</span>
-      <span class="amount-value">${lines.taxLiability}</span>
-    </div>
-    <div class="amount-row">
-      <span class="amount-label">Due by 31 January ${yearPlus1}
-        (balancing payment plus first payment on account)</span>
-      <span class="amount-value">${lines.dueBy31Jan}</span>
-    </div>
-    <div class="amount-row">
-      <span class="amount-label">Due by 31 July ${yearPlus1}
-        (second payment on account)</span>
-      <span class="amount-value">${lines.dueBy31Jul}</span>
-    </div>
-  </div>
-
-  <div class="pay-ref">
-    HMRC payment reference:
-    <span class="pay-ref-code">${esc(paymentRef)}</span>
-  </div>
-
-  <p>
-    Please review the enclosed accounts and tax return carefully. If
-    everything is in order, approve the figures via the link in your
-    client portal; we will then file the return with HMRC on your
-    behalf. If anything looks wrong, reply with the correction and we
-    will update the return before filing.
+    Please can you review and subsequently approve the attached
+    document(s), we require Page TR8 of the Personal Tax Return to be
+    signed and dated by yourself, before we can proceed with submission
+    to HM Revenue &amp; Customs.
   </p>
 
   <p>
-    Please note it is your responsibility to pay HMRC by the deadlines
-    above. HMRC will charge interest and penalties on amounts not paid
-    on time, even where the return itself has been filed.
+    Alternatively, if you are unable to print and return the signed
+    page at this time, please provide a response to this e-mail as a
+    formal approval of the Tax Return and subsequent submission to HM
+    Revenue and Customs. Should this be the case please provide us
+    with the signed page, at a later date when you are able to.
+  </p>
+
+  <p>
+    You will be able to make the payment using the following link:
+    https://www.gov.uk/pay-self-assessment-tax-bill
+  </p>
+
+  <p>
+    If you wish to pay the above liability directly from your salary
+    from the next tax year we will be able to request for HMRC to do
+    this, please respond to this e-mail with confirmation if you would
+    like us to arrange for this.
+  </p>
+
+  <p>
+    Alternatively, you may wish to make the payment via bank transfer
+    in which case you can use the following details:
+  </p>
+
+  <div class="pay-details">
+    <div class="line"><strong>HMRC Payment Details</strong></div>
+    <div class="line">Account name: HMRC Cumbernauld</div>
+    <div class="line">Account number: 12001039</div>
+    <div class="line">Sort code: 08-32-10</div>
+    <div class="line">Your payment reference is: <span class="pay-ref-code">${esc(paymentRef)}</span></div>
+  </div>
+
+  <p>
+    Please ensure you enter the payment reference (your 10-Digit
+    Personal UTR) exactly as shown above, as a single error may end up
+    in the payment being lost.
+  </p>
+
+  <p>
+    I trust the above is clear, however if you have any questions
+    please do not hesitate to get in touch.
   </p>
 
   <div class="signoff">
     <p>Kind regards,</p>
     <div class="signoff-firm">${esc(FIRM_TRADING_NAME)}</div>
-    <div class="firm-legal">${esc(FIRM_LEGAL_NAME)}</div>
   </div>
 </body>
 </html>`;
@@ -250,19 +266,13 @@ function parseTaxYear(ty: string): { startYear: number; endYear: number } {
   return { startYear, endYear };
 }
 
-// HMRC SA payment reference: 10-digit UTR followed by the letter K,
-// e.g. 1234567890K. Confirmed with the user in the Phase I.2 report.
+// HMRC SA payment reference: plain 10-digit UTR, no suffix. The user
+// attached a sample letter explicitly showing a plain-UTR reference
+// ("Your payment reference is: 5739372194"), which reverses the Phase
+// I.2 decision to append a "K" suffix. The sample is the source of
+// truth here.
 export function buildPaymentRef(utr: string): string {
-  const digits = (utr ?? "").replace(/[^0-9]/g, "");
-  if (digits.length === 0) return "";
-  return digits + "K";
-}
-
-function firstNameOrFallback(fullName: string): string {
-  const trimmed = (fullName ?? "").trim();
-  if (!trimmed) return "Taxpayer";
-  const first = trimmed.split(/\s+/)[0] ?? "";
-  return first || "Taxpayer";
+  return (utr ?? "").replace(/[^0-9]/g, "");
 }
 
 function fmtMoney(n: number): string {

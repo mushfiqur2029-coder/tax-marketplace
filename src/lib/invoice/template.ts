@@ -1,6 +1,5 @@
 import "server-only";
-import fs from "node:fs";
-import path from "node:path";
+import { logoDataUrl } from "@/lib/branding/logo";
 
 // Invoice PDF template. Modelled on the Invoice.xlsx the user shared,
 // cleaned up visually to the same quality bar as the engagement
@@ -41,25 +40,6 @@ export type InvoiceData = {
   // Add-on path: a single row for the add-on itself.
   items: InvoiceLineItem[];
 };
-
-// Logo as a data URL, cached per process. Matches the engagement
-// letter path, same file, same base64 pipeline, same text wordmark
-// fallback if the file ever goes missing.
-let logoDataUrlCache: string | null = null;
-function logoDataUrl(): string {
-  if (logoDataUrlCache !== null) return logoDataUrlCache;
-  try {
-    const p = path.resolve(process.cwd(), "design-reference/Logo3s.png");
-    const bytes = fs.readFileSync(p);
-    logoDataUrlCache = `data:image/png;base64,${bytes.toString("base64")}`;
-  } catch (err) {
-    console.error(
-      `[invoice] logo load failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    logoDataUrlCache = "";
-  }
-  return logoDataUrlCache;
-}
 
 const esc = (s: string) =>
   s

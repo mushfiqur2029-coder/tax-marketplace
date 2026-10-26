@@ -26,6 +26,7 @@ import "server-only";
 // Letter and the old export-pdf.ts.
 
 import { renderPdfFromHtml } from "@/lib/engagement/pdf";
+import { logoDataUrl } from "@/lib/branding/logo";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
@@ -257,6 +258,27 @@ export function renderPchAccountsHtml(p: PchAccountsPdfInputs): string {
     color: #777;
     margin-bottom: 2mm;
   }
+  .powered-by {
+    margin-top: 10mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3mm;
+    opacity: 0.75;
+  }
+  .powered-label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 8pt;
+    color: #777;
+  }
+  .powered-logo { height: 7mm; width: auto; display: block; }
+  .powered-fallback {
+    font-weight: 700;
+    font-size: 10pt;
+    letter-spacing: 0.03em;
+    color: #0f1e4d;
+  }
 
   /* Information + P&L shared table style */
   table.info { width: 100%; border-collapse: collapse; margin-top: 4mm; }
@@ -270,9 +292,21 @@ export function renderPchAccountsHtml(p: PchAccountsPdfInputs): string {
   }
 
   table.pl { width: 100%; border-collapse: collapse; margin-top: 4mm; font-variant-numeric: tabular-nums; }
-  table.pl td { padding: 1.5mm 3mm; }
-  table.pl td.item { color: #222; }
-  table.pl td.amount { text-align: right; width: 30mm; }
+  table.pl th, table.pl td { padding: 1.5mm 3mm; }
+  table.pl th.item, table.pl td.item { text-align: left; color: #222; }
+  table.pl th.expense-col, table.pl td.expense-col,
+  table.pl th.income-col, table.pl td.income-col {
+    text-align: right;
+    width: 30mm;
+  }
+  table.pl thead tr.head th {
+    border-bottom: 1px solid #333;
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #555;
+    font-weight: 700;
+  }
   table.pl tr.section td { padding-top: 4mm; font-weight: 700; }
   table.pl tr.sub td { color: #444; }
   table.pl tr.total td { border-top: 1px solid #333; font-weight: 700; }
@@ -325,17 +359,17 @@ export function renderPchAccountsHtml(p: PchAccountsPdfInputs): string {
     utr: p.utr,
     periodLabel,
   })}
-  ${renderProfitAndLoss({
-    taxpayerName: p.taxpayerName,
-    periodLabel,
-    snapshot: p.snapshot,
-    privateUsePence: p.privateUsePence,
-  })}
   ${renderAccountantReportAndApproval({
     taxpayerName: p.taxpayerName,
     periodLabel,
     generatedAt: p.generatedAt,
     clientApproval: p.clientApproval,
+  })}
+  ${renderProfitAndLoss({
+    taxpayerName: p.taxpayerName,
+    periodLabel,
+    snapshot: p.snapshot,
+    privateUsePence: p.privateUsePence,
   })}
   ${renderDeclarationPages(p.declarationStatuses, p.decl, periodLabel)}
 </body>
@@ -350,6 +384,10 @@ function renderCover(args: {
   taxpayerName: string;
   periodLabel: string;
 }): string {
+  const logo = logoDataUrl();
+  const sterlingBlock = logo
+    ? `<img class="powered-logo" alt="Sterling Ledger" src="${logo}" />`
+    : `<div class="powered-fallback">STERLING LEDGER</div>`;
   return `<section class="page cover">
     <div></div>
     <div class="cover-title">
@@ -362,6 +400,10 @@ function renderCover(args: {
       <div class="firm-trading">${esc(FIRM_TRADING_NAME)}</div>
       <div class="firm-legal">trading name of ${esc(FIRM_LEGAL_NAME)}</div>
       <div class="firm-address">${esc(FIRM_ADDRESS)}</div>
+      <div class="powered-by">
+        <span class="powered-label">Powered by</span>
+        ${sterlingBlock}
+      </div>
     </div>
   </section>`;
 }
@@ -407,6 +449,12 @@ function renderProfitAndLoss(args: {
   const t = args.snapshot.pl;
   const privateUse = args.privateUsePence / 100;
 
+  // Three-column layout mirrors the accountant portal's PlSummaryTable
+  // (sans the % column, since this is a formal accounts document rather
+  // than the accountant's working view). Income rows have the amount in
+  // the Income column; expense rows have theirs in the Expenses column;
+  // Net profit lands in the Income column too, bold, to flip the sign
+  // back to a positive revenue figure.
   const incomeRows: Array<[string, number]> = [
     ["Fares", r.fares],
     ["Other trading income", r.otherTrading],
@@ -433,55 +481,76 @@ function renderProfitAndLoss(args: {
       ${esc(args.taxpayerName)} &middot; ${esc(args.periodLabel)}
     </p>
     <table class="pl">
-      <tr class="section"><td class="item" colspan="2">Income</td></tr>
-      ${incomeRows
-        .map(
-          ([label, amount]) => `<tr class="sub">
-        <td class="item">${esc(label)}</td>
-        <td class="amount">${fmtMoneyWhole(amount)}</td>
-      </tr>`,
-        )
-        .join("")}
-      <tr class="total">
-        <td class="item">Turnover</td>
-        <td class="amount">${fmtMoneyWhole(t.turnover)}</td>
-      </tr>
+      <thead>
+        <tr class="head">
+          <th class="item">Line item</th>
+          <th class="expense-col">Expenses &pound;</th>
+          <th class="income-col">Income &pound;</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="section">
+          <td class="item" colspan="3">Income</td>
+        </tr>
+        ${incomeRows
+          .map(
+            ([label, amount]) => `<tr class="sub">
+          <td class="item">${esc(label)}</td>
+          <td class="expense-col"></td>
+          <td class="income-col">${fmtMoneyWhole(amount)}</td>
+        </tr>`,
+          )
+          .join("")}
+        <tr class="total">
+          <td class="item">Turnover</td>
+          <td class="expense-col"></td>
+          <td class="income-col">${fmtMoneyWhole(t.turnover)}</td>
+        </tr>
 
-      <tr class="section"><td class="item" colspan="2">Less: Expenses</td></tr>
-      ${expenseRows
-        .map(
-          ([label, amount]) => `<tr class="sub">
-        <td class="item">${esc(label)}</td>
-        <td class="amount">(${fmtMoneyWhole(amount)})</td>
-      </tr>`,
-        )
-        .join("")}
-      <tr class="total">
-        <td class="item">Total expenses</td>
-        <td class="amount">(${fmtMoneyWhole(t.expensesTotal)})</td>
-      </tr>
+        <tr class="section">
+          <td class="item" colspan="3">Less: Expenses</td>
+        </tr>
+        ${expenseRows
+          .map(
+            ([label, amount]) => `<tr class="sub">
+          <td class="item">${esc(label)}</td>
+          <td class="expense-col">${fmtMoneyWhole(amount)}</td>
+          <td class="income-col"></td>
+        </tr>`,
+          )
+          .join("")}
+        <tr class="total">
+          <td class="item">Total expenses</td>
+          <td class="expense-col">${fmtMoneyWhole(t.expensesTotal)}</td>
+          <td class="income-col"></td>
+        </tr>
 
-      <tr class="grand">
-        <td class="item">Net profit</td>
-        <td class="amount">${fmtMoneyWhole(t.netProfit)}</td>
-      </tr>
+        <tr class="grand">
+          <td class="item">Net profit</td>
+          <td class="expense-col"></td>
+          <td class="income-col">${fmtMoneyWhole(t.netProfit)}</td>
+        </tr>
 
-      ${privateUse > 0
-        ? `<tr class="less">
-            <td class="item">Less: Private use</td>
-            <td class="amount">(${fmtMoneyWhole(privateUse)})</td>
-          </tr>`
-        : ""}
-      ${t.capitalAllowances > 0
-        ? `<tr class="less">
-            <td class="item">Less: Capital allowances</td>
-            <td class="amount">(${fmtMoneyWhole(t.capitalAllowances)})</td>
-          </tr>`
-        : ""}
-      <tr class="grand">
-        <td class="item">Taxable profit</td>
-        <td class="amount">${fmtMoneyWhole(t.taxableProfit)}</td>
-      </tr>
+        ${privateUse > 0
+          ? `<tr class="less">
+              <td class="item">Less: Private use</td>
+              <td class="expense-col">${fmtMoneyWhole(privateUse)}</td>
+              <td class="income-col"></td>
+            </tr>`
+          : ""}
+        ${t.capitalAllowances > 0
+          ? `<tr class="less">
+              <td class="item">Less: Capital allowances</td>
+              <td class="expense-col">${fmtMoneyWhole(t.capitalAllowances)}</td>
+              <td class="income-col"></td>
+            </tr>`
+          : ""}
+        <tr class="grand">
+          <td class="item">Taxable profit</td>
+          <td class="expense-col"></td>
+          <td class="income-col">${fmtMoneyWhole(t.taxableProfit)}</td>
+        </tr>
+      </tbody>
     </table>
   </section>`;
 }
@@ -560,12 +629,17 @@ type DeclSpec = {
   title: string;
 };
 
+// Section numbers mirror the client intake order after commit 7dde25a
+// moved Rental to position 6 (right after P11D) and shifted Interest /
+// Dividend / Capital gains down to 7 / 8 / 9. A declaration page in
+// the filed pack now shows the same section number the client saw in
+// section-4-14-declarations.tsx during intake.
 const DECLARATION_PAGES: DeclSpec[] = [
   { key: "p11d", sectionNumber: 5, title: "Employment income and P11D benefits" },
-  { key: "interest", sectionNumber: 6, title: "Interest income" },
-  { key: "dividend", sectionNumber: 7, title: "Dividend income" },
-  { key: "capital_gains", sectionNumber: 8, title: "Capital gains for the year" },
-  { key: "rental", sectionNumber: 9, title: "Rental income (UK or overseas)" },
+  { key: "rental", sectionNumber: 6, title: "Rental income (UK or overseas)" },
+  { key: "interest", sectionNumber: 7, title: "Interest income" },
+  { key: "dividend", sectionNumber: 8, title: "Dividend income" },
+  { key: "capital_gains", sectionNumber: 9, title: "Capital gains for the year" },
   { key: "pension", sectionNumber: 10, title: "Private pension contributions" },
   { key: "gift_aid", sectionNumber: 11, title: "Gift Aid charitable donations" },
   { key: "child_benefit", sectionNumber: 12, title: "Child benefit received" },

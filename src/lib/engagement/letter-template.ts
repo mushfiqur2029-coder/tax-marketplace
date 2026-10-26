@@ -1,6 +1,5 @@
 import "server-only";
-import fs from "node:fs";
-import path from "node:path";
+import { logoDataUrl } from "@/lib/branding/logo";
 
 export type EngagementLetterVariant = "limited_company" | "personal";
 
@@ -43,31 +42,6 @@ export type EngagementLetterFields = {
   signatureDataUrl: string | null;
   signDate: string | null;    // e.g. "1 October 2026"
 };
-
-// Cached logo. Read once per process, embedded as a data URL so the final
-// HTML is fully self-contained (Puppeteer prints without any network
-// fetches, which also means a tightened Content-Security-Policy would
-// not fire).
-let logoDataUrlCache: string | null = null;
-function logoDataUrl(): string {
-  if (logoDataUrlCache !== null) return logoDataUrlCache;
-  try {
-    const p = path.resolve(process.cwd(), "design-reference/Logo3s.png");
-    const bytes = fs.readFileSync(p);
-    logoDataUrlCache = `data:image/png;base64,${bytes.toString("base64")}`;
-  } catch (err) {
-    // Keep an empty string so the template can render a text wordmark
-    // fallback instead of a broken image. Log so prod misconfigurations
-    // show up in logs rather than silently in the PDF.
-    console.error(
-      `[engagement-letter] logo load failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
-    logoDataUrlCache = "";
-  }
-  return logoDataUrlCache;
-}
 
 const esc = (s: string) =>
   s
