@@ -25,6 +25,7 @@
 // unassigned accountant can't call these from a stale tab.
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeAll, type TaxEngineOutput } from "@/lib/tax-engine";
@@ -181,5 +182,268 @@ export async function reopenPlAction(caseId: string): Promise<ActionResult> {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Reopen failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Phase M+3: accountant-side add/delete for extra P&L rows beyond the
+// fixed slot list. The client intake is deliberately fixed-slot (Phase
+// J removed freeform add on the client side on purpose); this is an
+// accountant-only escape hatch for an adjustment or a line the client
+// mentioned over email but had no box for.
+//
+// Same guards as the edit actions:
+//   - requireAccountantPchCase (role + case ownership + tier)
+//   - assertPlEditable (locked once pl_confirmed_at is set)
+//
+// Add actions return BOTH the new line (so the client can append to
+// local state) AND the fresh engine snapshot (so the totals strip +
+// summary panel re-render without a second round-trip).
+// -------------------------------------------------------------------
+
+const EXPENSE_DEFAULT_CATEGORY = "Other expenses";
+const EXPENSE_DEFAULT_SA103S_BOX = 19;
+const EXPENSE_DEFAULT_CAR_COST = "No";
+
+async function nextSortOrder(
+  admin: ReturnType<typeof createAdminClient>,
+  table: "pch_income_lines" | "pch_expense_lines",
+  caseId: string,
+): Promise<number> {
+  const { data } = await admin
+    .from(table)
+    .select("sort_order")
+    .eq("case_id", caseId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return ((data?.sort_order as number | undefined) ?? -1) + 1;
+}
+
+function cleanLabel(label: string): string | null {
+  const trimmed = (label ?? "").trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > 200) return trimmed.slice(0, 200);
+  return trimmed;
+}
+
+export async function addAccountantIncomeLineAction(
+  caseId: string,
+  label: string,
+  grossTakingsPence: number,
+): Promise<
+  ActionResultWith<{
+    snapshot: TaxEngineOutput;
+    line: {
+      id: string;
+      source: string;
+      gross_takings_pence: number;
+    };
+  }>
+> {
+  try {
+    const { me, admin } = await requireAccountantPchCase(caseId);
+    const locked = await assertPlEditable(admin, caseId);
+    if (locked) return locked;
+
+    const cleanedLabel = cleanLabel(label);
+    if (!cleanedLabel) return { ok: false, error: "Enter a label for this row." };
+    const pence = Math.max(0, Math.round(grossTakingsPence));
+
+    const sortOrder = await nextSortOrder(admin, "pch_income_lines", caseId);
+    const now = new Date().toISOString();
+    const ins = await admin
+      .from("pch_income_lines")
+      .insert({
+        case_id: caseId,
+        source: cleanedLabel,
+        gross_takings_pence: pence,
+        platform_fee_pence: 0,
+        on_trip_miles: 0,
+        dead_miles: 0,
+        // "Other" (not "Fares") so the engine routes this into
+        // pl.rows.otherTrading rather than fares; a free-text accountant
+        // adjustment isn't a platform fare line.
+        line_type: "Other",
+        edited_by: me.id,
+        edited_at: now,
+        sort_order: sortOrder,
+      })
+      .select("id, source, gross_takings_pence")
+      .single();
+    if (ins.error) return { ok: false, error: ins.error.message };
+
+    const snapshot = await runEngine(caseId, admin);
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return {
+      ok: true,
+      snapshot,
+      line: {
+        id: ins.data.id as string,
+        source: ins.data.source as string,
+        gross_takings_pence: Number(ins.data.gross_takings_pence ?? 0),
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Add failed." };
+  }
+}
+
+export async function addAccountantExpenseLineAction(
+  caseId: string,
+  label: string,
+  amountPaidPence: number,
+): Promise<
+  ActionResultWith<{
+    snapshot: TaxEngineOutput;
+    line: {
+      id: string;
+      label: string;
+      amount_paid_pence: number;
+    };
+  }>
+> {
+  try {
+    const { me, admin } = await requireAccountantPchCase(caseId);
+    const locked = await assertPlEditable(admin, caseId);
+    if (locked) return locked;
+
+    const cleanedLabel = cleanLabel(label);
+    if (!cleanedLabel) return { ok: false, error: "Enter a label for this row." };
+    const pence = Math.max(0, Math.round(amountPaidPence));
+
+    const sortOrder = await nextSortOrder(admin, "pch_expense_lines", caseId);
+    const now = new Date().toISOString();
+    const ins = await admin
+      .from("pch_expense_lines")
+      .insert({
+        case_id: caseId,
+        label: cleanedLabel,
+        amount_paid_pence: pence,
+        // "Other expense" slot defaults from section-3-expenses.tsx's
+        // FIXED_SLOTS: closest existing bucket for an uncategorised line.
+        category: EXPENSE_DEFAULT_CATEGORY,
+        sa103s_box: EXPENSE_DEFAULT_SA103S_BOX,
+        car_cost: EXPENSE_DEFAULT_CAR_COST,
+        edited_by: me.id,
+        edited_at: now,
+        sort_order: sortOrder,
+      })
+      .select("id, label, amount_paid_pence")
+      .single();
+    if (ins.error) return { ok: false, error: ins.error.message };
+
+    const snapshot = await runEngine(caseId, admin);
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return {
+      ok: true,
+      snapshot,
+      line: {
+        id: ins.data.id as string,
+        label: ins.data.label as string,
+        amount_paid_pence: Number(ins.data.amount_paid_pence ?? 0),
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Add failed." };
+  }
+}
+
+export async function deleteAccountantLineAction(
+  caseId: string,
+  table: "income" | "expense",
+  lineId: string,
+): Promise<ActionResultWith<{ snapshot: TaxEngineOutput }>> {
+  try {
+    const { admin } = await requireAccountantPchCase(caseId);
+    const locked = await assertPlEditable(admin, caseId);
+    if (locked) return locked;
+
+    const tableName = table === "income" ? "pch_income_lines" : "pch_expense_lines";
+    const del = await admin
+      .from(tableName)
+      .delete()
+      .eq("id", lineId)
+      .eq("case_id", caseId);
+    if (del.error) return { ok: false, error: del.error.message };
+
+    const snapshot = await runEngine(caseId, admin);
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return { ok: true, snapshot };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
+  }
+}
+
+// Plain evidence upload for an accountant-added row. Routes through
+// the existing single-evidence-column pattern on pch_income_lines /
+// pch_expense_lines (both tables have an evidence column that holds
+// one storage path). No OCR auto-read: the accountant typed the
+// amount, we trust it, and the file is just a reference the client
+// / audit trail can open later.
+export async function uploadAccountantLineEvidenceAction(
+  caseId: string,
+  table: "income" | "expense",
+  lineId: string,
+  formData: FormData,
+): Promise<ActionResultWith<{ path: string }>> {
+  try {
+    const { me, admin } = await requireAccountantPchCase(caseId);
+    const locked = await assertPlEditable(admin, caseId);
+    if (locked) return locked;
+
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
+
+    const typeLower = (file.type || "").toLowerCase();
+    const nameLower = file.name.toLowerCase();
+    const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+    const isJpeg = typeLower === "image/jpeg" || /\.jpe?g$/.test(nameLower);
+    const isPng = typeLower === "image/png" || /\.png$/.test(nameLower);
+    const isWebp = typeLower === "image/webp" || /\.webp$/.test(nameLower);
+    if (!isPdf && !isJpeg && !isPng && !isWebp) {
+      return { ok: false, error: "Upload a PDF, JPG, PNG or WebP." };
+    }
+
+    const tableName = table === "income" ? "pch_income_lines" : "pch_expense_lines";
+    const requirementKey =
+      table === "income"
+        ? `pl-accountant-income-${lineId}`
+        : `pl-accountant-expense-${lineId}`;
+
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const path = `${caseId}/pl-accountant/${requirementKey}-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const docIns = await admin.from("case_documents").insert({
+      case_id: caseId,
+      uploaded_by: me.id,
+      file_name: file.name,
+      file_url: path,
+      requirement_key: requirementKey,
+    });
+    if (docIns.error) return { ok: false, error: docIns.error.message };
+
+    // Stamp the storage path on the line row's evidence column so the
+    // accountant can jump straight from the P&L edit grid to the file.
+    const upd = await admin
+      .from(tableName)
+      .update({ evidence: path })
+      .eq("id", lineId)
+      .eq("case_id", caseId);
+    if (upd.error) return { ok: false, error: upd.error.message };
+
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return { ok: true, path };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
   }
 }

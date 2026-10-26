@@ -15,10 +15,14 @@
 
 import { useState, useTransition } from "react";
 import {
+  addAccountantExpenseLineAction,
+  addAccountantIncomeLineAction,
   confirmPlAction,
+  deleteAccountantLineAction,
   editAccountantExpenseLineAction,
   editAccountantIncomeLineAction,
   reopenPlAction,
+  uploadAccountantLineEvidenceAction,
 } from "@/app/accountant/pch/pl-actions";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { useAccountantProgress } from "./accountant-progress-context";
@@ -96,6 +100,74 @@ export function PlReviewPanel({
     setErr(null);
   };
 
+  const addIncome = async (
+    label: string,
+    pence: number,
+  ): Promise<{ ok: true; id: string } | { ok: false; error: string }> => {
+    const r = await addAccountantIncomeLineAction(caseId, label, pence);
+    if (!r.ok) {
+      setErr(r.error);
+      return { ok: false, error: r.error };
+    }
+    setIncome((xs) => [...xs, r.line]);
+    setSnapshot(r.snapshot);
+    setErr(null);
+    return { ok: true, id: r.line.id };
+  };
+
+  const addExpense = async (
+    label: string,
+    pence: number,
+  ): Promise<{ ok: true; id: string } | { ok: false; error: string }> => {
+    const r = await addAccountantExpenseLineAction(caseId, label, pence);
+    if (!r.ok) {
+      setErr(r.error);
+      return { ok: false, error: r.error };
+    }
+    setExpenses((xs) => [...xs, { ...r.line }]);
+    setSnapshot(r.snapshot);
+    setErr(null);
+    return { ok: true, id: r.line.id };
+  };
+
+  const deleteLine = async (
+    table: "income" | "expense",
+    lineId: string,
+  ): Promise<void> => {
+    const prevIncome = income;
+    const prevExpenses = expenses;
+    if (table === "income") {
+      setIncome((xs) => xs.filter((l) => l.id !== lineId));
+    } else {
+      setExpenses((xs) => xs.filter((l) => l.id !== lineId));
+    }
+    const r = await deleteAccountantLineAction(caseId, table, lineId);
+    if (!r.ok) {
+      setIncome(prevIncome);
+      setExpenses(prevExpenses);
+      setErr(r.error);
+      return;
+    }
+    setSnapshot(r.snapshot);
+    setErr(null);
+  };
+
+  const uploadLineEvidence = async (
+    table: "income" | "expense",
+    lineId: string,
+    file: File,
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await uploadAccountantLineEvidenceAction(caseId, table, lineId, fd);
+    if (!r.ok) {
+      setErr(r.error);
+      return { ok: false, error: r.error };
+    }
+    setErr(null);
+    return { ok: true };
+  };
+
   const confirm = () =>
     start(async () => {
       setErr(null);
@@ -161,6 +233,10 @@ export function PlReviewPanel({
           )}
           editable={editable}
           onSave={saveIncome}
+          tableKind="income"
+          onAdd={addIncome}
+          onDelete={deleteLine}
+          onUploadEvidence={uploadLineEvidence}
         />
         <LineTable
           title="Expenses"
@@ -174,6 +250,10 @@ export function PlReviewPanel({
           )}
           editable={editable}
           onSave={saveExpense}
+          tableKind="expense"
+          onAdd={addExpense}
+          onDelete={deleteLine}
+          onUploadEvidence={uploadLineEvidence}
         />
       </div>
 
@@ -265,14 +345,26 @@ function dedupeByLabel(
 }
 
 function LineTable({
-  title, emptyText, rows, editable, onSave,
+  title, emptyText, rows, editable, onSave, tableKind, onAdd, onDelete, onUploadEvidence,
 }: {
   title: string;
   emptyText: string;
   rows: DedupedRow[];
   editable: boolean;
   onSave: (lineId: string, nextPence: number) => Promise<void>;
+  tableKind: "income" | "expense";
+  onAdd: (
+    label: string,
+    pence: number,
+  ) => Promise<{ ok: true; id: string } | { ok: false; error: string }>;
+  onDelete: (table: "income" | "expense", lineId: string) => Promise<void>;
+  onUploadEvidence: (
+    table: "income" | "expense",
+    lineId: string,
+    file: File,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
+  const [adding, setAdding] = useState(false);
   return (
     <div>
       <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -285,24 +377,54 @@ function LineTable({
       ) : (
         <ul className="space-y-1">
           {rows.map((r) => (
-            <LineRow key={r.id} row={r} editable={editable} onSave={onSave} />
+            <LineRow
+              key={r.id}
+              row={r}
+              editable={editable}
+              onSave={onSave}
+              tableKind={tableKind}
+              onDelete={onDelete}
+            />
           ))}
         </ul>
       )}
+      {editable ? (
+        <div className="mt-2">
+          {adding ? (
+            <AddRowForm
+              tableKind={tableKind}
+              onAdd={onAdd}
+              onUploadEvidence={onUploadEvidence}
+              onDone={() => setAdding(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 hover:border-sky hover:text-sky"
+            >
+              + Add row
+            </button>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function LineRow({
-  row, editable, onSave,
+  row, editable, onSave, tableKind, onDelete,
 }: {
   row: DedupedRow;
   editable: boolean;
   onSave: (lineId: string, nextPence: number) => Promise<void>;
+  tableKind: "income" | "expense";
+  onDelete: (table: "income" | "expense", lineId: string) => Promise<void>;
 }) {
   const [value, setValue] = useState<string>(penceToStr(row.pence));
   const [saving, setSaving] = useState(false);
   const [savedTick, setSavedTick] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const commit = async () => {
     if (!editable) return;
@@ -316,6 +438,16 @@ function LineRow({
       setTimeout(() => setSavedTick(false), 1500);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!editable || deleting) return;
+    setDeleting(true);
+    try {
+      await onDelete(tableKind, row.id);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -351,7 +483,143 @@ function LineRow({
           <span className="font-medium text-emerald-700">Saved</span>
         ) : null}
       </span>
+      {editable && !row.isDupe ? (
+        <button
+          type="button"
+          onClick={remove}
+          disabled={deleting}
+          title="Delete row"
+          aria-label={`Delete ${row.label}`}
+          className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+        >
+          {deleting ? "..." : "×"}
+        </button>
+      ) : null}
     </li>
+  );
+}
+
+function AddRowForm({
+  tableKind, onAdd, onUploadEvidence, onDone,
+}: {
+  tableKind: "income" | "expense";
+  onAdd: (
+    label: string,
+    pence: number,
+  ) => Promise<{ ok: true; id: string } | { ok: false; error: string }>;
+  onUploadEvidence: (
+    table: "income" | "expense",
+    lineId: string,
+    file: File,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onDone: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [amount, setAmount] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+
+  const save = async () => {
+    if (saving) return;
+    const cleanLabel = label.trim();
+    if (!cleanLabel) {
+      setLocalErr("Enter a label.");
+      return;
+    }
+    const pence = strToPence(amount);
+    setSaving(true);
+    setLocalErr(null);
+    try {
+      const r = await onAdd(cleanLabel, pence);
+      if (!r.ok) {
+        setLocalErr(r.error);
+        return;
+      }
+      if (file) {
+        const up = await onUploadEvidence(tableKind, r.id, file);
+        if (!up.ok) {
+          setLocalErr(up.error);
+          return;
+        }
+      }
+      setLabel("");
+      setAmount("");
+      setFile(null);
+      onDone();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={tableKind === "income" ? "Income label" : "Expense label"}
+          disabled={saving}
+          maxLength={200}
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+        />
+        <div className="flex items-center gap-1">
+          <span className="text-sm text-slate-500">£</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            disabled={saving}
+            className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+          />
+        </div>
+      </div>
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex items-center gap-2 text-xs text-slate-600">
+          <span className="shrink-0">Evidence (optional):</span>
+          <input
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            disabled={saving}
+            className="text-xs text-slate-700 file:mr-2 file:rounded file:border file:border-slate-300 file:bg-white file:px-2 file:py-0.5 file:text-xs file:text-slate-700 hover:file:border-sky"
+          />
+        </label>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (saving) return;
+              setLabel("");
+              setAmount("");
+              setFile(null);
+              setLocalErr(null);
+              onDone();
+            }}
+            disabled={saving}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-slate-400 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="rounded-lg bg-ink px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            {saving ? "Saving." : "Save row"}
+          </button>
+        </div>
+      </div>
+      {localErr ? (
+        <p className="mt-1.5 text-[11px] text-rose-700">{localErr}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -502,13 +770,40 @@ function PlSummaryTable({
     label,
     pence: sumByLabel(incomeRows, label),
   }));
-  const totalIncome = incomePerLabel.reduce((s, r) => s + r.pence, 0);
+  // Phase M+3: accountant can now add rows with custom labels. Sum any
+  // row whose label isn't in the fixed summary list into a single
+  // "Other income" / "Other adjustments" line so the custom rows
+  // actually appear in the summary (they wouldn't match sumByLabel on
+  // any fixed label and would silently vanish otherwise).
+  const incomeFixedLabelsLower = new Set(
+    SUMMARY_INCOME_LABELS.map((l) => l.trim().toLowerCase()),
+  );
+  const otherIncomePence = incomeRows.reduce(
+    (s, r) =>
+      incomeFixedLabelsLower.has((r.label ?? "").trim().toLowerCase())
+        ? s
+        : s + (r.pence ?? 0),
+    0,
+  );
+  const totalIncome =
+    incomePerLabel.reduce((s, r) => s + r.pence, 0) + otherIncomePence;
 
   const expensePerRow = SUMMARY_EXPENSE_LABELS.map((label) => ({
     display: label,
     pence: sumByLabel(expenseRows, label),
   }));
-  const totalExpenses = expensePerRow.reduce((s, r) => s + r.pence, 0);
+  const expenseFixedLabelsLower = new Set(
+    SUMMARY_EXPENSE_LABELS.map((l) => l.trim().toLowerCase()),
+  );
+  const otherExpensesPence = expenseRows.reduce(
+    (s, r) =>
+      expenseFixedLabelsLower.has((r.label ?? "").trim().toLowerCase())
+        ? s
+        : s + (r.pence ?? 0),
+    0,
+  );
+  const totalExpenses =
+    expensePerRow.reduce((s, r) => s + r.pence, 0) + otherExpensesPence;
 
   const netProfit = totalIncome - totalExpenses - privateUsePence;
   const expensesPctOfIncome = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0;
@@ -549,6 +844,14 @@ function PlSummaryTable({
                 shaded={i % 2 === 1}
               />
             ))}
+            {otherIncomePence > 0 ? (
+              <SummaryRow
+                label="Other income"
+                incomePence={otherIncomePence}
+                pct={totalIncome > 0 ? (otherIncomePence / totalIncome) * 100 : 0}
+                shaded={incomePerLabel.length % 2 === 1}
+              />
+            ) : null}
             <tr className="bg-yellow-50 font-bold">
               <td className="border border-slate-200 px-2 py-1.5">
                 Total income:
@@ -569,6 +872,14 @@ function PlSummaryTable({
                 shaded={i % 2 === 1}
               />
             ))}
+            {otherExpensesPence > 0 ? (
+              <SummaryRow
+                label="Other adjustments"
+                expensePence={otherExpensesPence}
+                pct={totalIncome > 0 ? (otherExpensesPence / totalIncome) * 100 : 0}
+                shaded={expensePerRow.length % 2 === 1}
+              />
+            ) : null}
             <tr className="bg-yellow-50 font-bold">
               <td className="border border-slate-200 px-2 py-1.5">Total</td>
               <td className="border border-slate-200 px-2 py-1.5 text-right">
