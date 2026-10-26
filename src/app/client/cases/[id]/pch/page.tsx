@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensurePchHeadRow } from "@/app/client/pch/actions";
+import { getDocumentSignedUrl } from "@/app/client/actions";
 import { PchClientWorkspace } from "./pch-client-workspace";
 import type { PriorYearOption } from "./prior-year-prompt";
 import {
@@ -209,6 +210,15 @@ export default async function PchClientPage({
     intakeAttachmentsByLine.set(lineId, list);
   }
 
+  // Server-action closure for signing short-lived download URLs for
+  // the four final documents. Mirrors the pattern on the accountant
+  // page.tsx; getDocumentSignedUrl runs assertCaseOwner first, so a
+  // client can only ever sign a URL for their own case.
+  const signDocUrl = async (path: string) => {
+    "use server";
+    return getDocumentSignedUrl(id, path);
+  };
+
   return (
     <>
       <PchClientWorkspace
@@ -225,6 +235,11 @@ export default async function PchClientPage({
         finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
         finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
         intakeSubmittedAt={(head.data?.intake_submitted_at as string | null) ?? null}
+        saForwardingPdfPath={(head.data?.sa_forwarding_pdf_path as string | null) ?? null}
+        pchAccountsPdfPath={(head.data?.pch_accounts_pdf_path as string | null) ?? null}
+        sa302UploadPath={(head.data?.sa302_upload_path as string | null) ?? null}
+        sa100UploadPath={(head.data?.sa100_upload_path as string | null) ?? null}
+        signDocUrl={signDocUrl}
         engineSnapshot={
           showFigures
             ? ((snapshot.data?.engine_snapshot ?? null) as TaxEngineOutput | null)

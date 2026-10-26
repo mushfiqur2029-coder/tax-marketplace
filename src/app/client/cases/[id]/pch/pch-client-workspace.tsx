@@ -1,6 +1,7 @@
 "use client";
 
 import type { TaxEngineOutput } from "@/lib/tax-engine";
+import type { ActionResult } from "@/lib/action-result";
 import { useLiveRow, useLiveList } from "@/lib/realtime-live-merge";
 import { recordClientApprovalAction } from "@/app/client/pch/actions";
 import { useState, useTransition } from "react";
@@ -89,6 +90,18 @@ export function PchClientWorkspace(props: {
   engineSnapshotAt: string | null;
   approvalAt: string | null;
   approvalName: string | null;
+  // Final document pack generated / uploaded by the accountant on
+  // final-docs-actions.ts. By the time this workspace enters an
+  // approval or filed view, sendForClientConfirmationAction has
+  // already refused to flip the status unless all four paths are
+  // set, so these are expected non-null here - the FinalDocsSection
+  // below still guards per-path, but as a safety net not an
+  // expected state.
+  saForwardingPdfPath: string | null;
+  pchAccountsPdfPath: string | null;
+  sa302UploadPath: string | null;
+  sa100UploadPath: string | null;
+  signDocUrl: (path: string) => Promise<ActionResult<string>>;
   section1Initial: Section1InitialHead;
   licenceDocs: Section1LicenceDoc[];
   pch24Extractions: Section1Pch24Extraction[];
@@ -229,6 +242,11 @@ export function PchClientWorkspace(props: {
           snapshotAt={props.engineSnapshotAt}
           approvalAt={liveHead.client_approval_at}
           approvalName={liveHead.client_approval_name}
+          saForwardingPdfPath={props.saForwardingPdfPath}
+          pchAccountsPdfPath={props.pchAccountsPdfPath}
+          sa302UploadPath={props.sa302UploadPath}
+          sa100UploadPath={props.sa100UploadPath}
+          signDocUrl={props.signDocUrl}
         />
       ) : awaitingApproval && liveHead.final_pack_sent_at ? (
         <FinalPackReview
@@ -258,6 +276,11 @@ export function PchClientWorkspace(props: {
           snapshot={props.engineSnapshot}
           approvalAt={liveHead.client_approval_at}
           approvalName={liveHead.client_approval_name}
+          saForwardingPdfPath={props.saForwardingPdfPath}
+          pchAccountsPdfPath={props.pchAccountsPdfPath}
+          sa302UploadPath={props.sa302UploadPath}
+          sa100UploadPath={props.sa100UploadPath}
+          signDocUrl={props.signDocUrl}
         />
       ) : (
         <IntakeProgressProvider initial={initialCompletionFromProps(props)}>
@@ -509,6 +532,11 @@ function ApprovalView(props: {
   snapshotAt: string | null;
   approvalAt: string | null;
   approvalName: string | null;
+  saForwardingPdfPath: string | null;
+  pchAccountsPdfPath: string | null;
+  sa302UploadPath: string | null;
+  sa100UploadPath: string | null;
+  signDocUrl: (path: string) => Promise<ActionResult<string>>;
 }) {
   return (
     <div className="space-y-6">
@@ -522,6 +550,13 @@ function ApprovalView(props: {
           if anything looks wrong.
         </p>
       </div>
+      <FinalDocsSection
+        saForwardingPdfPath={props.saForwardingPdfPath}
+        pchAccountsPdfPath={props.pchAccountsPdfPath}
+        sa302UploadPath={props.sa302UploadPath}
+        sa100UploadPath={props.sa100UploadPath}
+        signDocUrl={props.signDocUrl}
+      />
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <SnapshotTable s={props.snapshot} />
       </div>
@@ -539,6 +574,11 @@ function FiledView(props: {
   snapshot: TaxEngineOutput;
   approvalAt: string | null;
   approvalName: string | null;
+  saForwardingPdfPath: string | null;
+  pchAccountsPdfPath: string | null;
+  sa302UploadPath: string | null;
+  sa100UploadPath: string | null;
+  signDocUrl: (path: string) => Promise<ActionResult<string>>;
 }) {
   return (
     <div className="space-y-6">
@@ -550,6 +590,13 @@ function FiledView(props: {
           </p>
         ) : null}
       </div>
+      <FinalDocsSection
+        saForwardingPdfPath={props.saForwardingPdfPath}
+        pchAccountsPdfPath={props.pchAccountsPdfPath}
+        sa302UploadPath={props.sa302UploadPath}
+        sa100UploadPath={props.sa100UploadPath}
+        signDocUrl={props.signDocUrl}
+      />
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <SnapshotTable s={props.snapshot} />
       </div>
@@ -557,7 +604,108 @@ function FiledView(props: {
   );
 }
 
+// Lists the four final documents the accountant generated / uploaded
+// for this case (SA Tax Return forwarding letter, PCH Accounts, SA302,
+// SA100). Open button on each row signs a short-lived URL via the
+// shared getDocumentSignedUrl action and opens it in a new tab;
+// matches the accountant-side final-documents-panel's DocCard
+// pattern so the two sides look and behave the same way.
+//
+// sendForClientConfirmationAction already refuses to flip a case to
+// client_approval unless every path is set, so by the time this
+// section renders in ApprovalView / FiledView all four are expected
+// non-null. The per-row guard below is a defensive safety net - a
+// missing path shows "Not available" rather than a broken Open
+// button, but it isn't a user-facing state we design for.
+function FinalDocsSection(props: {
+  saForwardingPdfPath: string | null;
+  pchAccountsPdfPath: string | null;
+  sa302UploadPath: string | null;
+  sa100UploadPath: string | null;
+  signDocUrl: (path: string) => Promise<ActionResult<string>>;
+}) {
+  const docs: Array<{ title: string; path: string | null }> = [
+    { title: "SA Tax Return forwarding letter", path: props.saForwardingPdfPath },
+    { title: "PCH Accounts", path: props.pchAccountsPdfPath },
+    { title: "SA302", path: props.sa302UploadPath },
+    { title: "SA100", path: props.sa100UploadPath },
+  ];
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="text-sm font-bold text-slate-900">Your documents</h3>
+      <p className="mt-1 text-xs text-slate-600">
+        Open each one to review before approving. We'll keep them here
+        for you to come back to after filing.
+      </p>
+      <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {docs.map((d) => (
+          <FinalDocCard
+            key={d.title}
+            title={d.title}
+            path={d.path}
+            signDocUrl={props.signDocUrl}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function FinalDocCard({
+  title, path, signDocUrl,
+}: {
+  title: string;
+  path: string | null;
+  signDocUrl: (path: string) => Promise<ActionResult<string>>;
+}) {
+  const [opening, setOpening] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const open = async () => {
+    if (!path || opening) return;
+    setOpening(true);
+    setErr(null);
+    try {
+      const r = await signDocUrl(path);
+      if (!r.ok) {
+        setErr(r.error);
+        return;
+      }
+      window.open(r.data, "_blank", "noopener,noreferrer");
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  return (
+    <li className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="text-sm font-semibold text-slate-900">{title}</div>
+      {path ? (
+        <button
+          type="button"
+          onClick={open}
+          disabled={opening}
+          className="mt-2 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
+        >
+          {opening ? "Opening." : "Open"}
+        </button>
+      ) : (
+        <p className="mt-1 text-xs text-slate-500">Not available yet.</p>
+      )}
+      {err ? <p className="mt-1 text-xs text-rose-700">{err}</p> : null}
+    </li>
+  );
+}
+
 function SnapshotTable({ s }: { s: TaxEngineOutput }) {
+  // Only the P&L is surfaced to the client. The Tax & NIC breakdown
+  // (income tax, Class 4 NIC, total due, balancing payment, POA, MTD
+  // status) was removed deliberately: that is advice the client
+  // should receive from their accountant with the accompanying
+  // caveats, not something the portal should quote back at them
+  // directly. The accountant's TotalsStrip and SA302 still carry
+  // these figures; this surface shows the P&L figures the client is
+  // being asked to approve, nothing more.
   const money = (n: number) =>
     "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const row = (label: string, v: string | number) => (
@@ -569,32 +717,17 @@ function SnapshotTable({ s }: { s: TaxEngineOutput }) {
     </tr>
   );
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <div>
-        <h4 className="text-sm font-bold mb-2">Profit &amp; Loss</h4>
-        <table className="w-full text-sm">
-          <tbody>
-            {row("Turnover", s.pl.turnover)}
-            {row("Total expenses", s.pl.expensesTotal)}
-            {row("Net profit", s.pl.netProfit)}
-            {row("Capital allowances", s.pl.capitalAllowances)}
-            {row("Taxable profit", s.pl.taxableProfit)}
-          </tbody>
-        </table>
-      </div>
-      <div>
-        <h4 className="text-sm font-bold mb-2">Tax &amp; NIC</h4>
-        <table className="w-full text-sm">
-          <tbody>
-            {row("Income tax", s.tax.incomeTax)}
-            {row("Class 4 NIC", s.tax.class4)}
-            {row("Total due", s.tax.totalTaxAndNic)}
-            {row("Balancing payment (31 Jan)", s.tax.balancingPayment)}
-            {row("POA each (next year)", s.tax.poaForNextYear)}
-            {row("MTD status", s.mtd.status)}
-          </tbody>
-        </table>
-      </div>
+    <div>
+      <h4 className="text-sm font-bold mb-2">Profit &amp; Loss</h4>
+      <table className="w-full text-sm">
+        <tbody>
+          {row("Turnover", s.pl.turnover)}
+          {row("Total expenses", s.pl.expensesTotal)}
+          {row("Net profit", s.pl.netProfit)}
+          {row("Capital allowances", s.pl.capitalAllowances)}
+          {row("Taxable profit", s.pl.taxableProfit)}
+        </tbody>
+      </table>
     </div>
   );
 }
