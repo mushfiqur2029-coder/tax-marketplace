@@ -10,6 +10,7 @@ import { takeCaseAction, getDocSignedUrlForAccountant } from "@/app/accountant/a
 import { TakeCaseForm } from "../take-case-form";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { formatDateTime } from "@/lib/format";
+import type { TaxEngineOutput } from "@/lib/tax-engine";
 
 // Phase I: server page for the PCH accountant workspace. Sub-phase 1
 // of the rebuild deleted the old 33-check / override / SA302
@@ -168,10 +169,10 @@ export default async function PchAccountantPage({
     );
   }
 
-  const [head, slotMeta, caseDocs] = await Promise.all([
+  const [head, slotMeta, caseDocs, incomeLines, expenseLines] = await Promise.all([
     admin
       .from("pch_cases")
-      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at")
+      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, engine_snapshot")
       .eq("case_id", id)
       .single(),
     admin.from("pch_doc_slots").select("code, section, display_name"),
@@ -179,7 +180,30 @@ export default async function PchAccountantPage({
       .select("id, file_name, file_url, uploaded_at, requirement_key")
       .eq("case_id", id)
       .order("uploaded_at", { ascending: false }),
+    admin.from("pch_income_lines")
+      .select("id, source, gross_takings_pence, sort_order")
+      .eq("case_id", id)
+      .order("sort_order"),
+    admin.from("pch_expense_lines")
+      .select("id, label, amount_paid_pence, sort_order")
+      .eq("case_id", id)
+      .order("sort_order"),
   ]);
+
+  // Resolve the display name of the accountant who confirmed the P&L
+  // (if confirmed) so the panel can show "Confirmed by X" instead of
+  // a raw uuid. One-shot lookup; nothing else needs the users table.
+  let plConfirmedByLabel: string | null = null;
+  const plConfirmedBy = (head.data?.pl_confirmed_by as string | null) ?? null;
+  if (plConfirmedBy) {
+    const { data: u } = await admin
+      .from("users")
+      .select("full_name, email")
+      .eq("id", plConfirmedBy)
+      .maybeSingle();
+    plConfirmedByLabel =
+      (u?.full_name as string | null) ?? (u?.email as string | null) ?? null;
+  }
 
   const { data: clientRow } = await admin
     .from("users").select("email").eq("id", caseRow.client_id).maybeSingle();
@@ -236,6 +260,19 @@ export default async function PchAccountantPage({
         clientApprovedAt:
           (head.data?.client_approved_at as string | null) ?? null,
       }}
+      plIncomeLines={(incomeLines.data ?? []).map((l) => ({
+        id: l.id as string,
+        source: (l.source as string) ?? "",
+        gross_takings_pence: Number(l.gross_takings_pence ?? 0),
+      }))}
+      plExpenseLines={(expenseLines.data ?? []).map((l) => ({
+        id: l.id as string,
+        label: (l.label as string) ?? "",
+        amount_paid_pence: Number(l.amount_paid_pence ?? 0),
+      }))}
+      plSnapshot={(head.data?.engine_snapshot ?? null) as TaxEngineOutput | null}
+      plConfirmedAt={(head.data?.pl_confirmed_at as string | null) ?? null}
+      plConfirmedByLabel={plConfirmedByLabel}
       messagesPanel={
         <CaseConversationsPanel
           caseId={id}

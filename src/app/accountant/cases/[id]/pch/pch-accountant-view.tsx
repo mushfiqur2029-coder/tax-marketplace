@@ -21,12 +21,18 @@
 import { IdentityPanel, type IdentityPanelProps } from "./identity-panel";
 import { DocumentsPanel, type DocumentRow, type SlotMeta } from "./documents-panel";
 import type { ActionResult } from "@/lib/action-result";
+import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
   deriveAccountantStepCompletion,
   type AccountantProgressInputs,
 } from "./accountant-progress";
 import { AccountantProgressProvider } from "./accountant-progress-context";
 import { AccountantProgressBar } from "./accountant-progress-bar";
+import {
+  PlReviewPanel,
+  type PlExpenseLine,
+  type PlIncomeLine,
+} from "./pl-review-panel";
 
 export function PchAccountantView(props: {
   caseId: string;
@@ -36,6 +42,11 @@ export function PchAccountantView(props: {
   documentSlotMeta: SlotMeta[];
   signDocUrl: (path: string) => Promise<ActionResult<string>>;
   progress: AccountantProgressInputs;
+  plIncomeLines: PlIncomeLine[];
+  plExpenseLines: PlExpenseLine[];
+  plSnapshot: TaxEngineOutput | null;
+  plConfirmedAt: string | null;
+  plConfirmedByLabel: string | null;
   messagesPanel: React.ReactNode;
 }) {
   const initialCompletion = deriveAccountantStepCompletion(props.progress);
@@ -60,7 +71,15 @@ export function PchAccountantView(props: {
 
         <AccountantProgressBar />
 
-        <PlaceholderBand id="pch-acc-pl" title="P&L review" slice="I.3" />
+        <PlReviewPanel
+          caseId={props.caseId}
+          initialIncome={props.plIncomeLines}
+          initialExpenses={props.plExpenseLines}
+          initialSnapshot={props.plSnapshot}
+          initialPlConfirmedAt={props.plConfirmedAt}
+          initialPlConfirmedByLabel={props.plConfirmedByLabel}
+        />
+
         <PlaceholderBand id="pch-acc-docs-generate" title="Generate final documents" slice="I.4a + I.4b" />
         <PlaceholderBand id="pch-acc-docs-upload" title="Upload SA302 + SA100" slice="I.4c" />
         <PlaceholderBand id="pch-acc-send" title="Send for client confirmation" slice="I.4d" />
