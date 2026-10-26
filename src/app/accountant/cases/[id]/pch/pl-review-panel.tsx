@@ -448,32 +448,36 @@ const SUMMARY_INCOME_LABELS = [
   "Others income",
 ] as const;
 
-type SummaryExpenseRow = { display: string; sourceLabels: string[] };
-const SUMMARY_EXPENSE_ROWS: SummaryExpenseRow[] = [
-  { display: "Accountancy Fees", sourceLabels: ["Accountancy Fees"] },
-  { display: "Pension", sourceLabels: ["Pension"] },
-  { display: "Licence Fees", sourceLabels: ["Licence Fees"] },
-  { display: "Insurance", sourceLabels: ["Insurance"] },
-  { display: "Cleaning", sourceLabels: ["Cleaning"] },
-  { display: "Road Tax and MOT", sourceLabels: ["Road Tax", "MOT"] },
-  { display: "Mobile", sourceLabels: ["Mobile"] },
-  { display: "Fuel", sourceLabels: ["Fuel"] },
-  {
-    display: "Parking, Congestion, ULEZ & Gatwick Drop-off charge",
-    sourceLabels: ["Parking, Congestion & ULEZ"],
-  },
-  { display: "Repairs & Maintenance", sourceLabels: ["Repairs & Maintenance"] },
-  { display: "Cash expense", sourceLabels: ["Cash expense"] },
-  { display: "Other expense", sourceLabels: ["Other expense"] },
+// Phase M+2 reorder: row order matches section-3-expenses.tsx's
+// FIXED_SLOTS exactly, and MOT + Road Tax are two separate rows (no
+// "Road Tax and MOT" merge). Keeps the summary and the client intake
+// in step so a side-by-side comparison matches 1:1. Labels mirror
+// the client's slot labels so there's no mental translation when
+// the accountant jumps between the P&L edit grid above and the
+// summary below.
+const SUMMARY_EXPENSE_LABELS: readonly string[] = [
+  "Fuel",
+  "Insurance",
+  "Cleaning",
+  "Repairs & Maintenance",
+  "Licence Fees",
+  "Pension",
+  "MOT",
+  "Road Tax",
+  "Mobile",
+  "Accountancy Fees",
+  "Parking, Congestion & ULEZ",
+  "Cash expense",
+  "Other expense",
 ];
 
 function sumByLabel(
   rows: Array<{ label: string; pence: number }>,
-  labels: readonly string[],
+  label: string,
 ): number {
-  const wanted = new Set(labels.map((l) => l.trim().toLowerCase()));
+  const wanted = label.trim().toLowerCase();
   return rows.reduce(
-    (s, r) => (wanted.has((r.label ?? "").trim().toLowerCase()) ? s + (r.pence ?? 0) : s),
+    (s, r) => ((r.label ?? "").trim().toLowerCase() === wanted ? s + (r.pence ?? 0) : s),
     0,
   );
 }
@@ -496,13 +500,13 @@ function PlSummaryTable({
 
   const incomePerLabel = SUMMARY_INCOME_LABELS.map((label) => ({
     label,
-    pence: sumByLabel(incomeRows, [label]),
+    pence: sumByLabel(incomeRows, label),
   }));
   const totalIncome = incomePerLabel.reduce((s, r) => s + r.pence, 0);
 
-  const expensePerRow = SUMMARY_EXPENSE_ROWS.map((row) => ({
-    display: row.display,
-    pence: sumByLabel(expenseRows, row.sourceLabels),
+  const expensePerRow = SUMMARY_EXPENSE_LABELS.map((label) => ({
+    display: label,
+    pence: sumByLabel(expenseRows, label),
   }));
   const totalExpenses = expensePerRow.reduce((s, r) => s + r.pence, 0);
 

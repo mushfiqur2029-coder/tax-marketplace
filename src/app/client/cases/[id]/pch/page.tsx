@@ -12,6 +12,7 @@ import {
 } from "@/lib/tax-engine";
 import { getTier } from "@/lib/service-catalog";
 import { effectiveFeePence } from "@/lib/case/pricing";
+import { ensureAccountancyFeesRow } from "@/lib/pch/accountancy-fees";
 import { type CaseMessageView } from "@/components/case/case-messages-panel";
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
@@ -53,6 +54,14 @@ export default async function PchClientPage({
 
   // Make sure the head row exists so every subsequent save finds a row.
   await ensurePchHeadRow(id);
+
+  // Make sure the Accountancy Fees expense row is persisted. Was a
+  // display-only prefill until Phase M+2; untouched boxes meant no DB
+  // row, which meant hydrateInputsFromDb saw £0 and the tax engine
+  // overstated profit by the fee. Lazy backfill here is idempotent -
+  // if the row already exists (client typed something, or an earlier
+  // page load created it) this is a cheap no-op.
+  await ensureAccountancyFeesRow(id, admin);
 
   const [
     head,

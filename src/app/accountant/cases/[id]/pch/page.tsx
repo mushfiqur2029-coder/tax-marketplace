@@ -15,6 +15,7 @@ import { TakeCaseForm } from "../take-case-form";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { formatDateTime } from "@/lib/format";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
+import { ensureAccountancyFeesRow } from "@/lib/pch/accountancy-fees";
 
 // Phase I: server page for the PCH accountant workspace. Sub-phase 1
 // of the rebuild deleted the old 33-check / override / SA302
@@ -172,6 +173,14 @@ export default async function PchAccountantPage({
       </>
     );
   }
+
+  // Belt-and-braces: run the Accountancy Fees backfill here too so a
+  // case that was created pre-fix and never had the client visit the
+  // intake page again doesn't continue to under-count expenses in
+  // this accountant's P&L review. Idempotent; no-op if the row is
+  // already in place. Refuses to overwrite an existing row, so the
+  // accountant's own edits are never clobbered.
+  await ensureAccountancyFeesRow(id, admin);
 
   const [head, slotMeta, caseDocs, incomeLines, expenseLines, vehicleRes] = await Promise.all([
     admin
