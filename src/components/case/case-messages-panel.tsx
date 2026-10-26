@@ -78,10 +78,37 @@ export function CaseMessagesPanel({
   // server-issued id/timestamp or (for any attachments) a resolvable
   // storage path yet.
   const [localMessages, setLocalMessages] = useState<CaseMessageView[]>([]);
-  const allMessages = useMemo(
-    () => [...messages, ...localMessages],
-    [messages, localMessages],
+  // Dedupe by id across the two sources. Server-rendered `messages`
+  // wins when the same id appears in both (realtime echo of a server-
+  // rendered row, or React StrictMode's double-mount delivering the
+  // same INSERT twice) because the server copy carries the real email
+  // in authorLabel - the realtime copy only has the role fallback.
+  const allMessages = useMemo(() => {
+    const seen = new Set<string>();
+    const out: CaseMessageView[] = [];
+    for (const m of messages) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+    for (const m of localMessages) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+    return out;
+  }, [messages, localMessages]);
+
+  // Realtime handler needs to reject rows already present on the
+  // server-rendered list. Ref so the handler reads the latest set
+  // without re-establishing the Supabase channel on every messages
+  // prop change.
+  const messagesIdsRef = useRef<Set<string>>(
+    new Set(messages.map((m) => m.id)),
   );
+  useEffect(() => {
+    messagesIdsRef.current = new Set(messages.map((m) => m.id));
+  }, [messages]);
 
   // Realtime: when the other side posts a message, append it locally so
   // the thread stays live without a reload.
@@ -107,22 +134,32 @@ export function CaseMessagesPanel({
           };
           if (row.author_id && row.author_id === viewerUserId) return;
           if (!row.id || !row.author_role || !row.body || !row.created_at) return;
-          setLocalMessages((prev) => [
-            ...prev,
-            {
-              id: row.id!,
-              authorRole: row.author_role!,
-              // Realtime payloads are raw table rows: no joined email
-              // like the server-rendered list has. Mirror the same
-              // fallback the server uses (`loadCaseMessages` above) so
-              // this isn't blank; it'll show the real label next time
-              // this page is freshly loaded.
-              authorLabel: row.author_id ? row.author_id.slice(0, 8) : "",
-              body: row.body!,
-              createdAt: row.created_at!,
-              attachments: row.attachments ?? null,
-            },
-          ]);
+          const id = row.id;
+          setLocalMessages((prev) => {
+            // Dedupe: a re-delivered INSERT (StrictMode double-mount,
+            // reconnect replay) must not render as a second bubble, and
+            // the row might already be on the server-rendered list if
+            // the page was fetched after this message was committed.
+            if (messagesIdsRef.current.has(id)) return prev;
+            if (prev.some((m) => m.id === id)) return prev;
+            return [
+              ...prev,
+              {
+                id,
+                authorRole: row.author_role!,
+                // Realtime payloads are raw table rows: no joined email.
+                // Use the role name until the next full page load pulls
+                // the real author label in via loadCaseMessages. The
+                // RolePill next to the label will re-state the role
+                // visually, but that's fine - a readable word beats a
+                // meaningless UUID slice for the end user.
+                authorLabel: roleLabel(row.author_role!),
+                body: row.body!,
+                createdAt: row.created_at!,
+                attachments: row.attachments ?? null,
+              },
+            ];
+          });
         },
       )
       .subscribe();
@@ -515,6 +552,12 @@ function InertAttachmentChip({
       </span>
     </span>
   );
+}
+
+function roleLabel(role: "client" | "accountant" | "admin"): string {
+  if (role === "client") return "Client";
+  if (role === "accountant") return "Accountant";
+  return "Admin";
 }
 
 function RolePill({ role }: { role: "client" | "accountant" | "admin" }) {
