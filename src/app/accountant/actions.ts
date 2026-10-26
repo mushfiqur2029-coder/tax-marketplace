@@ -182,17 +182,16 @@ export async function updateCaseStatusAction(
       throw new Error(`Can't go from ${current} to ${next}.`);
     }
 
-    // Dual sign-off gate: PCH automated cases MUST transition through
-    // the PCH-specific requestClientFilingAction, which checks that
-    // the 33-point accountant checklist is fully resolved before the
-    // case can advance to client_approval. The generic transition
-    // below has no visibility into that checklist, so refuse the
-    // transition and point the accountant at the right action.
+    // PCH automated cases must advance through the Phase I
+    // sendForClientConfirmationAction (final-docs-actions.ts) which
+    // enforces the four-doc gate; the generic transition has no
+    // visibility into those paths. Refuse here and point at the
+    // right UI.
     const { data: tierRow } = await supabase
       .from("cases").select("tier").eq("id", caseId).maybeSingle();
     if (tierRow?.tier === "uber_phv_automated" && next === "client_approval") {
       throw new Error(
-        "PCH automated cases advance via the Review screen (33-point checklist). Use the Advance to client approval button there, not the generic status action.",
+        "PCH automated cases advance via the Final Documents panel on the Review screen, not the generic status action.",
       );
     }
 

@@ -279,25 +279,11 @@ export function canRunDraft(
   return { ok: blockers.length === 0, blockers };
 }
 
-// Can the accountant push the case to client approval? Beyond the
-// 33-check completion (enforced in requestClientFilingAction), every
-// allowable expense must have evidence recorded. Mirrors the Est_Flag
-// convention from tab 3.
-export function canRequestFiling(expenses: readonly ExpenseLineShape[]): Readiness {
-  const blockers: string[] = [];
-  const missingEvidence = expenses.filter(
-    (e) => e.amountPaid > 0 && !(e.evidence && e.evidence.trim().length > 0),
-  );
-  if (missingEvidence.length > 0) {
-    const n = missingEvidence.length;
-    blockers.push(
-      `${n} expense line${n === 1 ? "" : "s"} ` +
-      `${n === 1 ? "has" : "have"} no evidence recorded. Enter a method code ` +
-      `(receipts, bank statement, estimate E2, etc.) on each before filing.`,
-    );
-  }
-  return { ok: blockers.length === 0, blockers };
-}
+// Phase I cleanup: canRequestFiling (per-line expense-evidence gate
+// paired with the deleted 33-check pipeline) was removed. Phase I's
+// four-document send gate lives in sendForClientConfirmationAction
+// (final-docs-actions.ts) and reads pch_cases.*_pdf_path /
+// *_upload_path directly, not expense evidence.
 
 // ------------------------------------------------------------------
 // Expense category / SA103S box consistency hint (non-blocking)

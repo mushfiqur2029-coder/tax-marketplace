@@ -1,23 +1,25 @@
 "use client";
 
 // Orchestrator for the PCH accountant workspace. Phase I rebuild
-// landing in slices:
+// landed in slices:
 //
-//   I.1  demolition pass (previous commit).
-//   I.2  (this file right now) progress-bar wiring: AccountantProgress
-//        Provider + AccountantProgressBar + six placeholder section
-//        anchors (one per chip) so chip clicks already scroll to the
-//        matching band. Panels themselves still land in I.3 to I.6.
-//
-// Panels due in later slices and the chip each one belongs to:
-//
-//   PlReviewPanel                 -> "P&L confirmed"       (I.3)
-//   FinalDocumentsPanel generate  -> "Documents generated" (I.4a + I.4b)
-//                        upload   -> "SA302 + SA100 uploaded" (I.4c)
-//                        send     -> "Sent for client confirmation" (I.4d)
-//   AwaitingClientApprovalPanel   -> "Client approved"     (I.6 + I.7)
-//   ReadyToFilePanel              -> "Filed"               (I.6 + I.7)
+//   I.1  demolition pass
+//   I.2  progress-bar wiring (AccountantProgressProvider +
+//        AccountantProgressBar + anchors)
+//   I.3  PlReviewPanel + pl-actions.ts
+//   I.4a SA Forwarding Letter PDF generator
+//   I.4b PCH Accounts PDF generator
+//   I.4c SA302 / SA100 manual uploads
+//   I.4d sendForClientConfirmationAction + four-doc gate
+//   I.5  client-side PchApprovalReviewCard + approvePchFinalDocsAction
+//   I.6  AwaitingClientApprovalPanel + ReadyToFilePanel
+//   I.7  (here) live sync: useLiveRow on cases.status and the Phase I
+//        pch_cases columns, pushed into the AccountantProgress context
+//        via a bridge component so chip state + status-gated panels
+//        swap without a reload the moment the client approves.
 
+import { useEffect, useMemo } from "react";
+import { useLiveRow } from "@/lib/realtime-live-merge";
 import { IdentityPanel, type IdentityPanelProps } from "./identity-panel";
 import { DocumentsPanel, type DocumentRow, type SlotMeta } from "./documents-panel";
 import type { ActionResult } from "@/lib/action-result";
@@ -25,8 +27,12 @@ import type { TaxEngineOutput } from "@/lib/tax-engine";
 import {
   deriveAccountantStepCompletion,
   type AccountantProgressInputs,
+  type AccountantStepCompletion,
 } from "./accountant-progress";
-import { AccountantProgressProvider } from "./accountant-progress-context";
+import {
+  AccountantProgressProvider,
+  useAccountantProgress,
+} from "./accountant-progress-context";
 import { AccountantProgressBar } from "./accountant-progress-bar";
 import {
   PlReviewPanel,
@@ -38,6 +44,14 @@ import {
   AwaitingClientApprovalPanel,
   ReadyToFilePanel,
 } from "./approval-and-file-panels";
+
+// Shape of the live state the orchestrator keeps in sync with
+// pch_cases. Mirrors AccountantProgressInputs + the two signature
+// fields the ReadyToFilePanel displays.
+type LiveHead = AccountantProgressInputs & {
+  clientApprovedAt: string | null;
+  clientApprovedSignatureName: string | null;
+};
 
 export function PchAccountantView(props: {
   caseId: string;
@@ -60,14 +74,82 @@ export function PchAccountantView(props: {
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   messagesPanel: React.ReactNode;
 }) {
-  const initialCompletion = deriveAccountantStepCompletion(props.progress);
+  // Live-tracked cases.status. On a cases UPDATE for this id the status
+  // string swaps and the status-gated AwaitingClientApprovalPanel /
+  // ReadyToFilePanel re-render without a page reload. recentLocal
+  // Mutation() inside useLiveRow filters the accountant's own writes
+  // so clicking "Mark filed and complete" doesn't fight the panel's
+  // local state.
+  const liveStatus = useLiveRow<string>(props.caseStatus, {
+    table: "cases",
+    filter: `id=eq.${props.caseId}`,
+    channel: `pch-acc-status-${props.caseId}`,
+    map: (row, prev) => {
+      const s = row.status;
+      return typeof s === "string" && s.length > 0 ? s : prev;
+    },
+  });
+
+  // Live-tracked pch_cases row. We only pull the Phase I columns + the
+  // two client-approval fields; the P&L review panel owns its own
+  // engine_snapshot state via pl-actions.ts, so no need to subscribe
+  // to that here.
+  const initialHead: LiveHead = useMemo(
+    () => ({
+      ...props.progress,
+      clientApprovedAt: props.clientApprovedAt,
+      clientApprovedSignatureName: props.clientApprovedSignatureName,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const liveHead = useLiveRow<LiveHead>(initialHead, {
+    table: "pch_cases",
+    filter: `case_id=eq.${props.caseId}`,
+    channel: `pch-acc-head-${props.caseId}`,
+    map: (row, prev) => ({
+      caseStatus: liveStatus,
+      plConfirmedAt: pick(row.pl_confirmed_at, prev.plConfirmedAt),
+      saForwardingPdfPath:
+        pick(row.sa_forwarding_pdf_path, prev.saForwardingPdfPath),
+      pchAccountsPdfPath:
+        pick(row.pch_accounts_pdf_path, prev.pchAccountsPdfPath),
+      sa302UploadPath: pick(row.sa302_upload_path, prev.sa302UploadPath),
+      sa100UploadPath: pick(row.sa100_upload_path, prev.sa100UploadPath),
+      docsSentForApprovalAt:
+        pick(row.docs_sent_for_approval_at, prev.docsSentForApprovalAt),
+      clientApprovedAt: pick(row.client_approved_at, prev.clientApprovedAt),
+      clientApprovedSignatureName: pick(
+        row.client_approved_signature_name,
+        prev.clientApprovedSignatureName,
+      ),
+    }),
+  });
+
+  // Live completion derivation. useMemo so the LiveSyncBridge below
+  // only pushes a context update when a value actually changed.
+  const liveCompletion = useMemo(
+    () =>
+      deriveAccountantStepCompletion({
+        ...liveHead,
+        caseStatus: liveStatus,
+      }),
+    [liveHead, liveStatus],
+  );
+  const initialCompletion = useMemo(
+    () => deriveAccountantStepCompletion(props.progress),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   return (
     <AccountantProgressProvider initial={initialCompletion}>
+      <LiveSyncBridge completion={liveCompletion} />
       <main className="mx-auto max-w-5xl p-4 sm:p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold">Uber / private-hire drivers return</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Case {props.caseId.slice(0, 8)}. Status <strong>{props.caseStatus}</strong>.
+            Case {props.caseId.slice(0, 8)}. Status <strong>{liveStatus}</strong>.
           </p>
         </div>
 
@@ -93,27 +175,27 @@ export function PchAccountantView(props: {
 
         <FinalDocumentsPanel
           caseId={props.caseId}
-          plConfirmed={!!props.plConfirmedAt}
-          initialSaForwardingPdfPath={props.progress.saForwardingPdfPath}
-          initialPchAccountsPdfPath={props.progress.pchAccountsPdfPath}
-          initialSa302UploadPath={props.progress.sa302UploadPath}
-          initialSa100UploadPath={props.progress.sa100UploadPath}
-          initialDocsSentForApprovalAt={props.progress.docsSentForApprovalAt}
+          plConfirmed={!!liveHead.plConfirmedAt}
+          initialSaForwardingPdfPath={liveHead.saForwardingPdfPath}
+          initialPchAccountsPdfPath={liveHead.pchAccountsPdfPath}
+          initialSa302UploadPath={liveHead.sa302UploadPath}
+          initialSa100UploadPath={liveHead.sa100UploadPath}
+          initialDocsSentForApprovalAt={liveHead.docsSentForApprovalAt}
           signUrl={props.signDocUrl}
         />
 
-        {props.caseStatus === "client_approval" ? (
+        {liveStatus === "client_approval" ? (
           <AwaitingClientApprovalPanel
-            sentAt={props.progress.docsSentForApprovalAt}
+            sentAt={liveHead.docsSentForApprovalAt}
           />
         ) : null}
 
-        {props.caseStatus === "filed" || props.caseStatus === "complete" ? (
+        {liveStatus === "filed" || liveStatus === "complete" ? (
           <ReadyToFilePanel
             caseId={props.caseId}
-            caseStatus={props.caseStatus}
-            clientApprovedAt={props.clientApprovedAt}
-            clientApprovedSignatureName={props.clientApprovedSignatureName}
+            caseStatus={liveStatus === "complete" ? "complete" : "filed"}
+            clientApprovedAt={liveHead.clientApprovedAt}
+            clientApprovedSignatureName={liveHead.clientApprovedSignatureName}
             updateCaseStatus={props.updateCaseStatus}
           />
         ) : null}
@@ -122,4 +204,30 @@ export function PchAccountantView(props: {
       </main>
     </AccountantProgressProvider>
   );
+}
+
+// Lives inside AccountantProgressProvider; re-pushes the live-derived
+// completion vector into the context whenever cases.status or the
+// Phase I pch_cases columns move. Without this bridge the provider
+// would keep whatever it was seeded with on mount and the chips
+// would never flip green mid-session.
+function LiveSyncBridge({
+  completion,
+}: {
+  completion: AccountantStepCompletion;
+}) {
+  const { setCompletion } = useAccountantProgress();
+  useEffect(() => {
+    setCompletion(completion);
+  }, [completion, setCompletion]);
+  return null;
+}
+
+// Shared null-safe merge for payload fields. Mirrors section-1-
+// identity.tsx's pick helper: a server-pushed value with undefined
+// means "no update for this column"; an explicit null means "set to
+// null". Keeps the live-row map concise.
+function pick<T>(incoming: unknown, prev: T): T {
+  if (incoming === undefined) return prev;
+  return incoming as T;
 }

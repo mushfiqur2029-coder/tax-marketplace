@@ -11,7 +11,7 @@ import {
 } from "@/app/client/actions";
 import { ApproveAndFileButton } from "./approve-and-file-button";
 import { ApprovalReviewCard } from "./approval-review-card";
-import { PchApprovalReviewCard } from "./pch-approval-review-card";
+import { LivePchApprovalCard } from "./live-pch-approval-card";
 import { approvePchFinalDocsAction } from "@/app/client/pch/actions";
 import { BalancePayBanner } from "./balance-pay-banner";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -429,14 +429,15 @@ export default async function CaseDetailPage({
 
       {data.row.status === "client_approval" && data.me.status !== "suspended" ? (
         isPchCase && pchApproval ? (
-          <PchApprovalReviewCard
-            docs={{
+          <LivePchApprovalCard
+            caseId={id}
+            initialDocs={{
               saForwardingPdfPath: pchApproval.saForwardingPdfPath,
               pchAccountsPdfPath: pchApproval.pchAccountsPdfPath,
               sa302UploadPath: pchApproval.sa302UploadPath,
               sa100UploadPath: pchApproval.sa100UploadPath,
             }}
-            sentAt={pchApproval.sentAt}
+            initialSentAt={pchApproval.sentAt}
             getDocUrl={signCaseDocUrl}
             approve={approvePch}
           />

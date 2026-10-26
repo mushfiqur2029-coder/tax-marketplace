@@ -111,7 +111,8 @@ async function safeSend(label: string, run: () => Promise<void>): Promise<void> 
   try {
     await run();
   } catch (e) {
-    // eslint-disable-next-line no-console -- intentional: log and swallow
+    // Intentional: log and swallow so a failing email never bubbles
+    // into the triggering transaction.
     console.warn("[pch-status-email] " + label + " failed:", e instanceof Error ? e.message : e);
   }
 }
@@ -124,7 +125,7 @@ export async function sendPchInReviewEmail(caseId: string): Promise<void> {
       heading: "Your return is with your accountant",
       intro: `Hi ${ctx.client.name}, we've received everything we need and your return is now in review.`,
       body:
-        "<p>Your accountant will prepare your figures, run the 33-point review and let you know when they're ready for your approval. You don't need to do anything right now, we'll email you again when it's time to sign off.</p>",
+        "<p>Your accountant will prepare your figures and let you know when they're ready for your approval. You don't need to do anything right now, we'll email you again when it's time to sign off.</p>",
       cta: { label: "View your case", href: ctx.caseLink },
       firmName: ctx.firm.firmName,
       firmAddress: ctx.firm.address,

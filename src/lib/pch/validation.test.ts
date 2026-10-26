@@ -9,7 +9,6 @@ import {
   validateStartStop,
   validateMilesConsistency,
   canRunDraft,
-  canRequestFiling,
   warnBoxMismatch,
 } from "./validation";
 
@@ -114,23 +113,6 @@ describe("canRunDraft", () => {
   });
   it("does NOT block when vehicle itself is null", () => {
     const r = canRunDraft([{ grossTakings: 10000, type: "Fares" }], null);
-    expect(r.ok).toBe(true);
-  });
-});
-
-describe("canRequestFiling", () => {
-  it("blocks when any positive-amount expense lacks evidence", () => {
-    const r = canRequestFiling([
-      { amountPaid: 100, evidence: "Receipt" },
-      { amountPaid: 50, evidence: "" },
-    ]);
-    expect(r.ok).toBe(false);
-  });
-  it("ignores zero-amount lines (they're placeholder rows)", () => {
-    const r = canRequestFiling([
-      { amountPaid: 100, evidence: "Receipt" },
-      { amountPaid: 0, evidence: "" },
-    ]);
     expect(r.ok).toBe(true);
   });
 });
