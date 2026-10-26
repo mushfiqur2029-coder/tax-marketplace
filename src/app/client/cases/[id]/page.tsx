@@ -11,6 +11,8 @@ import {
 } from "@/app/client/actions";
 import { ApproveAndFileButton } from "./approve-and-file-button";
 import { ApprovalReviewCard } from "./approval-review-card";
+import { PchApprovalReviewCard } from "./pch-approval-review-card";
+import { approvePchFinalDocsAction } from "@/app/client/pch/actions";
 import { BalancePayBanner } from "./balance-pay-banner";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -222,6 +224,39 @@ export default async function CaseDetailPage({
     );
   }
 
+  // Phase I.5: PCH cases at client_approval load the 4-document pack
+  // paths off pch_cases so the PchApprovalReviewCard can render the
+  // doc blocks + signature input. Only fetched when the case is
+  // actually at approval stage AND is a PCH tier, keeping the general
+  // case-detail page's load cost unchanged for everyone else.
+  type PchApprovalPaths = {
+    saForwardingPdfPath: string | null;
+    pchAccountsPdfPath: string | null;
+    sa302UploadPath: string | null;
+    sa100UploadPath: string | null;
+    sentAt: string | null;
+  };
+  let pchApproval: PchApprovalPaths | null = null;
+  const isPchCase = data.tier.id === "uber_phv_automated";
+  if (isPchCase && data.row.status === "client_approval") {
+    const admin = createAdminClient();
+    const { data: pchHead } = await admin
+      .from("pch_cases")
+      .select("sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at")
+      .eq("case_id", id)
+      .maybeSingle();
+    pchApproval = {
+      saForwardingPdfPath:
+        (pchHead?.sa_forwarding_pdf_path as string | null) ?? null,
+      pchAccountsPdfPath:
+        (pchHead?.pch_accounts_pdf_path as string | null) ?? null,
+      sa302UploadPath: (pchHead?.sa302_upload_path as string | null) ?? null,
+      sa100UploadPath: (pchHead?.sa100_upload_path as string | null) ?? null,
+      sentAt:
+        (pchHead?.docs_sent_for_approval_at as string | null) ?? null,
+    };
+  }
+
   // Load client's chat threads: direct (client_accountant) and support (client_admin).
   let threads: ChatThread[] = [];
   if (!isDraft) {
@@ -264,6 +299,10 @@ export default async function CaseDetailPage({
   const approve = async () => {
     "use server";
     return approveAndFileAction(id);
+  };
+  const approvePch = async (signatureName: string) => {
+    "use server";
+    return approvePchFinalDocsAction(id, signatureName);
   };
   const uploadAttachment = async (caseId: string, fd: FormData) => {
     "use server";
@@ -389,8 +428,20 @@ export default async function CaseDetailPage({
       ) : null}
 
       {data.row.status === "client_approval" && data.me.status !== "suspended" ? (
-        approvalPayload &&
-        typeof approvalPayload.ct_liability_pence === "number" ? (
+        isPchCase && pchApproval ? (
+          <PchApprovalReviewCard
+            docs={{
+              saForwardingPdfPath: pchApproval.saForwardingPdfPath,
+              pchAccountsPdfPath: pchApproval.pchAccountsPdfPath,
+              sa302UploadPath: pchApproval.sa302UploadPath,
+              sa100UploadPath: pchApproval.sa100UploadPath,
+            }}
+            sentAt={pchApproval.sentAt}
+            getDocUrl={signCaseDocUrl}
+            approve={approvePch}
+          />
+        ) : approvalPayload &&
+          typeof approvalPayload.ct_liability_pence === "number" ? (
           <ApprovalReviewCard
             ctLiabilityPence={approvalPayload.ct_liability_pence}
             hmrcPaymentReference={approvalPayload.hmrc_payment_reference ?? null}

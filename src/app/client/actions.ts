@@ -20,6 +20,7 @@ import {
 import type Stripe from "stripe";
 import { stripe, siteUrl } from "@/lib/stripe";
 import { type ActionResult, fail } from "@/lib/action-result";
+import { flipClientApprovalToFiled } from "@/lib/cases/approval-flip";
 import {
   URGENT_FEE_PENCE,
   validateDeadline,
@@ -662,18 +663,10 @@ export async function approveAndFileAction(
     }
 
     // Non-bespoke flow: single-step approval. Transition straight to
-    // 'filed'. .select().single() converts a 0-row RLS-filtered
-    // result into a PGRST116 error so we can't silently succeed if
-    // the policy blocks the update.
-    const { data, error } = await supabase
-      .from("cases")
-      .update({ status: "filed" })
-      .eq("id", caseId)
-      .eq("status", "client_approval")
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
-    if (!data) throw new Error("Approval didn't take. Try again.");
+    // 'filed' via the shared flipClientApprovalToFiled helper so the
+    // PCH approval path and this one share identical write shape.
+    const flip = await flipClientApprovalToFiled(supabase, caseId);
+    if (!flip.ok) throw new Error(flip.error);
     revalidatePath(`/client/cases/${caseId}`);
     revalidatePath("/client");
     revalidatePath("/accountant");

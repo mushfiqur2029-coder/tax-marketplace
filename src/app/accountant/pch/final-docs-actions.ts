@@ -281,14 +281,16 @@ export async function sendForClientConfirmationAction(
       };
     }
 
-    if (
-      caseRow.status !== "submitted"
-      && caseRow.status !== "in_review"
-      && caseRow.status !== "prepared"
-    ) {
+    // takeCaseAction already flips a PCH case to in_review the moment
+    // an accountant claims it (same atomic update that sets
+    // accountant_id). By the time we reach send-for-confirmation the
+    // case is always past submitted, so the gate matches what the old
+    // requestClientFilingAction required and keeps the invariant
+    // explicit rather than silently permissive.
+    if (caseRow.status !== "in_review" && caseRow.status !== "prepared") {
       return {
         ok: false,
-        error: `Case status is ${caseRow.status}; must be submitted, in_review or prepared to send for confirmation.`,
+        error: `Case status is ${caseRow.status}; must be in_review or prepared to send for confirmation.`,
       };
     }
 
