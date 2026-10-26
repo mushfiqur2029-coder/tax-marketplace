@@ -157,21 +157,59 @@ function FixedIncomeRow({
   const latestRef = useRef(row);
   useEffect(() => { latestRef.current = row; }, [row]);
 
+  // Per-row creation lock. If two save paths (amount debounce vs
+  // upload handler, or two multi-file iterations) fire concurrently
+  // while id is still null, both would otherwise insert a new row for
+  // the same label. ensureLineId stores the in-flight create as a
+  // promise; concurrent callers await the same promise and share the
+  // resulting id instead of racing a second insert.
+  //
+  // latestRef.current.id is also updated synchronously inside the
+  // promise (not just via onPatch's re-render) so a save that already
+  // read latestRef.id = null doesn't start a second create after the
+  // promise resolves.
+  const creationLockRef = useRef<Promise<string> | null>(null);
+  const ensureLineId = async (
+    gross_takings_pence: number,
+  ): Promise<string> => {
+    const existing = latestRef.current.id;
+    if (existing) return existing;
+    if (creationLockRef.current) return creationLockRef.current;
+    const promise = (async () => {
+      const r = await upsertPchIncomeLineAction(caseId, null, {
+        source: row.slot.label,
+        gross_takings_pence,
+      });
+      if (!r.ok) throw new Error(r.error);
+      latestRef.current = {
+        ...latestRef.current,
+        id: r.id,
+        gross_takings_pence,
+      };
+      onPatch({ id: r.id, gross_takings_pence });
+      return r.id;
+    })();
+    creationLockRef.current = promise;
+    try {
+      return await promise;
+    } catch (e) {
+      // Clear on failure so a retry can create. On success we leave
+      // the lock set; subsequent callers see id on latestRef and
+      // return early before even touching the lock.
+      creationLockRef.current = null;
+      throw e;
+    }
+  };
+
   const amount = useDebouncedSave<string>({
     initial: penceToStr(row.gross_takings_pence),
     save: async (v) => {
       const pence = strToPence(v);
-      const id = latestRef.current.id;
-      if (!id && pence === 0) return;
-      if (!id) {
-        const r = await upsertPchIncomeLineAction(caseId, null, {
-          source: row.slot.label,
-          gross_takings_pence: pence,
-        });
-        if (!r.ok) throw new Error(r.error);
-        onPatch({ id: r.id, gross_takings_pence: pence });
-        return;
-      }
+      if (!latestRef.current.id && pence === 0) return;
+      const id = await ensureLineId(pence);
+      // Re-upsert with the current value in case ensureLineId created
+      // with a stale value (we were the awaiter, not the creator).
+      // Cheap no-op when values match.
       const r = await upsertPchIncomeLineAction(caseId, id, {
         gross_takings_pence: pence,
       });
@@ -187,15 +225,12 @@ function FixedIncomeRow({
 
   const openPicker = () => fileRef.current?.click();
   const uploadFile = async (file: File) => {
-    let id = latestRef.current.id;
-    if (!id) {
-      const created = await upsertPchIncomeLineAction(caseId, null, {
-        source: row.slot.label,
-        gross_takings_pence: latestRef.current.gross_takings_pence,
-      });
-      if (!created.ok) { setUploadErr(created.error); return; }
-      id = created.id;
-      onPatch({ id });
+    let id: string;
+    try {
+      id = await ensureLineId(latestRef.current.gross_takings_pence);
+    } catch (e) {
+      setUploadErr(e instanceof Error ? e.message : "Could not create row.");
+      return;
     }
 
     setUploading(true);
@@ -304,21 +339,45 @@ function MultiFileIncomeRow({
   // in the input live-updates pch_income_lines.gross_takings_pence,
   // and we also call onChange() programmatically from the file-upload
   // handler to top up the running total.
+  // Per-row creation lock (shared by amount save + the multi-file
+  // upload loop). See FixedIncomeRow for the full comment; same
+  // race, same fix.
+  const creationLockRef = useRef<Promise<string> | null>(null);
+  const ensureLineId = async (
+    gross_takings_pence: number,
+  ): Promise<string> => {
+    const existing = latestRef.current.id;
+    if (existing) return existing;
+    if (creationLockRef.current) return creationLockRef.current;
+    const promise = (async () => {
+      const r = await upsertPchIncomeLineAction(caseId, null, {
+        source: row.slot.label,
+        gross_takings_pence,
+      });
+      if (!r.ok) throw new Error(r.error);
+      latestRef.current = {
+        ...latestRef.current,
+        id: r.id,
+        gross_takings_pence,
+      };
+      onPatch({ id: r.id, gross_takings_pence });
+      return r.id;
+    })();
+    creationLockRef.current = promise;
+    try {
+      return await promise;
+    } catch (e) {
+      creationLockRef.current = null;
+      throw e;
+    }
+  };
+
   const amount = useDebouncedSave<string>({
     initial: penceToStr(row.gross_takings_pence),
     save: async (v) => {
       const pence = strToPence(v);
-      const id = latestRef.current.id;
-      if (!id && pence === 0) return;
-      if (!id) {
-        const r = await upsertPchIncomeLineAction(caseId, null, {
-          source: row.slot.label,
-          gross_takings_pence: pence,
-        });
-        if (!r.ok) throw new Error(r.error);
-        onPatch({ id: r.id, gross_takings_pence: pence });
-        return;
-      }
+      if (!latestRef.current.id && pence === 0) return;
+      const id = await ensureLineId(pence);
       const r = await upsertPchIncomeLineAction(caseId, id, {
         gross_takings_pence: pence,
       });
@@ -341,21 +400,6 @@ function MultiFileIncomeRow({
   const amountRef = useRef(amount.value);
   useEffect(() => { amountRef.current = amount.value; }, [amount.value]);
 
-  const ensureLineId = async (): Promise<string | null> => {
-    const current = latestRef.current.id;
-    if (current) return current;
-    const r = await upsertPchIncomeLineAction(caseId, null, {
-      source: row.slot.label,
-      gross_takings_pence: latestRef.current.gross_takings_pence,
-    });
-    if (!r.ok) {
-      setUploadErr(r.error);
-      return null;
-    }
-    onPatch({ id: r.id });
-    return r.id;
-  };
-
   const addAttachmentExtracted = (extractedPence: number) => {
     if (extractedPence <= 0) return;
     const currentPence = strToPence(amountRef.current);
@@ -370,8 +414,13 @@ function MultiFileIncomeRow({
     setUploadErr(null);
     setNotes([]);
     try {
-      const lineId = await ensureLineId();
-      if (!lineId) return;
+      let lineId: string;
+      try {
+        lineId = await ensureLineId(latestRef.current.gross_takings_pence);
+      } catch (e) {
+        setUploadErr(e instanceof Error ? e.message : "Could not create row.");
+        return;
+      }
       const nextNotes: string[] = [];
       for (const file of files) {
         const fd = new FormData();

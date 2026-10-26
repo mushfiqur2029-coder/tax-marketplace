@@ -173,7 +173,7 @@ export default async function PchAccountantPage({
     );
   }
 
-  const [head, slotMeta, caseDocs, incomeLines, expenseLines] = await Promise.all([
+  const [head, slotMeta, caseDocs, incomeLines, expenseLines, vehicleRes] = await Promise.all([
     admin
       .from("pch_cases")
       .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, client_approved_signature_name, engine_snapshot")
@@ -192,6 +192,10 @@ export default async function PchAccountantPage({
       .select("id, label, amount_paid_pence, sort_order")
       .eq("case_id", id)
       .order("sort_order"),
+    admin.from("pch_vehicle")
+      .select("private_use_amount_pence")
+      .eq("case_id", id)
+      .maybeSingle(),
   ]);
 
   // Resolve the display name of the accountant who confirmed the P&L
@@ -287,6 +291,9 @@ export default async function PchAccountantPage({
         amount_paid_pence: Number(l.amount_paid_pence ?? 0),
       }))}
       plSnapshot={(head.data?.engine_snapshot ?? null) as TaxEngineOutput | null}
+      plPrivateUsePence={
+        (vehicleRes.data?.private_use_amount_pence as number | null) ?? 0
+      }
       plConfirmedAt={(head.data?.pl_confirmed_at as string | null) ?? null}
       plConfirmedByLabel={plConfirmedByLabel}
       clientApprovedAt={(head.data?.client_approved_at as string | null) ?? null}

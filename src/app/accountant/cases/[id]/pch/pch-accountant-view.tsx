@@ -64,6 +64,7 @@ export function PchAccountantView(props: {
   plIncomeLines: PlIncomeLine[];
   plExpenseLines: PlExpenseLine[];
   plSnapshot: TaxEngineOutput | null;
+  plPrivateUsePence: number;
   plConfirmedAt: string | null;
   plConfirmedByLabel: string | null;
   clientApprovedAt: string | null;
@@ -169,6 +170,7 @@ export function PchAccountantView(props: {
           initialIncome={props.plIncomeLines}
           initialExpenses={props.plExpenseLines}
           initialSnapshot={props.plSnapshot}
+          privateUsePence={props.plPrivateUsePence}
           initialPlConfirmedAt={props.plConfirmedAt}
           initialPlConfirmedByLabel={props.plConfirmedByLabel}
         />

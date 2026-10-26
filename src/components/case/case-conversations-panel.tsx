@@ -63,7 +63,7 @@ export function CaseConversationsPanel({
       <div className="flex flex-wrap gap-2 text-sm" role="tablist" aria-label="Case conversations">
         <TabButton
           active={tab === "accountant"}
-          label="Accountant"
+          label={viewerRole === "client" ? "Accountant" : "Client"}
           onClick={() => setTab("accountant")}
           count={caseMessages.length}
         />
