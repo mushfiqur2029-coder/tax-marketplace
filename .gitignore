@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# claude-code local tooling (scheduled task locks, agent scratch, etc.)
+.claude/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
