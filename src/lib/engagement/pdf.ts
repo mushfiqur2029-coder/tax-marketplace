@@ -8,13 +8,37 @@ import chromium from "@sparticuz/chromium";
 //   • local dev: use CHROMIUM_PATH env to point at a system Chrome, or
 //     fall back to the usual Windows / macOS install paths. Local Chrome
 //     is fine, @sparticuz is Lambda-specific
+
+// Memoised serverless-chromium extraction. chromium.executablePath()
+// is a TOCTOU race on a cold container: internally it checks
+// existsSync(tmpdir + "/chromium") and, if missing, extracts the
+// brotli-packed binary to that exact path. Two concurrent callers
+// (e.g. the Promise.all in final-docs-actions.ts generating the SA
+// forwarding letter and the PCH Accounts PDF in parallel) both see
+// "not there", both start extracting to the same /tmp/chromium
+// path, and whichever finishes first gets exec'd while the other is
+// still mid-write - the kernel rejects with ETXTBSY. Memoising the
+// PROMISE (not a boolean "started" flag) means every concurrent
+// caller awaits the same single resolution; the extraction happens
+// exactly once and no subsequent launch races it on write.
+let serverlessExecutablePathPromise: Promise<string> | null = null;
+function resolveServerlessExecutablePath(): Promise<string> {
+  if (!serverlessExecutablePathPromise) {
+    serverlessExecutablePathPromise = chromium.executablePath();
+  }
+  return serverlessExecutablePathPromise;
+}
+
 async function resolveExecutablePath(): Promise<string> {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    return await chromium.executablePath();
+    return resolveServerlessExecutablePath();
   }
 
-  // Local dev fallbacks. Order: Windows → macOS → Linux.
+  // Local dev fallbacks. Order: Windows -> macOS -> Linux. No
+  // extraction happens on this branch (just existsSync against a
+  // system-installed Chrome), so there's no equivalent concurrent-
+  // write race to serialise.
   const guesses = [
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
