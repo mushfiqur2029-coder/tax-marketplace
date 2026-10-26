@@ -169,7 +169,11 @@ export default async function PchAccountantPage({
   }
 
   const [head, slotMeta, caseDocs] = await Promise.all([
-    admin.from("pch_cases").select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email").eq("case_id", id).single(),
+    admin
+      .from("pch_cases")
+      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at")
+      .eq("case_id", id)
+      .single(),
     admin.from("pch_doc_slots").select("code, section, display_name"),
     admin.from("case_documents")
       .select("id, file_name, file_url, uploaded_at, requirement_key")
@@ -218,6 +222,20 @@ export default async function PchAccountantPage({
       documents={documents}
       documentSlotMeta={documentSlotMeta}
       signDocUrl={signDocUrl}
+      progress={{
+        caseStatus: caseRow.status,
+        plConfirmedAt: (head.data?.pl_confirmed_at as string | null) ?? null,
+        saForwardingPdfPath:
+          (head.data?.sa_forwarding_pdf_path as string | null) ?? null,
+        pchAccountsPdfPath:
+          (head.data?.pch_accounts_pdf_path as string | null) ?? null,
+        sa302UploadPath: (head.data?.sa302_upload_path as string | null) ?? null,
+        sa100UploadPath: (head.data?.sa100_upload_path as string | null) ?? null,
+        docsSentForApprovalAt:
+          (head.data?.docs_sent_for_approval_at as string | null) ?? null,
+        clientApprovedAt:
+          (head.data?.client_approved_at as string | null) ?? null,
+      }}
       messagesPanel={
         <CaseConversationsPanel
           caseId={id}
