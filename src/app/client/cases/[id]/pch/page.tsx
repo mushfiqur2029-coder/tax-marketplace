@@ -81,7 +81,7 @@ export default async function PchClientPage({
       admin
         .from("pch_cases")
         .select(
-          "engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name",
+          "engine_snapshot, engine_snapshot_at, client_approval_at, client_approval_name, client_approved_at, client_approved_signature_name",
         )
         .eq("case_id", id)
         .single(),
@@ -248,6 +248,10 @@ export default async function PchClientPage({
         engineSnapshotAt={showFigures ? (snapshot.data?.engine_snapshot_at ?? null) : null}
         approvalAt={snapshot.data?.client_approval_at ?? null}
         approvalName={snapshot.data?.client_approval_name ?? null}
+        approvedAt={snapshot.data?.client_approved_at ?? null}
+        approvedSignatureName={
+          snapshot.data?.client_approved_signature_name ?? null
+        }
         section1Initial={{
           cl_name: (head.data?.cl_name as string | null) ?? null,
           cl_dob: (head.data?.cl_dob as string | null) ?? null,

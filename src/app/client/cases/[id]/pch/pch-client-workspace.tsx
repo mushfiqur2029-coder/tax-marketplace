@@ -3,7 +3,7 @@
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import type { ActionResult } from "@/lib/action-result";
 import { useLiveRow, useLiveList } from "@/lib/realtime-live-merge";
-import { recordClientApprovalAction } from "@/app/client/pch/actions";
+import { approvePchFinalDocsAction } from "@/app/client/pch/actions";
 import { useState, useTransition } from "react";
 import { startAddonCheckoutAction } from "@/app/client/actions";
 import { AddonPayBanner } from "../addon-pay-banner";
@@ -88,8 +88,17 @@ export function PchClientWorkspace(props: {
   intakeSubmittedAt: string | null;
   engineSnapshot: TaxEngineOutput | null;
   engineSnapshotAt: string | null;
+  // Figures-approval columns from the old Slice-7 flow. Still read so
+  // historical cases that passed through recordClientApprovalAction
+  // keep rendering sensibly, but new approvals go through
+  // approvePchFinalDocsAction (below) and write client_approved_at /
+  // client_approved_signature_name instead; that pair is what the
+  // accountant and admin portals also key off, so the three sides
+  // can stay in step on one live column.
   approvalAt: string | null;
   approvalName: string | null;
+  approvedAt: string | null;
+  approvedSignatureName: string | null;
   // Final document pack generated / uploaded by the accountant on
   // final-docs-actions.ts. By the time this workspace enters an
   // approval or filed view, sendForClientConfirmationAction has
@@ -143,6 +152,13 @@ export function PchClientWorkspace(props: {
     final_pack_confirmed_name: string | null;
     client_approval_at: string | null;
     client_approval_name: string | null;
+    // Phase I "real approval" columns. These are what the new
+    // approvePchFinalDocsAction writes and what flipClientApprovalToFiled
+    // then reads to move cases.status -> "filed". The accountant and
+    // admin portals subscribe to the same two columns, so adding them
+    // here is what lets all three sides agree live.
+    client_approved_at: string | null;
+    client_approved_signature_name: string | null;
     intake_submitted_at: string | null;
   };
   const initialHead: LiveHead = {
@@ -151,6 +167,8 @@ export function PchClientWorkspace(props: {
     final_pack_confirmed_name: props.finalPackConfirmedName,
     client_approval_at: props.approvalAt,
     client_approval_name: props.approvalName,
+    client_approved_at: props.approvedAt,
+    client_approved_signature_name: props.approvedSignatureName,
     intake_submitted_at: props.intakeSubmittedAt,
   };
   const liveHead = useLiveRow<LiveHead>(initialHead, {
@@ -178,6 +196,14 @@ export function PchClientWorkspace(props: {
         row.client_approval_name === undefined
           ? prev.client_approval_name
           : (row.client_approval_name as string | null),
+      client_approved_at:
+        row.client_approved_at === undefined
+          ? prev.client_approved_at
+          : (row.client_approved_at as string | null),
+      client_approved_signature_name:
+        row.client_approved_signature_name === undefined
+          ? prev.client_approved_signature_name
+          : (row.client_approved_signature_name as string | null),
       intake_submitted_at:
         row.intake_submitted_at === undefined
           ? prev.intake_submitted_at
@@ -274,8 +300,8 @@ export function PchClientWorkspace(props: {
       ) : filed && props.engineSnapshot ? (
         <FiledView
           snapshot={props.engineSnapshot}
-          approvalAt={liveHead.client_approval_at}
-          approvalName={liveHead.client_approval_name}
+          approvalAt={liveHead.client_approved_at}
+          approvalName={liveHead.client_approved_signature_name}
           saForwardingPdfPath={props.saForwardingPdfPath}
           pchAccountsPdfPath={props.pchAccountsPdfPath}
           sa302UploadPath={props.sa302UploadPath}
@@ -753,8 +779,8 @@ function ApprovalSection({
       <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4">
         <p className="text-sm">
           <strong>Figures approved</strong> by {localApproval.name} on{" "}
-          {new Date(localApproval.at).toLocaleString()}. Your accountant will prepare the
-          final accounts pack next.
+          {new Date(localApproval.at).toLocaleString()}. Your accountant
+          will file this with HMRC and confirm here once it's done.
         </p>
       </div>
     );
@@ -762,7 +788,7 @@ function ApprovalSection({
   const submit = () => start(async () => {
     markLocalMutation();
     const trimmed = name.trim();
-    const r = await recordClientApprovalAction(caseId, trimmed);
+    const r = await approvePchFinalDocsAction(caseId, trimmed);
     markLocalMutation();
     if (!r.ok) { setErr(r.error); return; }
     setErr(null);
@@ -771,11 +797,9 @@ function ApprovalSection({
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
       <p className="text-sm text-slate-700">
-        By typing your name below I approve the attached Profit and Loss
-        Account for the year ended 5 April 2026 and authorise my
-        accountant to prepare the final accounts pack for filing on this
-        basis. Your accountant will send a final pack for you to confirm
-        before anything goes to HMRC.
+        By typing your name below I approve the Profit and Loss Account
+        for the year ended 5 April 2026 and approve the four documents
+        above for filing with HMRC.
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <input

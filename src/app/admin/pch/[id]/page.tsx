@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
-import { StatusPill } from "@/components/case/status-pill";
+import { PchAdminLiveStatus } from "./pch-admin-live-status";
 import {
   PCH_OVERRIDE_FIELDS,
   currentOverrides,
@@ -126,7 +126,27 @@ export default async function AdminPchInspectPage({
       {/* Case meta */}
       <section className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetaCard label="Status">
-          <StatusPill status={caseRow.status} />
+          {/*
+            Live-synced via PchAdminLiveStatus: it owns both this
+            StatusPill and the "Client approval" Section further down,
+            so the status chip and the approval card can't disagree
+            with each other during a flip. The MetaCard chrome stays
+            exactly as it was; only the inner contents are now live.
+          */}
+          <PchAdminLiveStatus
+            caseId={caseId}
+            initialStatus={caseRow.status}
+            initialHead={{
+              client_approval_at: head?.client_approval_at ?? null,
+              client_approval_name: head?.client_approval_name ?? null,
+              client_approval_ip: head?.client_approval_ip ?? null,
+              client_approval_version:
+                head?.client_approval_version ?? null,
+              client_approved_at: head?.client_approved_at ?? null,
+              client_approved_signature_name:
+                head?.client_approved_signature_name ?? null,
+            }}
+          />
         </MetaCard>
         <MetaCard label="Client">
           <div className="text-sm font-medium text-slate-800">
@@ -152,27 +172,13 @@ export default async function AdminPchInspectPage({
         </MetaCard>
       </section>
 
-      {/* Client approval */}
-      <Section title="Client approval">
-        {head?.client_approval_at ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm">
-            <div className="font-medium text-emerald-800">
-              ✓ Approved by {head.client_approval_name}
-            </div>
-            <div className="mt-1 text-xs text-emerald-700">
-              {new Date(head.client_approval_at).toLocaleString()}
-              {head.client_approval_ip ? <> · from {head.client_approval_ip}</> : null}
-              {head.client_approval_version != null ? (
-                <> · against snapshot v{head.client_approval_version}</>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-            Not approved yet.
-          </p>
-        )}
-      </Section>
+      {/*
+        Client approval block was lifted into the Status MetaCard above
+        via PchAdminLiveStatus, which owns the live subscription for
+        both the StatusPill and the approval card so the two can't
+        disagree during a flip. The old static Section block that used
+        to live here (also non-live) is gone.
+      */}
 
       {/* Engine snapshot vs overrides */}
       <Section
