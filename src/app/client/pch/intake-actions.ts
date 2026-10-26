@@ -1028,6 +1028,7 @@ export async function deleteIntakeAttachmentAction(
     if (
       !key.startsWith("intake-income-attach-")
       && !key.startsWith("intake-expense-attach-")
+      && key !== "intake-private-use-attach"
     ) {
       return { ok: false, error: "Not a removable intake attachment." };
     }
@@ -1042,6 +1043,33 @@ export async function deleteIntakeAttachmentAction(
       .eq("id", docId)
       .eq("case_id", caseId);
     if (del.error) return { ok: false, error: del.error.message };
+
+    // If this was the representative file stamped on pch_vehicle for
+    // the private-use card, repoint it at any other surviving
+    // attachment or clear it so historical readers of that column
+    // don't dangle at a now-deleted path.
+    if (key === "intake-private-use-attach" && path) {
+      const veh = await admin
+        .from("pch_vehicle")
+        .select("private_use_evidence")
+        .eq("case_id", caseId)
+        .maybeSingle();
+      if (veh.data?.private_use_evidence === path) {
+        const next = await admin
+          .from("case_documents")
+          .select("file_url")
+          .eq("case_id", caseId)
+          .eq("requirement_key", "intake-private-use-attach")
+          .order("uploaded_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        const nextPath = (next.data?.file_url as string | null) ?? null;
+        await admin
+          .from("pch_vehicle")
+          .update({ private_use_evidence: nextPath })
+          .eq("case_id", caseId);
+      }
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Remove failed." };
@@ -1229,23 +1257,31 @@ export async function uploadPchSectionEvidenceAction(
   }
 }
 
-// Phase G: parallel of uploadPchSectionEvidenceAction for the vehicle
-// private-use evidence column (migration 0117). Separate from the
-// pch_cases evidence helper above because the storage column lives on
-// pch_vehicle, not pch_cases; also upserts the row to guard against
-// the private-use upload being the client's first touch of vehicle.
-const VEHICLE_EVIDENCE_COLUMNS = new Set(["private_use_evidence"]);
+// Case-level multi-file attachments for the "Less: Private use" box
+// in section 3 (moved out of the Vehicle section). Writes go to
+// case_documents with a single case-scoped requirement_key (no line
+// id suffix: there is no pch_expense_lines row for this, the amount
+// lives on pch_vehicle.private_use_amount_pence via savePchVehicle
+// FieldAction). OCR mirrors the expense multi-file flow: we read the
+// amount off the receipt so the running total accumulates per file.
+// pch_vehicle.private_use_evidence stays as a representative-first-
+// attachment path so historical readers that pick up that column
+// still see something sensible after the single-file flow is gone.
+const PRIVATE_USE_REQUIREMENT_KEY = "intake-private-use-attach";
 
-export async function uploadPchVehicleEvidenceAction(
+export async function uploadPrivateUseAttachmentAction(
   caseId: string,
-  column: string,
   formData: FormData,
-): Promise<IntakeActionResultWith<{ path: string }>> {
+): Promise<
+  IntakeActionResultWith<{
+    doc_id: string;
+    file_name: string;
+    extracted_pence: number | null;
+  }>
+> {
   try {
-    if (!VEHICLE_EVIDENCE_COLUMNS.has(column)) {
-      return { ok: false, error: "Not a whitelisted vehicle evidence column." };
-    }
     const { me, admin } = await requirePchIntakeEditable(caseId);
+
     const file = formData.get("file");
     if (!(file instanceof File) || file.size === 0) {
       return { ok: false, error: "Pick a file first." };
@@ -1253,33 +1289,118 @@ export async function uploadPchVehicleEvidenceAction(
     const MAX = 25 * 1024 * 1024;
     if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
 
+    const typeLower = (file.type || "").toLowerCase();
+    const nameLower = file.name.toLowerCase();
+    const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+    const isJpeg = typeLower === "image/jpeg" || /\.jpe?g$/.test(nameLower);
+    const isPng = typeLower === "image/png" || /\.png$/.test(nameLower);
+    const isWebp = typeLower === "image/webp" || /\.webp$/.test(nameLower);
+    if (!isPdf && !isJpeg && !isPng && !isWebp) {
+      return { ok: false, error: "Upload a PDF, JPG, PNG or WebP." };
+    }
+
     const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
-    const path = `${caseId}/intake/${column}-${randomUUID()}-${safe}`;
+    const path = `${caseId}/intake/${PRIVATE_USE_REQUIREMENT_KEY}-${randomUUID()}-${safe}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
     const up = await admin.storage
       .from("case-documents")
       .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
     if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
 
-    const ins = await admin
+    const docIns = await admin
       .from("case_documents")
       .insert({
         case_id: caseId,
         uploaded_by: me.id,
         file_name: file.name,
         file_url: path,
-        requirement_key: "intake-" + column,
-      });
-    if (ins.error) return { ok: false, error: ins.error.message };
+        requirement_key: PRIVATE_USE_REQUIREMENT_KEY,
+      })
+      .select("id, file_name")
+      .single();
+    if (docIns.error) return { ok: false, error: docIns.error.message };
 
-    const upsert = await admin
+    const docId = docIns.data.id as string;
+    const fileName = docIns.data.file_name as string;
+
+    // Stamp a representative evidence path on the vehicle row the
+    // first time any attachment lands, so pch_vehicle.private_use_
+    // evidence (which the accountant side historically read) still
+    // points at a real file. Later uploads leave it alone; later
+    // deletes clear it only if the removed doc was the one named.
+    const existing = await admin
       .from("pch_vehicle")
-      .upsert(
-        { case_id: caseId, [column]: path },
-        { onConflict: "case_id" },
-      );
-    if (upsert.error) return { ok: false, error: upsert.error.message };
-    return { ok: true, path };
+      .select("private_use_evidence")
+      .eq("case_id", caseId)
+      .maybeSingle();
+    if (!existing.error && !existing.data?.private_use_evidence) {
+      const upsert = await admin
+        .from("pch_vehicle")
+        .upsert(
+          { case_id: caseId, private_use_evidence: path },
+          { onConflict: "case_id" },
+        );
+      if (upsert.error) return { ok: false, error: upsert.error.message };
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+
+    const base64 = Buffer.from(bytes).toString("base64");
+    const mediaType = isPdf
+      ? "application/pdf"
+      : isPng
+        ? "image/png"
+        : isWebp
+          ? "image/webp"
+          : "image/jpeg";
+    const contentBlock: Record<string, unknown> = isPdf
+      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 128,
+        messages: [
+          {
+            role: "user",
+            content: [contentBlock, { type: "text", text: EXPENSE_ATTACH_PROMPT }],
+          },
+        ],
+      }),
+    });
+    if (!resp.ok) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
+    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
+
+    let candidate: string | null = null;
+    const asNum = Number(raw.trim());
+    if (Number.isFinite(asNum) && asNum >= 0) {
+      candidate = String(asNum);
+    } else {
+      const m = AMOUNT_REGEX.exec(raw);
+      if (m) candidate = m[1];
+    }
+    if (!candidate) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+    const pounds = Number(candidate.replace(/,/g, ""));
+    if (!Number.isFinite(pounds) || pounds < 0) {
+      return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
+    }
+    const pence = Math.round(pounds * 100);
+    return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: pence };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
   }

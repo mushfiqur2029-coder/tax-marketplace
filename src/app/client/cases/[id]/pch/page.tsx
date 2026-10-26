@@ -143,12 +143,15 @@ export default async function PchClientPage({
       // requirement_key suffixed with the line id
       // (intake-income-attach-<id>, intake-expense-attach-<id>); we
       // fetch both prefixes in one go and the client components
-      // match on their own line id.
+      // match on their own line id. Also pulls the new case-scoped
+      // "Less: Private use" attachments (intake-private-use-attach,
+      // one key for all files on the case, no line id suffix) in the
+      // same round-trip; they're split out below.
       admin
         .from("case_documents")
         .select("id, file_name, requirement_key, uploaded_at")
         .eq("case_id", id)
-        .or("requirement_key.like.intake-income-attach-%,requirement_key.like.intake-expense-attach-%")
+        .or("requirement_key.like.intake-income-attach-%,requirement_key.like.intake-expense-attach-%,requirement_key.eq.intake-private-use-attach")
         .order("uploaded_at", { ascending: true }),
     ]);
 
@@ -179,12 +182,22 @@ export default async function PchClientPage({
   const supportThread = await loadSupportThreadForCaseAndUser(id, me.id);
 
   // Phase K: group Phase-K attachments by their line id so each
-  // multi-file row only sees its own.
+  // multi-file row only sees its own. The case-scoped private-use
+  // attachments pile into a flat list rather than a per-line map
+  // because that card is a single pch_vehicle column, no line id.
   const intakeAttachmentsByLine = new Map<string, Array<{ docId: string; fileName: string }>>();
+  const privateUseAttachments: Array<{ docId: string; fileName: string }> = [];
   for (const d of intakeAttachmentsRes.data ?? []) {
     const key = (d.requirement_key as string | null) ?? "";
     const prefixIncome = "intake-income-attach-";
     const prefixExpense = "intake-expense-attach-";
+    if (key === "intake-private-use-attach") {
+      privateUseAttachments.push({
+        docId: d.id as string,
+        fileName: d.file_name as string,
+      });
+      continue;
+    }
     const lineId = key.startsWith(prefixIncome)
       ? key.slice(prefixIncome.length)
       : key.startsWith(prefixExpense)
@@ -257,6 +270,7 @@ export default async function PchClientPage({
           car_cost: (l.car_cost ?? "No") as "Yes" | "No" | "Phone",
         }))}
         intakeAttachments={Object.fromEntries(intakeAttachmentsByLine)}
+        privateUseAttachments={privateUseAttachments}
         vehicleInitial={{
           status: (vehicleRes.data?.status as string | null) ?? null,
           fuel: (vehicleRes.data?.fuel as string | null) ?? null,
@@ -278,8 +292,6 @@ export default async function PchClientPage({
             (vehicleRes.data?.wdv_brought_forward_pence as number | null) ?? null,
           private_use_amount_pence:
             (vehicleRes.data?.private_use_amount_pence as number | null) ?? null,
-          private_use_evidence:
-            (vehicleRes.data?.private_use_evidence as string | null) ?? null,
         }}
         caseFeePence={caseFeePence}
         declarationsInitial={{

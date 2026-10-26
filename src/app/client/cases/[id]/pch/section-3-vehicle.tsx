@@ -33,13 +33,9 @@
 
 import { useEffect, useState } from "react";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
-import {
-  savePchVehicleFieldAction,
-  uploadPchVehicleEvidenceAction,
-} from "@/app/client/pch/intake-actions";
+import { savePchVehicleFieldAction } from "@/app/client/pch/intake-actions";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { isVehicleComplete } from "./intake-completion";
-import { UploadControl } from "./upload-dropzone";
 
 export type VehicleInitial = {
   status: string | null;
@@ -54,12 +50,13 @@ export type VehicleInitial = {
   other_business_miles: number | null;
   previous_method: string | null;
   wdv_brought_forward_pence: number | null;
-  // Phase F -> G: private-use estimate (migration 0115) + optional
-  // supporting doc (migration 0117). The client no longer picks a
-  // Yes/No; private_use_declared is derived server-side as
-  // (amount > 0) in savePchVehicleFieldAction.
+  // Phase F -> G: private-use estimate (migration 0115). Still a
+  // pch_vehicle column, but the client-facing UI moved out of this
+  // section into the Expenses section as "Less: Private use" with a
+  // multi-file receipt flow (see MultiFilePrivateUseRow); the save
+  // path still routes through savePchVehicleFieldAction which derives
+  // private_use_declared = (amount > 0) server-side.
   private_use_amount_pence: number | null;
-  private_use_evidence: string | null;
 };
 
 // Must match pch_vehicle.status check constraint exactly (migration
@@ -328,34 +325,6 @@ export function Section4Vehicle({
           ) : null}
         </>
       ) : null}
-
-        {applicable === "applicable" ? (
-          <div className="mt-6 border-t border-slate-100 pt-5">
-            <div className="mb-1 text-sm font-bold text-ink">Private use</div>
-            <p className="mb-3 text-xs text-slate-600">
-              Rough figure for the personal-use portion of the vehicle
-              or anything else you're claiming as an expense. Leave
-              blank if everything was for work.
-            </p>
-            <MoneyField
-              caseId={caseId}
-              field="private_use_amount_pence"
-              label="Private use amount (if any)"
-              value={v.private_use_amount_pence}
-              onSaved={(val) => patch({ private_use_amount_pence: val })}
-              editable={editable}
-              helpText="Your estimate for the year. Your accountant factors it in on review."
-            />
-            <div className="mt-4">
-              <PrivateUseEvidenceUpload
-                caseId={caseId}
-                editable={editable}
-                current={v.private_use_evidence}
-                onUploaded={(path) => patch({ private_use_evidence: path })}
-              />
-            </div>
-          </div>
-        ) : null}
       </div>
     </section>
   );
@@ -684,35 +653,3 @@ function SaveStatusPill({
   return null;
 }
 
-// Phase G -> H: optional supporting-doc upload for the vehicle
-// private-use amount. Writes to pch_vehicle.private_use_evidence
-// (migration 0117) via its own server action because the column lives
-// on pch_vehicle not pch_cases; everything else is handled by the
-// shared UploadControl.
-function PrivateUseEvidenceUpload({
-  caseId, editable, current, onUploaded,
-}: {
-  caseId: string;
-  editable: boolean;
-  current: string | null;
-  onUploaded: (path: string) => void;
-}) {
-  const [err, setErr] = useState<string | null>(null);
-  const upload = async (file: File) => {
-    setErr(null);
-    const fd = new FormData();
-    fd.append("file", file);
-    const r = await uploadPchVehicleEvidenceAction(caseId, "private_use_evidence", fd);
-    if (!r.ok) setErr(r.error);
-    else onUploaded(r.path);
-  };
-  return (
-    <UploadControl
-      disabled={!editable}
-      heading="Supporting document (optional)"
-      current={!!current}
-      onFile={upload}
-      error={err}
-    />
-  );
-}

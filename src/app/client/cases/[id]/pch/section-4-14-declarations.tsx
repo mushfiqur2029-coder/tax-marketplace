@@ -177,68 +177,8 @@ export function Section4to14Declarations({
         <DeclarationCard
           caseId={caseId}
           editable={editable}
-          sectionKey="interest"
-          number={6}
-          title="Interest income"
-          subtitle="Interest from UK bank or building society accounts in the tax year. Get it off the annual certificate of interest."
-          initialStatus={initial.statuses.interest ?? null}
-          onStatusChange={(s) => noteStatus("interest", s)}
-          moneyField={{
-            field: "bank_interest_pence",
-            label: "Total interest for the year",
-            value: initial.bank_interest_pence,
-          }}
-          evidenceColumn="interest_evidence"
-          evidencePath={initial.interest_evidence}
-        />
-
-        <DeclarationCard
-          caseId={caseId}
-          editable={editable}
-          sectionKey="dividend"
-          number={7}
-          title="Dividend income"
-          subtitle="UK or overseas dividends you received. Get the figures off your dividend vouchers or portfolio year-end summary."
-          initialStatus={initial.statuses.dividend ?? null}
-          onStatusChange={(s) => noteStatus("dividend", s)}
-          moneyField={{
-            field: "dividend_income_pence",
-            label: "Total dividends for the year",
-            value: initial.dividend_income_pence,
-          }}
-          evidenceColumn="dividend_evidence"
-          evidencePath={initial.dividend_evidence}
-        />
-
-        <DeclarationCard
-          caseId={caseId}
-          editable={editable}
-          sectionKey="capital_gains"
-          number={8}
-          title="Capital gains for the year"
-          subtitle="If you sold shares, crypto, a second property or any other asset at a gain. Upload any supporting documents."
-          initialStatus={initial.statuses.capital_gains ?? null}
-          onStatusChange={(s) => noteStatus("capital_gains", s)}
-          moneyField={{
-            field: "capital_gains_pence",
-            label: "Approximate total gain",
-            value: initial.capital_gains_pence,
-          }}
-          noteField={{
-            field: "capital_gains_note",
-            label: "What was sold?",
-            value: initial.capital_gains_note,
-            placeholder: "e.g. 500 Tesla shares sold Oct 2025; crypto; buy-to-let flat",
-          }}
-          evidenceColumn="capital_gains_evidence"
-          evidencePath={initial.capital_gains_evidence}
-        />
-
-        <DeclarationCard
-          caseId={caseId}
-          editable={editable}
           sectionKey="rental"
-          number={9}
+          number={6}
           title="Rental income (UK or overseas)"
           subtitle="If you let out a property. Upload the income and expenditure summary plus any mortgage statement."
           initialStatus={initial.statuses.rental ?? null}
@@ -258,6 +198,66 @@ export function Section4to14Declarations({
           ]}
           evidenceColumn="rental_evidence"
           evidencePath={initial.rental_evidence}
+        />
+
+        <DeclarationCard
+          caseId={caseId}
+          editable={editable}
+          sectionKey="interest"
+          number={7}
+          title="Interest income"
+          subtitle="Interest from UK bank or building society accounts in the tax year. Get it off the annual certificate of interest."
+          initialStatus={initial.statuses.interest ?? null}
+          onStatusChange={(s) => noteStatus("interest", s)}
+          moneyField={{
+            field: "bank_interest_pence",
+            label: "Total interest for the year",
+            value: initial.bank_interest_pence,
+          }}
+          evidenceColumn="interest_evidence"
+          evidencePath={initial.interest_evidence}
+        />
+
+        <DeclarationCard
+          caseId={caseId}
+          editable={editable}
+          sectionKey="dividend"
+          number={8}
+          title="Dividend income"
+          subtitle="UK or overseas dividends you received. Get the figures off your dividend vouchers or portfolio year-end summary."
+          initialStatus={initial.statuses.dividend ?? null}
+          onStatusChange={(s) => noteStatus("dividend", s)}
+          moneyField={{
+            field: "dividend_income_pence",
+            label: "Total dividends for the year",
+            value: initial.dividend_income_pence,
+          }}
+          evidenceColumn="dividend_evidence"
+          evidencePath={initial.dividend_evidence}
+        />
+
+        <DeclarationCard
+          caseId={caseId}
+          editable={editable}
+          sectionKey="capital_gains"
+          number={9}
+          title="Capital gains for the year"
+          subtitle="If you sold shares, crypto, a second property or any other asset at a gain. Upload any supporting documents."
+          initialStatus={initial.statuses.capital_gains ?? null}
+          onStatusChange={(s) => noteStatus("capital_gains", s)}
+          moneyField={{
+            field: "capital_gains_pence",
+            label: "Approximate total gain",
+            value: initial.capital_gains_pence,
+          }}
+          noteField={{
+            field: "capital_gains_note",
+            label: "What was sold?",
+            value: initial.capital_gains_note,
+            placeholder: "e.g. 500 Tesla shares sold Oct 2025; crypto; buy-to-let flat",
+          }}
+          evidenceColumn="capital_gains_evidence"
+          evidencePath={initial.capital_gains_evidence}
         />
 
         <DeclarationCard

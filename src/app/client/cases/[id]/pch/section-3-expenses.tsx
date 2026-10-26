@@ -14,7 +14,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   deleteIntakeAttachmentAction,
   extractExpenseAmountFromUploadAction,
+  savePchVehicleFieldAction,
   uploadIntakeAttachmentAction,
+  uploadPrivateUseAttachmentAction,
   upsertPchExpenseLineAction,
 } from "@/app/client/pch/intake-actions";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
@@ -84,12 +86,21 @@ export function Section3Expenses({
   initial,
   caseFeePence,
   attachmentsByLineId,
+  privateUseInitialPence,
+  privateUseAttachments,
 }: {
   caseId: string;
   editable: boolean;
   initial: ExpenseLine[];
   caseFeePence: number;
   attachmentsByLineId?: Record<string, IntakeAttachment[]>;
+  // "Less: Private use" was in the Vehicle section until this change;
+  // the amount still lives on pch_vehicle.private_use_amount_pence,
+  // and the attachments go to case_documents with requirement_key
+  // intake-private-use-attach (one key for all files on this case,
+  // no per-line id). Page.tsx reads both and threads them in here.
+  privateUseInitialPence: number;
+  privateUseAttachments: IntakeAttachment[];
 }) {
   type UiFixedRow = {
     slot: ExpenseSlot;
@@ -161,6 +172,12 @@ export function Section3Expenses({
             />
           ),
         )}
+        <MultiFilePrivateUseRow
+          caseId={caseId}
+          editable={editable}
+          initialPence={privateUseInitialPence}
+          initialAttachments={privateUseAttachments}
+        />
       </div>
     </section>
   );
@@ -508,6 +525,196 @@ function MultiFileExpenseRow({
       {row.slot.helpText ? (
         <p className="mt-1 text-[11px] text-slate-500">{row.slot.helpText}</p>
       ) : null}
+      <button
+        type="button"
+        onClick={openPicker}
+        disabled={!editable || uploading}
+        className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-sky hover:text-sky disabled:opacity-50"
+      >
+        {uploading ? "Reading..." : "Upload receipts"}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
+        onChange={onFileInput}
+        className="hidden"
+      />
+      {isDragOver ? (
+        <p className="mt-1 text-[11px] font-medium text-sky-800">Drop to upload. Multiple files are fine.</p>
+      ) : null}
+      {attachments.length > 0 ? (
+        <ul className="mt-3 space-y-1">
+          {attachments.map((a) => (
+            <li
+              key={a.docId}
+              className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-700"
+            >
+              <span className="truncate" title={a.fileName}>{a.fileName}</span>
+              <button
+                type="button"
+                onClick={() => removeAttachment(a.docId)}
+                disabled={!editable}
+                aria-label={`Remove ${a.fileName}`}
+                className="shrink-0 rounded px-1 text-slate-500 hover:text-rose-700 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {notes.length > 0 ? (
+        <ul className="mt-2 space-y-0.5 text-[11px]">
+          {notes.map((n, i) => (
+            <li
+              key={i}
+              className={
+                n.startsWith("Added")
+                  ? "text-emerald-700"
+                  : "text-amber-800"
+              }
+            >
+              {n}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {uploadErr ? <p className="mt-1 text-xs text-rose-700">{uploadErr}</p> : null}
+    </div>
+  );
+}
+
+// "Less: Private use" lives next to Cash expense / Other expense but
+// behaves differently: it's not a pch_expense_lines row, the amount
+// is a single column on pch_vehicle (private_use_amount_pence) and
+// multiple receipts stack against a case-scoped requirement_key in
+// case_documents (intake-private-use-attach, no line id suffix). OCR
+// reuses the expense prompt because the semantics are identical ("find
+// the total paid"). Uploading accumulates into the amount field like
+// the other multi-file boxes do; the £ input stays fully editable.
+function MultiFilePrivateUseRow({
+  caseId, editable, initialPence, initialAttachments,
+}: {
+  caseId: string;
+  editable: boolean;
+  initialPence: number;
+  initialAttachments: IntakeAttachment[];
+}) {
+  const amount = useDebouncedSave<string>({
+    initial: penceToStr(initialPence),
+    save: async (v) => {
+      const pence = strToPence(v);
+      const r = await savePchVehicleFieldAction(
+        caseId,
+        "private_use_amount_pence",
+        pence,
+      );
+      if (!r.ok) throw new Error(r.error);
+    },
+  });
+
+  const [attachments, setAttachments] = useState<IntakeAttachment[]>(initialAttachments);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
+
+  // Same accumulate-on-upload trick MultiFileExpenseRow uses: the ref
+  // keeps the running total consistent across the awaited OCR calls
+  // so a multi-file loop sums instead of overwriting.
+  const amountRef = useRef(amount.value);
+  useEffect(() => { amountRef.current = amount.value; }, [amount.value]);
+
+  const addAttachmentExtracted = (extractedPence: number) => {
+    if (extractedPence <= 0) return;
+    const currentPence = strToPence(amountRef.current);
+    const next = currentPence + extractedPence;
+    const nextStr = penceToStr(next);
+    amountRef.current = nextStr;
+    amount.onChange(nextStr);
+  };
+
+  const uploadFiles = async (files: File[]) => {
+    setUploading(true);
+    setUploadErr(null);
+    setNotes([]);
+    try {
+      const nextNotes: string[] = [];
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await uploadPrivateUseAttachmentAction(caseId, fd);
+        if (!r.ok) {
+          setUploadErr(r.error);
+          continue;
+        }
+        setAttachments((prev) => [...prev, { docId: r.doc_id, fileName: r.file_name }]);
+        if (r.extracted_pence !== null && r.extracted_pence > 0) {
+          addAttachmentExtracted(r.extracted_pence);
+          nextNotes.push(`Added ${penceToStr(r.extracted_pence)} off ${r.file_name}.`);
+        } else {
+          nextNotes.push(`Couldn't read ${r.file_name}; check the total.`);
+        }
+      }
+      setNotes(nextNotes);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const openPicker = () => fileRef.current?.click();
+  const onFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (picked.length === 0) return;
+    await uploadFiles(picked);
+  };
+  const { dropProps, isDragOver } = useMultiFileDrop({
+    onFiles: uploadFiles,
+    accept: "application/pdf,image/jpeg,image/png,image/webp,image/heic",
+    disabled: !editable || uploading,
+  });
+
+  const removeAttachment = async (docId: string) => {
+    const previous = attachments;
+    setAttachments((prev) => prev.filter((a) => a.docId !== docId));
+    const r = await deleteIntakeAttachmentAction(caseId, docId);
+    if (!r.ok) {
+      setUploadErr(r.error);
+      setAttachments(previous);
+    }
+  };
+
+  return (
+    <div
+      {...dropProps}
+      className={
+        "rounded-xl border bg-white p-4 transition "
+        + (isDragOver ? "border-sky ring-2 ring-sky/30" : "border-slate-200")
+      }
+    >
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+        <span>Less: Private use</span>
+        <SaveStatusPill status={amount.status} error={amount.error} />
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-sm text-slate-500">£</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={amount.value}
+          onChange={(e) => amount.onChange(cleanMoneyInput(e.target.value))}
+          placeholder="0.00"
+          disabled={!editable}
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+        />
+      </div>
+      <p className="mt-1 text-[11px] text-slate-500">
+        Personal-use portion of your vehicle or any other expense you're
+        claiming. Leave at £0 if everything was for work.
+      </p>
       <button
         type="button"
         onClick={openPicker}

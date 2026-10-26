@@ -92,6 +92,7 @@ export function PchClientWorkspace(props: {
   expenseLines: ExpenseLine[];
   intakeAttachments: Record<string, Array<{ docId: string; fileName: string }>>;
   vehicleInitial: VehicleInitial;
+  privateUseAttachments: Array<{ docId: string; fileName: string }>;
   caseFeePence: number;
   declarationsInitial: DeclarationsInitial;
   giftAidEntries: GiftAidEntry[];
@@ -282,6 +283,8 @@ export function PchClientWorkspace(props: {
             initial={props.expenseLines}
             caseFeePence={props.caseFeePence}
             attachmentsByLineId={props.intakeAttachments}
+            privateUseInitialPence={props.vehicleInitial.private_use_amount_pence ?? 0}
+            privateUseAttachments={props.privateUseAttachments}
           />
 
           <Section4Vehicle
