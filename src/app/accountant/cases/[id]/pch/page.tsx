@@ -6,7 +6,11 @@ import { PchAccountantView } from "./pch-accountant-view";
 import { type CaseMessageView } from "@/components/case/case-messages-panel";
 import { CaseConversationsPanel } from "@/components/case/case-conversations-panel";
 import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
-import { takeCaseAction, getDocSignedUrlForAccountant } from "@/app/accountant/actions";
+import {
+  takeCaseAction,
+  getDocSignedUrlForAccountant,
+  updateCaseStatusAction,
+} from "@/app/accountant/actions";
 import { TakeCaseForm } from "../take-case-form";
 import { PortalPageHeader } from "@/components/portal-page-header";
 import { formatDateTime } from "@/lib/format";
@@ -172,7 +176,7 @@ export default async function PchAccountantPage({
   const [head, slotMeta, caseDocs, incomeLines, expenseLines] = await Promise.all([
     admin
       .from("pch_cases")
-      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, engine_snapshot")
+      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, client_approved_signature_name, engine_snapshot")
       .eq("case_id", id)
       .single(),
     admin.from("pch_doc_slots").select("code, section, display_name"),
@@ -211,6 +215,18 @@ export default async function PchAccountantPage({
   const signDocUrl = async (path: string) => {
     "use server";
     return getDocSignedUrlForAccountant(id, path);
+  };
+  const updateCaseStatus = async (
+    _caseId: string,
+    next: "complete",
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    "use server";
+    // Scoped to this case: ignore the caseId arg from the client, use
+    // the server-trusted id captured in this closure.
+    void _caseId;
+    const r = await updateCaseStatusAction(id, next);
+    if (r.ok) return { ok: true };
+    return { ok: false, error: r.error };
   };
 
   const documents = (caseDocs.data ?? []).map((d) => ({
@@ -273,6 +289,11 @@ export default async function PchAccountantPage({
       plSnapshot={(head.data?.engine_snapshot ?? null) as TaxEngineOutput | null}
       plConfirmedAt={(head.data?.pl_confirmed_at as string | null) ?? null}
       plConfirmedByLabel={plConfirmedByLabel}
+      clientApprovedAt={(head.data?.client_approved_at as string | null) ?? null}
+      clientApprovedSignatureName={
+        (head.data?.client_approved_signature_name as string | null) ?? null
+      }
+      updateCaseStatus={updateCaseStatus}
       messagesPanel={
         <CaseConversationsPanel
           caseId={id}

@@ -34,6 +34,10 @@ import {
   type PlIncomeLine,
 } from "./pl-review-panel";
 import { FinalDocumentsPanel } from "./final-documents-panel";
+import {
+  AwaitingClientApprovalPanel,
+  ReadyToFilePanel,
+} from "./approval-and-file-panels";
 
 export function PchAccountantView(props: {
   caseId: string;
@@ -48,6 +52,12 @@ export function PchAccountantView(props: {
   plSnapshot: TaxEngineOutput | null;
   plConfirmedAt: string | null;
   plConfirmedByLabel: string | null;
+  clientApprovedAt: string | null;
+  clientApprovedSignatureName: string | null;
+  updateCaseStatus: (
+    caseId: string,
+    next: "complete",
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   messagesPanel: React.ReactNode;
 }) {
   const initialCompletion = deriveAccountantStepCompletion(props.progress);
@@ -92,33 +102,24 @@ export function PchAccountantView(props: {
           signUrl={props.signDocUrl}
         />
 
-        <PlaceholderBand id="pch-acc-approval" title="Awaiting client approval" slice="I.6" />
-        <PlaceholderBand id="pch-acc-file" title="Ready to file" slice="I.6" />
+        {props.caseStatus === "client_approval" ? (
+          <AwaitingClientApprovalPanel
+            sentAt={props.progress.docsSentForApprovalAt}
+          />
+        ) : null}
+
+        {props.caseStatus === "filed" || props.caseStatus === "complete" ? (
+          <ReadyToFilePanel
+            caseId={props.caseId}
+            caseStatus={props.caseStatus}
+            clientApprovedAt={props.clientApprovedAt}
+            clientApprovedSignatureName={props.clientApprovedSignatureName}
+            updateCaseStatus={props.updateCaseStatus}
+          />
+        ) : null}
 
         <div className="mt-10">{props.messagesPanel}</div>
       </main>
     </AccountantProgressProvider>
-  );
-}
-
-function PlaceholderBand({
-  id, title, slice,
-}: {
-  id: string;
-  title: string;
-  slice: string;
-}) {
-  return (
-    <section
-      id={id}
-      className="mb-4 scroll-mt-24 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4"
-    >
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-        <span className="text-[11px] uppercase tracking-wide text-slate-500">
-          Lands in Phase {slice}
-        </span>
-      </div>
-    </section>
   );
 }
