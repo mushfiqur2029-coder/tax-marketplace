@@ -342,6 +342,7 @@ export function PlReviewPanel({
         income={income}
         expenses={expenses}
         privateUsePence={privateUsePence}
+        snapshot={snapshot}
       />
 
       <TotalsStrip snapshot={snapshot} />
@@ -917,11 +918,22 @@ function sumByLabel(
 }
 
 function PlSummaryTable({
-  income, expenses, privateUsePence,
+  income, expenses, privateUsePence, snapshot,
 }: {
   income: PlIncomeLine[];
   expenses: PlExpenseLine[];
   privateUsePence: number;
+  // Phase M+5: the bottom-line Total / Net Profit / Taxable profit
+  // figures read straight off the engine snapshot now, so the Summary
+  // can't disagree with the TotalsStrip or the final PDF. Per-label
+  // rows (Fuel, Insurance, etc.) still show the raw entered amount
+  // for parity with the editable grid above; the engine does not
+  // produce a per-label breakdown that would let us swap those out
+  // without duplicating allowablePerLine()'s business-use math on
+  // the client, which is the exact drift risk this fix exists to
+  // kill. If snapshot is null we deliberately show "-" rather than
+  // falling back to a raw-sum total that would reintroduce the bug.
+  snapshot: TaxEngineOutput | null;
 }) {
   const incomeRows = income.map((l) => ({
     label: l.source,
@@ -968,11 +980,18 @@ function PlSummaryTable({
         : s + (r.pence ?? 0),
     0,
   );
-  const totalExpenses =
-    expensePerRow.reduce((s, r) => s + r.pence, 0) + otherExpensesPence;
 
-  const netProfit = totalIncome - totalExpenses - privateUsePence;
-  const expensesPctOfIncome = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0;
+  // Snapshot carries pounds, every other figure in this file is in
+  // pence. Convert once at the boundary with Math.round so a pound
+  // value like 8787.6 doesn't become 878759.9999... after floating-
+  // point multiply. formatMoney2dp expects pence.
+  const toPence = (pounds: number) => Math.round(pounds * 100);
+  const pl = snapshot?.pl ?? null;
+  const expensesTotalPence = pl ? toPence(pl.expensesTotal) : null;
+  const netProfitPence = pl ? toPence(pl.netProfit) : null;
+  const taxableProfitPence = pl ? toPence(pl.taxableProfit) : null;
+  const expensesPctOfIncome =
+    pl && pl.turnover > 0 ? (pl.expensesTotal / pl.turnover) * 100 : null;
 
   return (
     <section className="mt-6">
@@ -1049,11 +1068,15 @@ function PlSummaryTable({
             <tr className="bg-yellow-50 font-bold">
               <td className="border border-slate-200 px-2 py-1.5">Total</td>
               <td className="border border-slate-200 px-2 py-1.5 text-right">
-                {formatMoney2dp(totalExpenses)}
+                {expensesTotalPence !== null
+                  ? formatMoney2dp(expensesTotalPence)
+                  : "-"}
               </td>
               <td className="border border-slate-200 px-2 py-1.5"></td>
               <td className="border border-slate-200 px-2 py-1.5 text-right">
-                {formatPct(expensesPctOfIncome)}
+                {expensesPctOfIncome !== null
+                  ? formatPct(expensesPctOfIncome)
+                  : "-"}
               </td>
             </tr>
             <tr className="bg-yellow-50/60">
@@ -1070,11 +1093,25 @@ function PlSummaryTable({
             </tr>
             <tr className="bg-yellow-100 font-bold">
               <td className="border border-slate-200 px-2 py-1.5">
+                Taxable profit
+              </td>
+              <td className="border border-slate-200 px-2 py-1.5"></td>
+              <td className="border border-slate-200 px-2 py-1.5 text-right underline underline-offset-4">
+                {taxableProfitPence !== null
+                  ? formatMoney2dp(taxableProfitPence)
+                  : "-"}
+              </td>
+              <td className="border border-slate-200 px-2 py-1.5"></td>
+            </tr>
+            <tr className="bg-yellow-100 font-bold">
+              <td className="border border-slate-200 px-2 py-1.5">
                 Net Profit
               </td>
               <td className="border border-slate-200 px-2 py-1.5"></td>
               <td className="border border-slate-200 px-2 py-1.5 text-right underline underline-offset-4">
-                {formatMoney2dp(netProfit)}
+                {netProfitPence !== null
+                  ? formatMoney2dp(netProfitPence)
+                  : "-"}
               </td>
               <td className="border border-slate-200 px-2 py-1.5"></td>
             </tr>
