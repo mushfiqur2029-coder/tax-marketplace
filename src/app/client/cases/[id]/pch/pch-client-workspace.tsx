@@ -358,13 +358,15 @@ const PCH_MESSAGES_ANCHOR_ID = "pch-messages";
 // Submit for review: runs the engine server-side and parks the case
 // in the shared accountant queue. Flips pch_cases.intake_submitted_at
 // (migration 0119), which is what gates every intake-mutating action
-// after this. cases.status stays at 'submitted' and only moves when
-// the accountant claims the case, so it is NOT the lock signal here.
+// after this. cases.status stays at 'submitted' until an accountant
+// claims the case, so it is NOT the lock signal here.
 //
-// Renders a "submitted" confirmation whenever intake_submitted_at is
-// set OR the status has already moved past submitted (an accountant
-// has claimed the case). Hides itself before that so the button only
-// appears while the client can still submit.
+// Renders throughout the intake window (status in submitted /
+// in_review / prepared, matching the parent's inIntakeStatus set):
+// shows the button while intake_submitted_at is null, flips to the
+// "Submitted" confirmation once the DB flag is set. The in_review /
+// prepared branches matter after an accountant Re-open (M+4) - the
+// client needs the Submit button back to re-lock after a correction.
 //
 // Phase G: the button is disabled while any section is still amber
 // in the progress bar. If a server-side rejection ever beats the
@@ -387,7 +389,14 @@ function SubmitForReviewSection({
   // responds instantly even before the realtime echo lands).
   const submitted = !!intakeSubmittedAt || submittedLocal;
 
-  if (status !== "submitted" && !submitted) return null;
+  // Mirror the parent's inIntakeStatus set so the Submit button shows
+  // throughout the editable window. Without the in_review / prepared
+  // branches here, an accountant Re-open at status=in_review would
+  // leave the client with an editable form but no visible button to
+  // re-submit and re-lock.
+  const inIntakeStatus =
+    status === "submitted" || status === "in_review" || status === "prepared";
+  if (!inIntakeStatus && !submitted) return null;
 
   const scrollToProgress = () => {
     if (typeof window === "undefined") return;
