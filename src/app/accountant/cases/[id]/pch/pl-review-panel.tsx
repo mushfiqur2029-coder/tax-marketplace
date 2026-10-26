@@ -18,23 +18,31 @@ import {
   addAccountantExpenseLineAction,
   addAccountantIncomeLineAction,
   confirmPlAction,
+  createAccountantFixedExpenseLineAction,
+  createAccountantFixedIncomeLineAction,
   deleteAccountantLineAction,
   editAccountantExpenseLineAction,
   editAccountantIncomeLineAction,
+  editAccountantPrivateUseAction,
   reopenPlAction,
   uploadAccountantLineEvidenceAction,
 } from "@/app/accountant/pch/pl-actions";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { useAccountantProgress } from "./accountant-progress-context";
 
+// Nullable id: a placeholder for a FIXED_SLOTS label the client never
+// filled in. page.tsx synthesises these alongside the real DB rows so
+// every fixed slot always shows in the grid, even at £0. The handlers
+// below route a null-id save to the create-fixed-slot server actions;
+// a real-id save takes the normal edit path.
 export type PlIncomeLine = {
-  id: string;
+  id: string | null;
   source: string;
   gross_takings_pence: number;
 };
 
 export type PlExpenseLine = {
-  id: string;
+  id: string | null;
   label: string;
   amount_paid_pence: number;
 };
@@ -44,7 +52,7 @@ export function PlReviewPanel({
   initialIncome,
   initialExpenses,
   initialSnapshot,
-  privateUsePence,
+  initialPrivateUsePence,
   initialPlConfirmedAt,
   initialPlConfirmedByLabel,
 }: {
@@ -52,13 +60,19 @@ export function PlReviewPanel({
   initialIncome: PlIncomeLine[];
   initialExpenses: PlExpenseLine[];
   initialSnapshot: TaxEngineOutput | null;
-  privateUsePence: number;
+  initialPrivateUsePence: number;
   initialPlConfirmedAt: string | null;
   initialPlConfirmedByLabel: string | null;
 }) {
   const [income, setIncome] = useState<PlIncomeLine[]>(initialIncome);
   const [expenses, setExpenses] = useState<PlExpenseLine[]>(initialExpenses);
   const [snapshot, setSnapshot] = useState<TaxEngineOutput | null>(initialSnapshot);
+  // Private use lives on pch_vehicle.private_use_amount_pence, not on
+  // engine_snapshot, so we track it independently and refresh the
+  // Summary table off this local state when the accountant edits it.
+  // Advisory field; editAccountantPrivateUseAction does NOT re-run
+  // the engine.
+  const [privateUsePence, setPrivateUsePence] = useState<number>(initialPrivateUsePence);
   const [confirmedAt, setConfirmedAt] = useState<string | null>(initialPlConfirmedAt);
   const [confirmedByLabel, setConfirmedByLabel] = useState<string | null>(
     initialPlConfirmedByLabel,
@@ -70,8 +84,29 @@ export function PlReviewPanel({
   const confirmed = !!confirmedAt;
   const editable = !confirmed;
 
-  const saveIncome = async (lineId: string, nextPence: number) => {
+  const saveIncome = async (row: DedupedRow, nextPence: number) => {
+    // Placeholder path: a fixed-slot row the client never saved. If
+    // the accountant leaves it at £0 there's nothing to persist;
+    // otherwise call the slot-aware create action so the row is
+    // classified as "Fares" (same as the client's own writes) and
+    // not as a freeform "Other" line.
+    if (row.id === null) {
+      if (nextPence === 0) return;
+      const r = await createAccountantFixedIncomeLineAction(caseId, row.label, nextPence);
+      if (!r.ok) { setErr(r.error); return; }
+      setIncome((xs) =>
+        xs.map((l) =>
+          l.source === row.label
+            ? { ...l, id: r.line.id, gross_takings_pence: nextPence }
+            : l,
+        ),
+      );
+      setSnapshot(r.snapshot);
+      setErr(null);
+      return;
+    }
     const prev = income;
+    const lineId = row.id;
     setIncome((xs) =>
       xs.map((l) => (l.id === lineId ? { ...l, gross_takings_pence: nextPence } : l)),
     );
@@ -85,8 +120,28 @@ export function PlReviewPanel({
     setErr(null);
   };
 
-  const saveExpense = async (lineId: string, nextPence: number) => {
+  const saveExpense = async (row: DedupedRow, nextPence: number) => {
+    // Same placeholder shape as saveIncome above but routes to the
+    // expense slot action, which carries the per-slot category /
+    // sa103s_box / car_cost classification so the row isn't dumped
+    // into the generic "Other expenses" bucket.
+    if (row.id === null) {
+      if (nextPence === 0) return;
+      const r = await createAccountantFixedExpenseLineAction(caseId, row.label, nextPence);
+      if (!r.ok) { setErr(r.error); return; }
+      setExpenses((xs) =>
+        xs.map((l) =>
+          l.label === row.label
+            ? { ...l, id: r.line.id, amount_paid_pence: nextPence }
+            : l,
+        ),
+      );
+      setSnapshot(r.snapshot);
+      setErr(null);
+      return;
+    }
     const prev = expenses;
+    const lineId = row.id;
     setExpenses((xs) =>
       xs.map((l) => (l.id === lineId ? { ...l, amount_paid_pence: nextPence } : l)),
     );
@@ -97,6 +152,19 @@ export function PlReviewPanel({
       return;
     }
     setSnapshot(r.snapshot);
+    setErr(null);
+  };
+
+  const savePrivateUse = async (nextPence: number) => {
+    if (nextPence === privateUsePence) return;
+    const prev = privateUsePence;
+    setPrivateUsePence(nextPence);
+    const r = await editAccountantPrivateUseAction(caseId, nextPence);
+    if (!r.ok) {
+      setPrivateUsePence(prev);
+      setErr(r.error);
+      return;
+    }
     setErr(null);
   };
 
@@ -257,6 +325,12 @@ export function PlReviewPanel({
         />
       </div>
 
+      <PrivateUseRow
+        editable={editable}
+        pence={privateUsePence}
+        onSave={savePrivateUse}
+      />
+
       <PlSummaryTable
         income={income}
         expenses={expenses}
@@ -304,7 +378,11 @@ export function PlReviewPanel({
 }
 
 type DedupedRow = {
-  id: string;
+  // Nullable: a FIXED_SLOTS placeholder for a slot the client never
+  // created a DB row for. The P&L edit grid still renders it so the
+  // accountant can fill it in; on first non-zero save the row is
+  // created via createAccountantFixedIncome/ExpenseLineAction.
+  id: string | null;
   label: string;
   pence: number;
   isDupe: boolean;
@@ -318,9 +396,9 @@ type DedupedRow = {
 // Edits write to the first row's id; the orphan rows get cleaned up
 // by scripts/pch-duplicate-rows-sweep.mjs.
 function dedupeByLabel(
-  rows: Array<{ id: string; label: string; pence: number }>,
+  rows: Array<{ id: string | null; label: string; pence: number }>,
 ): DedupedRow[] {
-  const groups = new Map<string, Array<{ id: string; pence: number }>>();
+  const groups = new Map<string, Array<{ id: string | null; pence: number }>>();
   const order: string[] = [];
   for (const r of rows) {
     const key = (r.label ?? "").trim();
@@ -334,12 +412,17 @@ function dedupeByLabel(
   return order.map((label) => {
     const list = groups.get(label)!;
     const pence = list.reduce((s, r) => s + (r.pence ?? 0), 0);
+    // Prefer a real id over a placeholder null when both appear for
+    // the same label (shouldn't happen with the page.tsx merge, but
+    // belt-and-braces).
+    const primary = list.find((r) => r.id !== null) ?? list[0];
+    const orphans = list.filter((r) => r !== primary && r.id !== null);
     return {
-      id: list[0].id,
+      id: primary.id,
       label,
       pence,
-      isDupe: list.length > 1,
-      orphanIds: list.slice(1).map((r) => r.id),
+      isDupe: list.filter((r) => r.id !== null).length > 1,
+      orphanIds: orphans.map((r) => r.id!),
     };
   });
 }
@@ -351,7 +434,7 @@ function LineTable({
   emptyText: string;
   rows: DedupedRow[];
   editable: boolean;
-  onSave: (lineId: string, nextPence: number) => Promise<void>;
+  onSave: (row: DedupedRow, nextPence: number) => Promise<void>;
   tableKind: "income" | "expense";
   onAdd: (
     label: string,
@@ -378,7 +461,7 @@ function LineTable({
         <ul className="space-y-1">
           {rows.map((r) => (
             <LineRow
-              key={r.id}
+              key={r.id ?? r.label}
               row={r}
               editable={editable}
               onSave={onSave}
@@ -417,7 +500,7 @@ function LineRow({
 }: {
   row: DedupedRow;
   editable: boolean;
-  onSave: (lineId: string, nextPence: number) => Promise<void>;
+  onSave: (row: DedupedRow, nextPence: number) => Promise<void>;
   tableKind: "income" | "expense";
   onDelete: (table: "income" | "expense", lineId: string) => Promise<void>;
 }) {
@@ -433,7 +516,7 @@ function LineRow({
     setSaving(true);
     setSavedTick(false);
     try {
-      await onSave(row.id, next);
+      await onSave(row, next);
       setSavedTick(true);
       setTimeout(() => setSavedTick(false), 1500);
     } finally {
@@ -443,6 +526,9 @@ function LineRow({
 
   const remove = async () => {
     if (!editable || deleting) return;
+    // Placeholder rows have no DB id to delete; the button is hidden
+    // for them below, so this is belt-and-braces.
+    if (!row.id) return;
     setDeleting(true);
     try {
       await onDelete(tableKind, row.id);
@@ -483,7 +569,7 @@ function LineRow({
           <span className="font-medium text-emerald-700">Saved</span>
         ) : null}
       </span>
-      {editable && !row.isDupe ? (
+      {editable && !row.isDupe && row.id ? (
         <button
           type="button"
           onClick={remove}
@@ -496,6 +582,77 @@ function LineRow({
         </button>
       ) : null}
     </li>
+  );
+}
+
+// "Less: Private use" lives outside the Income / Expenses grid because
+// its value is a single pch_vehicle column, not a pch_expense_lines
+// row. Written via editAccountantPrivateUseAction which skips the
+// engine re-run (private use is advisory and never feeds computeAll);
+// the panel's local state refreshes the P&L Summary row below.
+function PrivateUseRow({
+  editable, pence, onSave,
+}: {
+  editable: boolean;
+  pence: number;
+  onSave: (nextPence: number) => Promise<void>;
+}) {
+  const [value, setValue] = useState<string>(penceToStr(pence));
+  const [saving, setSaving] = useState(false);
+  const [savedTick, setSavedTick] = useState(false);
+
+  // Not re-syncing `value` from `pence` after mount, same as LineRow
+  // in this file - a parent-driven rollback (optimistic save that
+  // failed) would leave the input showing the typed value until the
+  // next focus/blur cycle. Acceptable: rollbacks here are rare and
+  // the saved tick / error message surface the fact clearly.
+
+  const commit = async () => {
+    if (!editable) return;
+    const next = strToPence(value);
+    if (next === pence) return;
+    setSaving(true);
+    setSavedTick(false);
+    try {
+      await onSave(next);
+      setSavedTick(true);
+      setTimeout(() => setSavedTick(false), 1500);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <span className="flex-1 truncate text-sm font-medium text-slate-800">
+        Less: Private use
+      </span>
+      <span
+        className="text-[11px] text-slate-500"
+        title="Personal-use portion of the vehicle or any other claimed expense. Advisory: the tax engine already applies its own business-use percentage separately."
+      >
+        advisory
+      </span>
+      <span className="text-sm text-slate-500">£</span>
+      <input
+        type="number"
+        inputMode="decimal"
+        step="0.01"
+        min="0"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        disabled={!editable || saving}
+        className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+      />
+      <span className="w-12 shrink-0 text-right text-[11px]">
+        {saving ? (
+          <span className="text-slate-500">Saving.</span>
+        ) : savedTick ? (
+          <span className="font-medium text-emerald-700">Saved</span>
+        ) : null}
+      </span>
+    </div>
   );
 }
 

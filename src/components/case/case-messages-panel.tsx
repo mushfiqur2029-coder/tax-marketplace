@@ -78,6 +78,49 @@ export function CaseMessagesPanel({
   // server-issued id/timestamp or (for any attachments) a resolvable
   // storage path yet.
   const [localMessages, setLocalMessages] = useState<CaseMessageView[]>([]);
+
+  // Reconcile the sender's own optimistic bubble with the real,
+  // server-rendered message that replaces it after revalidatePath
+  // fetches the fresh thread. The optimistic entry carries a fake
+  // "local-..." id so the id-based dedupe below can't catch it;
+  // match instead on authorRole + body + a +/-60s time tolerance.
+  // A server message is consumed by at most one optimistic entry,
+  // so two separate real sends with identical bodies ("ok" twice)
+  // both still render once their respective server echoes land.
+  //
+  // Done as a render-time useMemo rather than a useEffect+setState:
+  // the optimistic entries don't actually need to be removed from
+  // local state (they're inert zombies), they just need to not
+  // render; and the lint rule against setState-in-effect is right
+  // that this is derived state, not a side-effect.
+  const reconciledLocal = useMemo(() => {
+    if (localMessages.length === 0) return localMessages;
+    const RECONCILE_WINDOW_MS = 60_000;
+    const consumedServerIds = new Set<string>();
+    const out: CaseMessageView[] = [];
+    for (const local of localMessages) {
+      if (!local.optimistic) {
+        out.push(local);
+        continue;
+      }
+      const localTs = new Date(local.createdAt).getTime();
+      const match = messages.find((m) => {
+        if (consumedServerIds.has(m.id)) return false;
+        if (m.authorRole !== local.authorRole) return false;
+        if (m.body !== local.body) return false;
+        const serverTs = new Date(m.createdAt).getTime();
+        return Math.abs(serverTs - localTs) <= RECONCILE_WINDOW_MS;
+      });
+      if (match) {
+        consumedServerIds.add(match.id);
+        // Drop: a server-rendered counterpart now exists.
+      } else {
+        out.push(local);
+      }
+    }
+    return out;
+  }, [messages, localMessages]);
+
   // Dedupe by id across the two sources. Server-rendered `messages`
   // wins when the same id appears in both (realtime echo of a server-
   // rendered row, or React StrictMode's double-mount delivering the
@@ -91,13 +134,13 @@ export function CaseMessagesPanel({
       seen.add(m.id);
       out.push(m);
     }
-    for (const m of localMessages) {
+    for (const m of reconciledLocal) {
       if (seen.has(m.id)) continue;
       seen.add(m.id);
       out.push(m);
     }
     return out;
-  }, [messages, localMessages]);
+  }, [messages, reconciledLocal]);
 
   // Realtime handler needs to reject rows already present on the
   // server-rendered list. Ref so the handler reads the latest set

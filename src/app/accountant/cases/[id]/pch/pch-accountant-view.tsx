@@ -186,7 +186,7 @@ export function PchAccountantView(props: {
           initialIncome={props.plIncomeLines}
           initialExpenses={props.plExpenseLines}
           initialSnapshot={props.plSnapshot}
-          privateUsePence={props.plPrivateUsePence}
+          initialPrivateUsePence={props.plPrivateUsePence}
           initialPlConfirmedAt={props.plConfirmedAt}
           initialPlConfirmedByLabel={props.plConfirmedByLabel}
         />

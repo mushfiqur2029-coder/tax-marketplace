@@ -34,51 +34,14 @@ export type ExpenseLine = {
   car_cost: "Yes" | "No" | "Phone";
 };
 
-type ExpenseSlot = {
-  label: string;
-  category: string;
-  sa103s_box: 12 | 14 | 16 | 17 | 18 | 19;
-  car_cost: "Yes" | "No" | "Phone";
-  helpText?: string;
-  // Phase K/L: Cash expense and Other expense are multi-file rows
-  // like Cash receipt / Others income on the income side. The other
-  // eleven cards stay single-file.
-  multiFile?: boolean;
-};
+import { EXPENSE_FIXED_SLOTS, type ExpenseSlot } from "@/lib/pch/intake-slots";
 
 // Phase J: 13 fixed cards in exact spec order. MOT and Road Tax are
-// now separate rows (reversing Phase F's merge). "Parking, Congestion
-// & ULEZ" replaces the old Parking slot + airport multi-select with
-// one card using the same category/box mapping as before.
-const FIXED_SLOTS: ExpenseSlot[] = [
-  { label: "Fuel", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
-  { label: "Insurance", category: "Accountancy & insurance", sa103s_box: 14, car_cost: "Yes" },
-  { label: "Cleaning", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
-  { label: "Repairs & Maintenance", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
-  { label: "Licence Fees", category: "Licences & compliance", sa103s_box: 19, car_cost: "No" },
-  { label: "Pension", category: "Other expenses", sa103s_box: 19, car_cost: "No" },
-  { label: "MOT", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
-  { label: "Road Tax", category: "Vehicle running costs", sa103s_box: 12, car_cost: "Yes" },
-  { label: "Mobile", category: "Phone & technology", sa103s_box: 18, car_cost: "Phone", helpText: "Phone bills for the year." },
-  { label: "Accountancy Fees", category: "Accountancy & insurance", sa103s_box: 14, car_cost: "No", helpText: "Prefilled with what you're paying us for this return. Edit if you paid other fees too." },
-  { label: "Parking, Congestion & ULEZ", category: "Congestion, ULEZ, tolls & parking", sa103s_box: 12, car_cost: "Yes", helpText: "Parking, congestion charge, ULEZ, and airport drop-off fees. Not fines." },
-  {
-    label: "Cash expense",
-    category: "Other expenses",
-    sa103s_box: 19,
-    car_cost: "No",
-    helpText: "Cash receipts you kept across the year. Drop multiple files; we read each one and add it to the total.",
-    multiFile: true,
-  },
-  {
-    label: "Other expense",
-    category: "Other expenses",
-    sa103s_box: 19,
-    car_cost: "No",
-    helpText: "Anything that doesn't fit the categories above. Drop multiple receipts; we read each one and add it to the total.",
-    multiFile: true,
-  },
-];
+// separate rows; "Parking, Congestion & ULEZ" uses the old Parking
+// slot's category/box mapping. Lives in src/lib/pch/intake-slots.ts
+// so the accountant P&L review surface can agree on the same labels
+// and classifications.
+const FIXED_SLOTS = EXPENSE_FIXED_SLOTS;
 
 export function Section3Expenses({
   caseId,

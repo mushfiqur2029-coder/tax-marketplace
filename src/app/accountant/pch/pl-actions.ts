@@ -30,6 +30,10 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeAll, type TaxEngineOutput } from "@/lib/tax-engine";
 import { hydrateInputsFromDb } from "@/lib/pch/engine-snapshot";
+import {
+  getExpenseSlotByLabel,
+  getIncomeSlotByLabel,
+} from "@/lib/pch/intake-slots";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -445,5 +449,186 @@ export async function uploadAccountantLineEvidenceAction(
     return { ok: true, path };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Fixed-slot row creation. The P&L review grid synthesises placeholder
+// rows (id=null) for any FIXED_SLOTS label that doesn't yet have a
+// pch_income_lines / pch_expense_lines row - typically because the
+// client left the field blank or at £0 during intake. When the
+// accountant types a non-zero amount into one of those placeholders,
+// the UI calls one of these actions (not add{Income,Expense}LineAction
+// which classifies as freeform "Other").
+//
+// Critical: classification params for an expense row come from the
+// slot definition in @/lib/pch/intake-slots. Mis-defaulting any of
+// category / sa103s_box / car_cost would misclassify the expense
+// into the wrong SA103S box and corrupt the category rollup used in
+// the PCH Accounts PDF and the tax engine.
+// -------------------------------------------------------------------
+
+export async function createAccountantFixedIncomeLineAction(
+  caseId: string,
+  slotLabel: string,
+  grossTakingsPence: number,
+): Promise<
+  ActionResultWith<{
+    snapshot: TaxEngineOutput;
+    line: { id: string; source: string; gross_takings_pence: number };
+  }>
+> {
+  try {
+    const { me, admin } = await requireAccountantPchCase(caseId);
+    const locked = await assertPlEditable(admin, caseId);
+    if (locked) return locked;
+
+    const slot = getIncomeSlotByLabel(slotLabel);
+    if (!slot) {
+      return { ok: false, error: `Unknown income slot: ${slotLabel}` };
+    }
+    const pence = Math.max(0, Math.round(grossTakingsPence));
+    const sortOrder = await nextSortOrder(admin, "pch_income_lines", caseId);
+    const now = new Date().toISOString();
+    const ins = await admin
+      .from("pch_income_lines")
+      .insert({
+        case_id: caseId,
+        source: slot.label,
+        gross_takings_pence: pence,
+        platform_fee_pence: 0,
+        on_trip_miles: 0,
+        dead_miles: 0,
+        // "Fares" matches what the client-side upsertPchIncomeLine
+        // Action uses for all five fixed slots, so a row the
+        // accountant creates in a placeholder is indistinguishable
+        // from a row the client would have created themselves.
+        line_type: "Fares",
+        edited_by: me.id,
+        edited_at: now,
+        sort_order: sortOrder,
+      })
+      .select("id, source, gross_takings_pence")
+      .single();
+    if (ins.error) return { ok: false, error: ins.error.message };
+
+    const snapshot = await runEngine(caseId, admin);
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return {
+      ok: true,
+      snapshot,
+      line: {
+        id: ins.data.id as string,
+        source: ins.data.source as string,
+        gross_takings_pence: Number(ins.data.gross_takings_pence ?? 0),
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Create failed." };
+  }
+}
+
+export async function createAccountantFixedExpenseLineAction(
+  caseId: string,
+  slotLabel: string,
+  amountPaidPence: number,
+): Promise<
+  ActionResultWith<{
+    snapshot: TaxEngineOutput;
+    line: { id: string; label: string; amount_paid_pence: number };
+  }>
+> {
+  try {
+    const { me, admin } = await requireAccountantPchCase(caseId);
+    const locked = await assertPlEditable(admin, caseId);
+    if (locked) return locked;
+
+    const slot = getExpenseSlotByLabel(slotLabel);
+    if (!slot) {
+      return { ok: false, error: `Unknown expense slot: ${slotLabel}` };
+    }
+    const pence = Math.max(0, Math.round(amountPaidPence));
+    const sortOrder = await nextSortOrder(admin, "pch_expense_lines", caseId);
+    const now = new Date().toISOString();
+    const ins = await admin
+      .from("pch_expense_lines")
+      .insert({
+        case_id: caseId,
+        label: slot.label,
+        amount_paid_pence: pence,
+        // Per-slot classification from EXPENSE_FIXED_SLOTS. See the
+        // header comment on this block: these three fields are the
+        // whole point of having a slot-specific action instead of
+        // reusing addAccountantExpenseLineAction.
+        category: slot.category,
+        sa103s_box: slot.sa103s_box,
+        car_cost: slot.car_cost,
+        edited_by: me.id,
+        edited_at: now,
+        sort_order: sortOrder,
+      })
+      .select("id, label, amount_paid_pence")
+      .single();
+    if (ins.error) return { ok: false, error: ins.error.message };
+
+    const snapshot = await runEngine(caseId, admin);
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return {
+      ok: true,
+      snapshot,
+      line: {
+        id: ins.data.id as string,
+        label: ins.data.label as string,
+        amount_paid_pence: Number(ins.data.amount_paid_pence ?? 0),
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Create failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Private use (pch_vehicle.private_use_amount_pence). Advisory-only;
+// the tax engine already reduces car-cost expenses by its own
+// business-use-percentage calculation, so this figure never feeds
+// computeAll. The P&L Summary table reads it as a disclosure "Less:
+// Private use" line and the accountant factors it in on review.
+//
+// Shape mirrors the edit actions above: same guard, same lock, same
+// edited_by stamp. Does NOT re-run the engine - returns the written
+// pence back so the panel can refresh the Summary row without a
+// second round-trip or an unnecessary computeAll call.
+// -------------------------------------------------------------------
+
+export async function editAccountantPrivateUseAction(
+  caseId: string,
+  amountPence: number,
+): Promise<ActionResultWith<{ amountPence: number }>> {
+  try {
+    const { admin } = await requireAccountantPchCase(caseId);
+    const locked = await assertPlEditable(admin, caseId);
+    if (locked) return locked;
+
+    const value = Math.max(0, Math.round(amountPence));
+    // Upsert because pch_vehicle may not have a row yet (client never
+    // filled the vehicle section); upsertPchVehicleFieldAction on the
+    // client side uses the same pattern.
+    const upsert = await admin
+      .from("pch_vehicle")
+      .upsert(
+        {
+          case_id: caseId,
+          private_use_amount_pence: value,
+          // Keep the derived boolean flag in step; the client's own
+          // savePchVehicleFieldAction does this too.
+          private_use_declared: value > 0,
+        },
+        { onConflict: "case_id" },
+      );
+    if (upsert.error) return { ok: false, error: upsert.error.message };
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return { ok: true, amountPence: value };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
   }
 }

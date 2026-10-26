@@ -16,6 +16,10 @@ import { PortalPageHeader } from "@/components/portal-page-header";
 import { formatDateTime } from "@/lib/format";
 import type { TaxEngineOutput } from "@/lib/tax-engine";
 import { ensureAccountancyFeesRow } from "@/lib/pch/accountancy-fees";
+import {
+  EXPENSE_FIXED_SLOTS,
+  INCOME_FIXED_SLOTS,
+} from "@/lib/pch/intake-slots";
 
 // Phase I: server page for the PCH accountant workspace. Sub-phase 1
 // of the rebuild deleted the old 33-check / override / SA302
@@ -289,16 +293,8 @@ export default async function PchAccountantPage({
         clientApprovedAt:
           (head.data?.client_approved_at as string | null) ?? null,
       }}
-      plIncomeLines={(incomeLines.data ?? []).map((l) => ({
-        id: l.id as string,
-        source: (l.source as string) ?? "",
-        gross_takings_pence: Number(l.gross_takings_pence ?? 0),
-      }))}
-      plExpenseLines={(expenseLines.data ?? []).map((l) => ({
-        id: l.id as string,
-        label: (l.label as string) ?? "",
-        amount_paid_pence: Number(l.amount_paid_pence ?? 0),
-      }))}
+      plIncomeLines={buildPlIncomeLines(incomeLines.data ?? [])}
+      plExpenseLines={buildPlExpenseLines(expenseLines.data ?? [])}
       plSnapshot={(head.data?.engine_snapshot ?? null) as TaxEngineOutput | null}
       plPrivateUsePence={
         (vehicleRes.data?.private_use_amount_pence as number | null) ?? 0
@@ -322,6 +318,71 @@ export default async function PchAccountantPage({
       }
     />
   );
+}
+
+// Build the income rows the P&L review panel renders. Every one of
+// INCOME_FIXED_SLOTS always appears (as a placeholder with id=null
+// when the client never created a DB row for it); any custom-label
+// row the accountant added via the "+ Add row" flow comes after.
+// Placeholders let the accountant edit a fixed slot the client left
+// at £0 - the panel treats id=null as "create this slot on first
+// save", routing to createAccountantFixedIncomeLineAction.
+type IncomeRowProp = { id: string | null; source: string; gross_takings_pence: number };
+function buildPlIncomeLines(
+  rows: Array<{ id: unknown; source: unknown; gross_takings_pence: unknown; sort_order?: unknown }>,
+): IncomeRowProp[] {
+  const bySource = new Map<string, IncomeRowProp>();
+  for (const r of rows) {
+    const source = (r.source as string | null) ?? "";
+    if (!source || bySource.has(source)) continue;
+    bySource.set(source, {
+      id: r.id as string,
+      source,
+      gross_takings_pence: Number(r.gross_takings_pence ?? 0),
+    });
+  }
+  const fixed: IncomeRowProp[] = INCOME_FIXED_SLOTS.map((slot) => {
+    const existing = bySource.get(slot.label);
+    bySource.delete(slot.label);
+    return (
+      existing ?? {
+        id: null,
+        source: slot.label,
+        gross_takings_pence: 0,
+      }
+    );
+  });
+  const custom: IncomeRowProp[] = Array.from(bySource.values());
+  return [...fixed, ...custom];
+}
+
+type ExpenseRowProp = { id: string | null; label: string; amount_paid_pence: number };
+function buildPlExpenseLines(
+  rows: Array<{ id: unknown; label: unknown; amount_paid_pence: unknown; sort_order?: unknown }>,
+): ExpenseRowProp[] {
+  const byLabel = new Map<string, ExpenseRowProp>();
+  for (const r of rows) {
+    const label = (r.label as string | null) ?? "";
+    if (!label || byLabel.has(label)) continue;
+    byLabel.set(label, {
+      id: r.id as string,
+      label,
+      amount_paid_pence: Number(r.amount_paid_pence ?? 0),
+    });
+  }
+  const fixed: ExpenseRowProp[] = EXPENSE_FIXED_SLOTS.map((slot) => {
+    const existing = byLabel.get(slot.label);
+    byLabel.delete(slot.label);
+    return (
+      existing ?? {
+        id: null,
+        label: slot.label,
+        amount_paid_pence: 0,
+      }
+    );
+  });
+  const custom: ExpenseRowProp[] = Array.from(byLabel.values());
+  return [...fixed, ...custom];
 }
 
 async function loadMessages(

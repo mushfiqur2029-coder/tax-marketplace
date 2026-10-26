@@ -34,28 +34,12 @@ export type IncomeLine = {
 
 export type IntakeAttachment = { docId: string; fileName: string };
 
-type IncomeSlot = {
-  label: string;        // the client-visible label, also the stored source value
-  helpText?: string;
-  multiFile?: boolean;  // Phase K: Others income runs the multi-file path
-};
+import { INCOME_FIXED_SLOTS, type IncomeSlot } from "@/lib/pch/intake-slots";
 
 // Phase J: five fixed sources mirroring the PL.xlsx template rows.
-const FIXED_SLOTS: IncomeSlot[] = [
-  { label: "Uber" },
-  { label: "Bolt" },
-  { label: "Free Now" },
-  {
-    label: "Cash receipt",
-    helpText: "Fares taken in cash across the year. Drop multiple files; we read each one and add it to the total.",
-    multiFile: true,
-  },
-  {
-    label: "Others income",
-    helpText: "Anything from a platform not listed above. Drop multiple files; we read each one and add it to the total.",
-    multiFile: true,
-  },
-];
+// Lives in src/lib/pch/intake-slots.ts so the accountant P&L review
+// surface can agree on the same five labels.
+const FIXED_SLOTS = INCOME_FIXED_SLOTS;
 
 function matchesSlot(label: string, source: string): boolean {
   return source.trim().toLowerCase() === label.toLowerCase();
