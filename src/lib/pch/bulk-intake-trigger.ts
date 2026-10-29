@@ -7,6 +7,7 @@ import {
 } from "./bulk-intake-extract";
 import {
   EXPENSE_FIXED_SLOTS,
+  type ExpenseSlot,
   getExpenseSlotByLabel,
   getIncomeSlotByLabel,
 } from "./intake-slots";
@@ -150,33 +151,19 @@ async function applyExtractedItem(
       : null;
 
     if (matchedSlot) {
-      // Fixed-slot top-up. Find or create the existing row (there
-      // should be exactly one per label; create a zero-amount row
-      // on the fly if the client somehow has no row yet for this
-      // slot, mirroring upsertPchIncomeLineAction's insert branch).
-      const existing = await findSlotIncomeRow(admin, caseId, matchedSlot.label);
-      const base = existing ?? (await insertSeedIncomeRow(admin, caseId, matchedSlot.label));
-      if (!base) return false;
-
-      const nextPence = Number(base.gross_takings_pence ?? 0) + pence;
-      const nextNote = appendNote(base.extraction_note as string | null, noteLine);
-      const nextConfidence = lowerConfidence(
-        base.extraction_confidence as "high" | "medium" | "low" | null,
+      // Fixed-slot top-up. The retry-safe helper handles both races:
+      // concurrent inserts of the first row (closed via partial unique
+      // index + 23505 retry) and concurrent updates that would lose
+      // one addition (closed via WHERE .eq on the old pence value).
+      return await topUpIncomeSlot(
+        admin,
+        caseId,
+        uploadId,
+        matchedSlot.label,
+        pence,
         item.confidence,
+        noteLine,
       );
-      const upd = await admin
-        .from("pch_income_lines")
-        .update({
-          gross_takings_pence: nextPence,
-          auto_extracted: true,
-          client_reviewed: false,
-          source_upload_id: uploadId,
-          extraction_confidence: nextConfidence,
-          extraction_note: nextNote,
-        })
-        .eq("id", base.id as string);
-      if (upd.error) throw new Error(upd.error.message);
-      return true;
     }
 
     // Unmatched: visible extra income row.
@@ -209,29 +196,15 @@ async function applyExtractedItem(
     : null;
 
   if (matchedSlot) {
-    const existing = await findSlotExpenseRow(admin, caseId, matchedSlot.label);
-    const base = existing ?? (await insertSeedExpenseRow(admin, caseId, matchedSlot));
-    if (!base) return false;
-
-    const nextPence = Number(base.amount_paid_pence ?? 0) + pence;
-    const nextNote = appendNote(base.extraction_note as string | null, noteLine);
-    const nextConfidence = lowerConfidence(
-      base.extraction_confidence as "high" | "medium" | "low" | null,
+    return await topUpExpenseSlot(
+      admin,
+      caseId,
+      uploadId,
+      matchedSlot,
+      pence,
       item.confidence,
+      noteLine,
     );
-    const upd = await admin
-      .from("pch_expense_lines")
-      .update({
-        amount_paid_pence: nextPence,
-        auto_extracted: true,
-        client_reviewed: false,
-        source_upload_id: uploadId,
-        extraction_confidence: nextConfidence,
-        extraction_note: nextNote,
-      })
-      .eq("id", base.id as string);
-    if (upd.error) throw new Error(upd.error.message);
-    return true;
   }
 
   // Unmatched expense: visible extra expense row. Classification
@@ -316,55 +289,154 @@ async function findSlotExpenseRow(
   return data as Record<string, unknown> | null;
 }
 
-async function insertSeedIncomeRow(
+// Retry-safe fixed-slot top-up: closes the two races documented at the
+// top of this file + in migration 0125. On a fresh case the slot's row
+// does not yet exist, so attempt an INSERT; the partial unique index
+// on (case_id, source) means a concurrent job trying the same insert
+// gets 23505 and we retry (next iteration finds the row the winner
+// created). Once the row exists, we optimistically UPDATE with the
+// old amount pinned in the WHERE clause: if a concurrent writer
+// changed it between read and update, 0 rows are affected and we
+// retry from a fresh read. Caps at 8 attempts to avoid pathological
+// loops under sustained contention; well above anything two or three
+// parallel per-upload jobs will realistically produce.
+async function topUpIncomeSlot(
   admin: ReturnType<typeof createAdminClient>,
   caseId: string,
-  label: string,
-): Promise<Record<string, unknown> | null> {
-  const sortOrder = await nextSortOrder(admin, "pch_income_lines", caseId);
-  // All five fixed income slots use line_type: "Fares" in the manual
-  // path (see upsertPchIncomeLineAction) so the engine routes them
-  // through pl.rows.fares. Match that here so a bulk-created seed
-  // row for e.g. "Uber" classifies identically to a client-typed one.
-  const ins = await admin
-    .from("pch_income_lines")
-    .insert({
-      case_id: caseId,
-      source: label,
-      gross_takings_pence: 0,
-      platform_fee_pence: 0,
-      on_trip_miles: 0,
-      dead_miles: 0,
-      line_type: "Fares",
-      sort_order: sortOrder,
-    })
-    .select("id, gross_takings_pence, extraction_note, extraction_confidence")
-    .single();
-  if (ins.error) throw new Error(ins.error.message);
-  return ins.data as Record<string, unknown> | null;
+  uploadId: string,
+  slotLabel: string,
+  addPence: number,
+  confidence: "high" | "medium" | "low",
+  noteLine: string,
+): Promise<boolean> {
+  const MAX_ATTEMPTS = 8;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const existing = await findSlotIncomeRow(admin, caseId, slotLabel);
+    if (!existing) {
+      const sortOrder = await nextSortOrder(admin, "pch_income_lines", caseId);
+      // line_type: "Fares" matches upsertPchIncomeLineAction's manual
+      // path so the engine routes this through pl.rows.fares the same
+      // way a client-typed row would.
+      const ins = await admin.from("pch_income_lines").insert({
+        case_id: caseId,
+        source: slotLabel,
+        gross_takings_pence: addPence,
+        platform_fee_pence: 0,
+        on_trip_miles: 0,
+        dead_miles: 0,
+        line_type: "Fares",
+        sort_order: sortOrder,
+        auto_extracted: true,
+        client_reviewed: false,
+        source_upload_id: uploadId,
+        extraction_confidence: confidence,
+        extraction_note: noteLine,
+      });
+      if (!ins.error) return true;
+      if (ins.error.code === "23505") {
+        await jitterDelay(attempt);
+        continue;
+      }
+      throw new Error(ins.error.message);
+    }
+    const nextPence = Number(existing.gross_takings_pence ?? 0) + addPence;
+    const nextNote = appendNote(existing.extraction_note as string | null, noteLine);
+    const nextConfidence = lowerConfidence(
+      existing.extraction_confidence as "high" | "medium" | "low" | null,
+      confidence,
+    );
+    const upd = await admin
+      .from("pch_income_lines")
+      .update({
+        gross_takings_pence: nextPence,
+        auto_extracted: true,
+        client_reviewed: false,
+        source_upload_id: uploadId,
+        extraction_confidence: nextConfidence,
+        extraction_note: nextNote,
+      })
+      .eq("id", existing.id as string)
+      .eq("gross_takings_pence", existing.gross_takings_pence as number)
+      .select("id");
+    if (upd.error) throw new Error(upd.error.message);
+    if (upd.data && upd.data.length > 0) return true;
+    await jitterDelay(attempt);
+  }
+  throw new Error(
+    `Could not update "${slotLabel}" after repeated concurrent-write retries.`,
+  );
 }
 
-async function insertSeedExpenseRow(
+// Mirror of topUpIncomeSlot for pch_expense_lines. category / sa103s_box
+// / car_cost are set ONCE at creation (an existing row's classification
+// never changes under a top-up, so the update branch does not rewrite
+// those columns).
+async function topUpExpenseSlot(
   admin: ReturnType<typeof createAdminClient>,
   caseId: string,
-  slot: typeof EXPENSE_FIXED_SLOTS[number],
-): Promise<Record<string, unknown> | null> {
-  const sortOrder = await nextSortOrder(admin, "pch_expense_lines", caseId);
-  const ins = await admin
-    .from("pch_expense_lines")
-    .insert({
-      case_id: caseId,
-      label: slot.label,
-      amount_paid_pence: 0,
-      category: slot.category,
-      sa103s_box: slot.sa103s_box,
-      car_cost: slot.car_cost,
-      sort_order: sortOrder,
-    })
-    .select("id, amount_paid_pence, extraction_note, extraction_confidence")
-    .single();
-  if (ins.error) throw new Error(ins.error.message);
-  return ins.data as Record<string, unknown> | null;
+  uploadId: string,
+  slot: ExpenseSlot,
+  addPence: number,
+  confidence: "high" | "medium" | "low",
+  noteLine: string,
+): Promise<boolean> {
+  const MAX_ATTEMPTS = 8;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const existing = await findSlotExpenseRow(admin, caseId, slot.label);
+    if (!existing) {
+      const sortOrder = await nextSortOrder(admin, "pch_expense_lines", caseId);
+      const ins = await admin.from("pch_expense_lines").insert({
+        case_id: caseId,
+        label: slot.label,
+        amount_paid_pence: addPence,
+        category: slot.category,
+        sa103s_box: slot.sa103s_box,
+        car_cost: slot.car_cost,
+        sort_order: sortOrder,
+        auto_extracted: true,
+        client_reviewed: false,
+        source_upload_id: uploadId,
+        extraction_confidence: confidence,
+        extraction_note: noteLine,
+      });
+      if (!ins.error) return true;
+      if (ins.error.code === "23505") {
+        await jitterDelay(attempt);
+        continue;
+      }
+      throw new Error(ins.error.message);
+    }
+    const nextPence = Number(existing.amount_paid_pence ?? 0) + addPence;
+    const nextNote = appendNote(existing.extraction_note as string | null, noteLine);
+    const nextConfidence = lowerConfidence(
+      existing.extraction_confidence as "high" | "medium" | "low" | null,
+      confidence,
+    );
+    const upd = await admin
+      .from("pch_expense_lines")
+      .update({
+        amount_paid_pence: nextPence,
+        auto_extracted: true,
+        client_reviewed: false,
+        source_upload_id: uploadId,
+        extraction_confidence: nextConfidence,
+        extraction_note: nextNote,
+      })
+      .eq("id", existing.id as string)
+      .eq("amount_paid_pence", existing.amount_paid_pence as number)
+      .select("id");
+    if (upd.error) throw new Error(upd.error.message);
+    if (upd.data && upd.data.length > 0) return true;
+    await jitterDelay(attempt);
+  }
+  throw new Error(
+    `Could not update "${slot.label}" after repeated concurrent-write retries.`,
+  );
+}
+
+async function jitterDelay(attempt: number): Promise<void> {
+  const ms = Math.min(50 * 2 ** attempt, 800) + Math.random() * 50;
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function nextSortOrder(
