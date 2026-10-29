@@ -1,4 +1,5 @@
 import "server-only";
+import * as XLSX from "xlsx";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   extractBulkIntakeDocument,
@@ -89,8 +90,8 @@ export async function runBulkIntakeExtractionJob(uploadId: string): Promise<void
     if (dl.error || !dl.data) {
       throw new Error("Storage download failed: " + (dl.error?.message ?? "unknown"));
     }
-    const bytes = new Uint8Array(await dl.data.arrayBuffer());
-    const mimeType = inferMimeType(upload.file_name as string);
+    const rawBytes = new Uint8Array(await dl.data.arrayBuffer());
+    const { bytes, mimeType } = toExtractableInput(upload.file_name as string, rawBytes);
 
     const result = await extractBulkIntakeDocument({ bytes, mimeType });
 
@@ -456,12 +457,34 @@ async function nextSortOrder(
   return ((data?.sort_order as number | undefined) ?? -1) + 1;
 }
 
-// Same shape as inferMimeType in extraction-trigger.ts - keep behaviour
-// identical so the two pipelines treat the same filename the same way.
-function inferMimeType(filename: string): BulkIntakeDocument["mimeType"] {
+// Routes a downloaded upload to the right extractable input. PDF and
+// image files pass through unchanged (same inference extraction-
+// trigger.ts uses for filenames it doesn't recognise, falling back to
+// JPEG). A .csv file is already plain text, so it is passed through
+// as-is with mimeType "text/csv". A .xlsx/.xls file is a zip/binary
+// spreadsheet format the model cannot read directly, so it is parsed
+// here and converted to CSV text first (every sheet, in case a
+// platform export has more than one tab); only the converted text
+// ever reaches extractBulkIntakeDocument.
+function toExtractableInput(
+  filename: string,
+  rawBytes: Uint8Array,
+): { bytes: Uint8Array; mimeType: BulkIntakeDocument["mimeType"] } {
   const lower = filename.toLowerCase();
-  if (lower.endsWith(".pdf")) return "application/pdf";
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".webp")) return "image/webp";
-  return "image/jpeg";
+  if (lower.endsWith(".pdf")) return { bytes: rawBytes, mimeType: "application/pdf" };
+  if (lower.endsWith(".png")) return { bytes: rawBytes, mimeType: "image/png" };
+  if (lower.endsWith(".webp")) return { bytes: rawBytes, mimeType: "image/webp" };
+  if (lower.endsWith(".csv")) return { bytes: rawBytes, mimeType: "text/csv" };
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+    const workbook = XLSX.read(rawBytes, { type: "array" });
+    const csvParts = workbook.SheetNames.map((sheetName) =>
+      `Sheet: ${sheetName}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName])}`,
+    );
+    const csvText = csvParts.join("\n\n");
+    return { bytes: new TextEncoder().encode(csvText), mimeType: "text/csv" };
+  }
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return { bytes: rawBytes, mimeType: "image/jpeg" };
+  }
+  return { bytes: rawBytes, mimeType: "image/jpeg" };
 }

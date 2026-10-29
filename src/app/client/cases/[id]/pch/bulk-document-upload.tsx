@@ -31,7 +31,10 @@ import {
 } from "@/app/client/pch/bulk-intake-actions";
 import { useMultiFileDrop } from "./upload-dropzone";
 
-const UPLOAD_ACCEPT = "application/pdf,image/jpeg,image/png,image/webp";
+const UPLOAD_ACCEPT =
+  "application/pdf,image/jpeg,image/png,image/webp,text/csv,"
+  + "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+  + "application/vnd.ms-excel,.csv,.xlsx,.xls";
 
 export type BulkIntakeInitialUpload = BulkIntakeUploadView;
 
@@ -135,8 +138,8 @@ export function BulkDocumentUpload({
               Drag files here, or pick them from your device
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              PDF, JPG, PNG or WebP up to 25 MB each. Add as many
-              documents as you like.
+              PDF, JPG, PNG, WebP, CSV or Excel up to 25 MB each. Add
+              as many documents as you like.
             </p>
           </div>
           <button

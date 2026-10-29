@@ -50,7 +50,12 @@ export type BulkExtractedItem = {
 
 export type BulkIntakeDocument = {
   bytes: Uint8Array;
-  mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
+  // "text/csv" covers both a client-uploaded .csv file and a .xlsx/
+  // .xls spreadsheet the trigger has already converted to CSV text
+  // (XLSX.utils.sheet_to_csv) before calling this function, since
+  // spreadsheet bytes themselves are a zip/binary format, not
+  // something the model can read directly.
+  mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp" | "text/csv";
 };
 
 export type BulkExtractionResult = {
@@ -143,7 +148,7 @@ function buildSystemPrompt(): string {
   const expenseList = EXPENSE_SLOT_LABELS.join(", ");
   return (
     "This is for a UK private-hire driver's Self Assessment. "
-    + "The attached document is a bank statement, receipt, invoice or similar supporting document the driver has uploaded for their tax return. "
+    + "The attached document is a bank statement, receipt, invoice, CSV export or spreadsheet export, or similar supporting document the driver has uploaded for their tax return. A CSV or spreadsheet export is given to you as plain text rows (often with a header row naming the columns); read every data row the same way you would a bank statement line. "
     + "Read every distinct transaction / line on the document. "
     + "For a multi-page bank statement that means every row, not just a summary total. "
     + "Treat near-identical consecutive entries as separate transactions unless clearly a duplicate scan of the same page. "
@@ -173,18 +178,33 @@ export async function extractBulkIntakeDocument(
   doc: BulkIntakeDocument,
 ): Promise<BulkExtractionResult> {
   const anthropic = client();
-  const base64 = Buffer.from(doc.bytes).toString("base64");
 
+  // CSV/spreadsheet data goes in as plain text, not a document/image
+  // block; there is nothing to render or OCR, and reading it as text
+  // is both cheaper and more reliable than treating it as an image.
   const docContent: Anthropic.ContentBlockParam =
-    doc.mimeType === "application/pdf"
+    doc.mimeType === "text/csv"
       ? {
-          type: "document",
-          source: { type: "base64", media_type: "application/pdf", data: base64 },
+          type: "text",
+          text: Buffer.from(doc.bytes).toString("utf-8"),
         }
-      : {
-          type: "image",
-          source: { type: "base64", media_type: doc.mimeType, data: base64 },
-        };
+      : doc.mimeType === "application/pdf"
+        ? {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: Buffer.from(doc.bytes).toString("base64"),
+            },
+          }
+        : {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: doc.mimeType,
+              data: Buffer.from(doc.bytes).toString("base64"),
+            },
+          };
 
   const response = await anthropic.messages.create({
     model: MODEL_SONNET,

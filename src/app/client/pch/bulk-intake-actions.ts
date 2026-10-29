@@ -110,8 +110,15 @@ export async function uploadBulkIntakeDocumentAction(
     const isJpeg = typeLower === "image/jpeg" || /\.jpe?g$/.test(nameLower);
     const isPng = typeLower === "image/png" || /\.png$/.test(nameLower);
     const isWebp = typeLower === "image/webp" || /\.webp$/.test(nameLower);
-    if (!isPdf && !isJpeg && !isPng && !isWebp) {
-      return { ok: false, error: "Upload a PDF, JPG, PNG or WebP." };
+    const isCsv = typeLower === "text/csv" || /\.csv$/.test(nameLower);
+    // .xls (old binary format) is accepted too; the xlsx package reads
+    // both, same as export-xlsx.ts's reader does not need to care.
+    const isExcel =
+      typeLower === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      || typeLower === "application/vnd.ms-excel"
+      || /\.xlsx?$/.test(nameLower);
+    if (!isPdf && !isJpeg && !isPng && !isWebp && !isCsv && !isExcel) {
+      return { ok: false, error: "Upload a PDF, JPG, PNG, WebP, CSV or Excel file." };
     }
 
     // Per-case cap so a runaway loop can't fill storage or blow the
