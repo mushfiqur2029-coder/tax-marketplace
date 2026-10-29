@@ -12,6 +12,9 @@
 // the current step as a filled blue dot with a thicker ring (active),
 // future steps as a light grey outline (pending). Connecting line
 // between dots is coloured up to and including the current step.
+// Exception: "Filed" (filed/complete) is terminal - there's no next
+// step to be "active" toward, so it renders green/done like any other
+// completed step rather than blue/active, once the case reaches it.
 //
 // Mobile-first: the layout wraps gracefully below 400px with the
 // labels stacking under each dot.
@@ -55,6 +58,16 @@ export function PchProgressTracker({
   const current = statusToStepIndex(status);
   if (current === -1) return null;
 
+  // "Filed" is a terminal state, not a step the client is waiting to
+  // move past - there's nothing after it to transition to. Rendering
+  // it as "active" (the same blue used for "Ready to approve" while a
+  // case is still in progress) reads as "still working on this", so a
+  // completed case's last fully-green step appears to be "Ready to
+  // approve" with "Filed" looking unfinished beside it. Treat the
+  // final step as done (green) once the case has actually reached it,
+  // same as every earlier step.
+  const atFinalStep = current === STEPS.length - 1;
+
   // Compact variant used inside a dashboard card: smaller dots, labels
   // aria-hidden off-screen so the visual stays small but screen readers
   // still get the step name. Full variant used wherever we have room.
@@ -67,14 +80,14 @@ export function PchProgressTracker({
   return (
     <ol className="flex w-full items-start" aria-label="Case progress">
       {STEPS.map((step, i) => {
-        const done = i < current;
-        const active = i === current;
+        const done = i < current || (i === current && atFinalStep);
+        const active = i === current && !atFinalStep;
         const dotClass = done
           ? "bg-emerald-500 border-emerald-500"
           : active
             ? "bg-sky-500 border-sky-500 ring-4 ring-sky-100"
             : "bg-white border-slate-300";
-        const lineClass = i < current
+        const lineClass = done
           ? "bg-emerald-500"
           : "bg-slate-200";
         return (

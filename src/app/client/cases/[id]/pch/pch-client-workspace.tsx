@@ -123,6 +123,11 @@ export function PchClientWorkspace(props: {
   pchAccountsPdfPath: string | null;
   sa302UploadPath: string | null;
   sa100UploadPath: string | null;
+  // Capium proof-of-submission PDF the accountant uploads before a
+  // case can move filed -> complete (migration 0122 gate). Only
+  // meaningful once the case has reached 'filed'/'complete', so this
+  // is surfaced on FiledView, not the pre-filing ApprovalView.
+  proofOfSubmissionPath: string | null;
   signDocUrl: (path: string) => Promise<ActionResult<string>>;
   section1Initial: Section1InitialHead;
   licenceDocs: Section1LicenceDoc[];
@@ -350,6 +355,7 @@ export function PchClientWorkspace(props: {
           pchAccountsPdfPath={props.pchAccountsPdfPath}
           sa302UploadPath={props.sa302UploadPath}
           sa100UploadPath={props.sa100UploadPath}
+          proofOfSubmissionPath={props.proofOfSubmissionPath}
           signDocUrl={props.signDocUrl}
           incomeLines={props.incomeLines}
           expenseLines={props.expenseLines}
@@ -689,6 +695,7 @@ function FiledView(props: {
   pchAccountsPdfPath: string | null;
   sa302UploadPath: string | null;
   sa100UploadPath: string | null;
+  proofOfSubmissionPath: string | null;
   signDocUrl: (path: string) => Promise<ActionResult<string>>;
   incomeLines: IncomeLine[];
   expenseLines: ExpenseLine[];
@@ -708,6 +715,7 @@ function FiledView(props: {
         pchAccountsPdfPath={props.pchAccountsPdfPath}
         sa302UploadPath={props.sa302UploadPath}
         sa100UploadPath={props.sa100UploadPath}
+        proofOfSubmissionPath={props.proofOfSubmissionPath}
         signDocUrl={props.signDocUrl}
       />
       <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -739,6 +747,11 @@ function FinalDocsSection(props: {
   pchAccountsPdfPath: string | null;
   sa302UploadPath: string | null;
   sa100UploadPath: string | null;
+  // Only passed once a case has reached "filed"/"complete" (see
+  // FiledView) - pre-filing ApprovalView doesn't pass it, so this card
+  // doesn't show a premature "Not available yet." for a document that
+  // doesn't make sense before filing.
+  proofOfSubmissionPath?: string | null;
   signDocUrl: (path: string) => Promise<ActionResult<string>>;
 }) {
   const docs: Array<{ title: string; path: string | null }> = [
@@ -746,6 +759,9 @@ function FinalDocsSection(props: {
     { title: "PCH Accounts", path: props.pchAccountsPdfPath },
     { title: "SA302", path: props.sa302UploadPath },
     { title: "SA100", path: props.sa100UploadPath },
+    ...(props.proofOfSubmissionPath !== undefined
+      ? [{ title: "Proof of submission", path: props.proofOfSubmissionPath }]
+      : []),
   ];
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">

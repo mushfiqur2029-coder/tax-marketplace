@@ -264,6 +264,7 @@ export default async function PchClientPage({
         pchAccountsPdfPath={(head.data?.pch_accounts_pdf_path as string | null) ?? null}
         sa302UploadPath={(head.data?.sa302_upload_path as string | null) ?? null}
         sa100UploadPath={(head.data?.sa100_upload_path as string | null) ?? null}
+        proofOfSubmissionPath={(head.data?.proof_of_submission_path as string | null) ?? null}
         signDocUrl={signDocUrl}
         engineSnapshot={
           showFigures
