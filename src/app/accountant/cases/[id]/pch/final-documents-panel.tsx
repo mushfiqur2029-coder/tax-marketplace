@@ -37,20 +37,35 @@ type SignUrl = (path: string) => Promise<ActionResult<string>>;
 export function FinalDocumentsPanel({
   caseId,
   plConfirmed,
+  taxYear,
   initialSaForwardingPdfPath,
   initialPchAccountsPdfPath,
   initialSa302UploadPath,
   initialSa100UploadPath,
   initialDocsSentForApprovalAt,
+  initialManualTaxLiabilityPence,
+  initialManualTaxDueJanPence,
+  initialManualTaxDueJulPence,
   signUrl,
 }: {
   caseId: string;
   plConfirmed: boolean;
+  // Head.tax_year on pch_cases, e.g. "2024/25". Drives the labels on
+  // the three manual-tax inputs below ("Tax liability 2024/25", "Tax
+  // due and payable by 31 January 2026", etc).
+  taxYear: string;
   initialSaForwardingPdfPath: string | null;
   initialPchAccountsPdfPath: string | null;
   initialSa302UploadPath: string | null;
   initialSa100UploadPath: string | null;
   initialDocsSentForApprovalAt: string | null;
+  // Previously saved manual tax figures (null when the accountant
+  // hasn't generated docs yet). Prefill the three inputs so a
+  // regenerate run doesn't ask the accountant to retype what they
+  // already saved.
+  initialManualTaxLiabilityPence: number | null;
+  initialManualTaxDueJanPence: number | null;
+  initialManualTaxDueJulPence: number | null;
   signUrl: SignUrl;
 }) {
   const [saForwarding, setSaForwarding] = useState(initialSaForwardingPdfPath);
@@ -74,8 +89,12 @@ export function FinalDocumentsPanel({
       <GenerateDocsSection
         caseId={caseId}
         plConfirmed={plConfirmed}
+        taxYear={taxYear}
         saForwarding={saForwarding}
         pchAccounts={pchAccounts}
+        initialManualTaxLiabilityPence={initialManualTaxLiabilityPence}
+        initialManualTaxDueJanPence={initialManualTaxDueJanPence}
+        initialManualTaxDueJulPence={initialManualTaxDueJulPence}
         onGenerated={(letter, accounts) => {
           setSaForwarding(letter);
           setPchAccounts(accounts);
@@ -115,22 +134,75 @@ export function FinalDocumentsPanel({
 // -------------------------------------------------------------------
 
 function GenerateDocsSection({
-  caseId, plConfirmed, saForwarding, pchAccounts, onGenerated, signUrl,
+  caseId, plConfirmed, taxYear, saForwarding, pchAccounts,
+  initialManualTaxLiabilityPence,
+  initialManualTaxDueJanPence,
+  initialManualTaxDueJulPence,
+  onGenerated, signUrl,
 }: {
   caseId: string;
   plConfirmed: boolean;
+  taxYear: string;
   saForwarding: string | null;
   pchAccounts: string | null;
+  initialManualTaxLiabilityPence: number | null;
+  initialManualTaxDueJanPence: number | null;
+  initialManualTaxDueJulPence: number | null;
   onGenerated: (letter: string | null, accounts: string | null) => void;
   signUrl: SignUrl;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  // Three inputs for the manual tax figures. Prefilled from existing
+  // pch_cases.manual_tax_* columns if a prior generate run already
+  // saved them; keystroke-driven state otherwise. Values are typed
+  // as pounds (free text with "." allowed, e.g. "801.11"); the
+  // button-click handler parseFloats and converts to pence before
+  // the server call.
+  const [taxLiability, setTaxLiability] = useState<string>(
+    initialManualTaxLiabilityPence !== null
+      ? (initialManualTaxLiabilityPence / 100).toFixed(2)
+      : "",
+  );
+  const [taxDueJan, setTaxDueJan] = useState<string>(
+    initialManualTaxDueJanPence !== null
+      ? (initialManualTaxDueJanPence / 100).toFixed(2)
+      : "",
+  );
+  const [taxDueJul, setTaxDueJul] = useState<string>(
+    initialManualTaxDueJulPence !== null
+      ? (initialManualTaxDueJulPence / 100).toFixed(2)
+      : "",
+  );
+
+  const yearPlus1 = computeYearPlus1(taxYear);
+
+  const parsePounds = (s: string): number | null => {
+    const trimmed = s.trim();
+    if (trimmed.length === 0) return null;
+    const n = parseFloat(trimmed);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return Math.round(n * 100);
+  };
+  const parsedLiability = parsePounds(taxLiability);
+  const parsedJan = parsePounds(taxDueJan);
+  const parsedJul = parsePounds(taxDueJul);
+  const allParsed =
+    parsedLiability !== null && parsedJan !== null && parsedJul !== null;
 
   const generate = () =>
     start(async () => {
       setErr(null);
-      const r = await generateFinalDocsAction(caseId);
+      if (!allParsed) {
+        setErr("Enter all three tax figures before generating.");
+        return;
+      }
+      const r = await generateFinalDocsAction(
+        caseId,
+        parsedLiability,
+        parsedJan,
+        parsedJul,
+      );
       if (!r.ok) {
         setErr(r.error);
         return;
@@ -152,8 +224,9 @@ function GenerateDocsSection({
           </h2>
           <p className="mt-1 text-xs text-slate-600">
             Builds the SA Tax Return forwarding letter and the PCH
-            Accounts pack from the confirmed P&amp;L. Regenerate any
-            time before sending; the stored paths replace in place.
+            Accounts pack from the confirmed P&amp;L and the three tax
+            figures below. Regenerate any time before sending; the
+            stored paths replace in place.
           </p>
         </div>
         {hasBoth ? (
@@ -174,6 +247,30 @@ function GenerateDocsSection({
         </p>
       ) : null}
 
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <TaxAmountInput
+          label={`Tax liability ${taxYear || ""}`}
+          placeholder="e.g. 801.11"
+          value={taxLiability}
+          onChange={setTaxLiability}
+          disabled={pending || !plConfirmed}
+        />
+        <TaxAmountInput
+          label={`Tax due and payable by 31 January ${yearPlus1}`}
+          placeholder="e.g. 801.11"
+          value={taxDueJan}
+          onChange={setTaxDueJan}
+          disabled={pending || !plConfirmed}
+        />
+        <TaxAmountInput
+          label={`Tax due and payable by 31 July ${yearPlus1}`}
+          placeholder="e.g. 0.00"
+          value={taxDueJul}
+          onChange={setTaxDueJul}
+          disabled={pending || !plConfirmed}
+        />
+      </div>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <DocCard
           title="SA Tax Return forwarding letter"
@@ -193,7 +290,7 @@ function GenerateDocsSection({
         <button
           type="button"
           onClick={generate}
-          disabled={pending || !plConfirmed}
+          disabled={pending || !plConfirmed || !allParsed}
           className="rounded-lg bg-ink px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
         >
           {pending
@@ -206,6 +303,42 @@ function GenerateDocsSection({
       </div>
     </section>
   );
+}
+
+function TaxAmountInput({
+  label, placeholder, value, onChange, disabled,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (next: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-xs text-slate-700">
+      <span>{label}</span>
+      <div className="flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 focus-within:border-sky focus-within:ring-2 focus-within:ring-sky/30">
+        <span className="text-sm text-slate-500">£</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="w-full border-0 bg-transparent text-sm text-slate-900 outline-none disabled:bg-slate-100"
+        />
+      </div>
+    </label>
+  );
+}
+
+// Mirror of parseTaxYear in sa-forwarding-letter.ts, inlined here so
+// the panel doesn't pull a server-only module in just for date math.
+function computeYearPlus1(taxYear: string): number {
+  const m = /^(\d{4})\/(\d{2})$/.exec(taxYear.trim());
+  if (!m) return new Date().getUTCFullYear() + 1;
+  return Number(m[1]) + 2; // startYear + 1 (endYear) + 1 again
 }
 
 function DocCard({

@@ -14,13 +14,16 @@ import "server-only";
 // Letter (see sa-forwarding-letter.ts) so the two docs always carry
 // the same letterhead.
 //
-// Values on the P&L sheet come from the confirmed engine snapshot's
-// ProfitAndLoss.rows breakdown (not re-summed from pch_income_lines /
-// pch_expense_lines here) so a human-edited line can't quietly fall
-// out of sync with the figures the client approved. "Less: Private
-// use" reads from pch_vehicle.private_use_amount_pence as a disclosure
-// row even though the engine already factors it into capital
-// allowances.
+// P&L page row set mirrors the accountant portal's PlSummaryTable
+// (pl-review-panel.tsx) exactly: raw per-slot amounts the client
+// typed in, one row per INCOME_FIXED_SLOTS / EXPENSE_FIXED_SLOTS
+// entry in that fixed order, plus "Other income" / "Other adjust-
+// ments" catch-alls for any custom-labelled lines. The bottom-line
+// Total / Taxable profit / Net Profit figures still come off the
+// confirmed engine snapshot - the engine applies business-use % per
+// car-cost line that a raw sum can't reproduce without duplicating
+// that math, which is the exact drift risk the summary table also
+// guards against.
 //
 // Rendered as HTML + puppeteer, same path as the SA Forwarding
 // Letter and the old export-pdf.ts.
@@ -34,6 +37,10 @@ import {
   FIRM_LEGAL_NAME,
   FIRM_TRADING_NAME,
 } from "./sa-forwarding-letter";
+import {
+  EXPENSE_FIXED_SLOTS,
+  INCOME_FIXED_SLOTS,
+} from "./intake-slots";
 
 type DeclarationStatuses = Partial<Record<string, "applicable" | "not_applicable">>;
 
@@ -86,6 +93,17 @@ export type PchAccountsPdfInputs = {
   // the Taxable profit figure now share a single source of truth,
   // so they can't drift apart.
   snapshot: TaxEngineOutput;
+  // Raw per-slot amounts the client typed in. The P&L page lists one
+  // row per INCOME_FIXED_SLOTS / EXPENSE_FIXED_SLOTS entry, in that
+  // fixed order, matching PlSummaryTable in pl-review-panel.tsx
+  // exactly. Any custom-labelled row the accountant added rolls up
+  // into the "Other income" / "Other adjustments" catch-all rows.
+  // Bottom-line Total / Taxable profit / Net Profit figures still
+  // read off snapshot.pl (same reasoning PlSummaryTable's comment
+  // gives: the engine applies business-use % that a raw sum can't
+  // reproduce).
+  incomeLines: Array<{ source: string; gross_takings_pence: number }>;
+  expenseLines: Array<{ label: string; amount_paid_pence: number }>;
   declarationStatuses: DeclarationStatuses;
   // Scalar fields consulted by the declaration pages.
   decl: {
@@ -128,21 +146,33 @@ export async function generatePchAccountsPdf(
   // read here. One source of truth: the "Less: Private use" row and
   // the Taxable profit figure both read from the same snapshot and
   // can't drift apart.
-  const [{ data: head, error: headErr }, { data: giftAid }] =
-    await Promise.all([
-      admin
-        .from("pch_cases")
-        .select(
-          "cl_name, cl_address, cl_postcode, cl_utr, tax_year, cl_declaration_status, engine_snapshot, benefits_note, employment_income_pence, p11d_pence, bank_interest_pence, dividend_income_pence, capital_gains_pence, capital_gains_note, gross_rent_received_pence, rental_profit_pence, personal_pension_net_pence, gift_aid_net_pence, child_benefit_pence, overseas_income_pence, overseas_tax_paid_pence, student_loan_plan, anything_else_note, client_approved_at, client_approved_signature_name",
-        )
-        .eq("case_id", caseId)
-        .single(),
-      admin
-        .from("pch_gift_aid_entries")
-        .select("charity_name, donation_date, amount_pence")
-        .eq("case_id", caseId)
-        .order("sort_order"),
-    ]);
+  const [
+    { data: head, error: headErr },
+    { data: giftAid },
+    { data: incomeRows },
+    { data: expenseRows },
+  ] = await Promise.all([
+    admin
+      .from("pch_cases")
+      .select(
+        "cl_name, cl_address, cl_postcode, cl_utr, tax_year, cl_declaration_status, engine_snapshot, benefits_note, employment_income_pence, p11d_pence, bank_interest_pence, dividend_income_pence, capital_gains_pence, capital_gains_note, gross_rent_received_pence, rental_profit_pence, personal_pension_net_pence, gift_aid_net_pence, child_benefit_pence, overseas_income_pence, overseas_tax_paid_pence, student_loan_plan, anything_else_note, client_approved_at, client_approved_signature_name",
+      )
+      .eq("case_id", caseId)
+      .single(),
+    admin
+      .from("pch_gift_aid_entries")
+      .select("charity_name, donation_date, amount_pence")
+      .eq("case_id", caseId)
+      .order("sort_order"),
+    admin
+      .from("pch_income_lines")
+      .select("source, gross_takings_pence")
+      .eq("case_id", caseId),
+    admin
+      .from("pch_expense_lines")
+      .select("label, amount_paid_pence")
+      .eq("case_id", caseId),
+  ]);
 
   if (headErr || !head) {
     throw new Error("Could not load pch_cases head for PCH Accounts.");
@@ -160,6 +190,14 @@ export async function generatePchAccountsPdf(
     utr: row.cl_utr ?? "",
     taxYear: row.tax_year ?? "",
     snapshot,
+    incomeLines: (incomeRows ?? []).map((r) => ({
+      source: (r.source as string | null) ?? "",
+      gross_takings_pence: Number(r.gross_takings_pence ?? 0),
+    })),
+    expenseLines: (expenseRows ?? []).map((r) => ({
+      label: (r.label as string | null) ?? "",
+      amount_paid_pence: Number(r.amount_paid_pence ?? 0),
+    })),
     declarationStatuses:
       (row.cl_declaration_status ?? {}) as DeclarationStatuses,
     decl: {
@@ -366,6 +404,8 @@ export function renderPchAccountsHtml(p: PchAccountsPdfInputs): string {
     taxpayerName: p.taxpayerName,
     periodLabel,
     snapshot: p.snapshot,
+    incomeLines: p.incomeLines,
+    expenseLines: p.expenseLines,
   })}
   ${renderDeclarationPages(p.declarationStatuses, p.decl, periodLabel)}
 </body>
@@ -439,39 +479,66 @@ function renderProfitAndLoss(args: {
   taxpayerName: string;
   periodLabel: string;
   snapshot: TaxEngineOutput;
+  incomeLines: Array<{ source: string; gross_takings_pence: number }>;
+  expenseLines: Array<{ label: string; amount_paid_pence: number }>;
 }): string {
-  const r = args.snapshot.pl.rows;
   const t = args.snapshot.pl;
-  // Read straight off the snapshot so the "Less: Private use" row and
-  // t.taxableProfit (which already includes this subtraction) can't
-  // disagree.
-  const privateUse = t.privateUseAmount;
 
-  // Three-column layout mirrors the accountant portal's PlSummaryTable
-  // (sans the % column, since this is a formal accounts document rather
-  // than the accountant's working view). Income rows have the amount in
-  // the Income column; expense rows have theirs in the Expenses column;
-  // Net profit lands in the Income column too, bold, to flip the sign
-  // back to a positive revenue figure.
-  const incomeRows: Array<[string, number]> = [
-    ["Fares", r.fares],
-    ["Other trading income", r.otherTrading],
-    ["VAT received (Flat Rate Scheme)", r.vatReceived],
-  ];
-  const allExpenseRows: Array<[string, number]> = [
-    ["Vehicle running costs", r.vehicleRunningCosts],
-    ["Vehicle hire, lease & finance", r.vehicleHireLeaseFinance],
-    ["Mileage allowance", r.mileageAllowance],
-    ["Congestion, ULEZ, tolls & parking", r.congestionUlezTollsParking],
-    ["Licences & compliance", r.licencesCompliance],
-    ["Phone & technology", r.phoneTechnology],
-    ["Platform & card fees", r.platformCardFees],
-    ["Finance & bank charges", r.financeBankCharges],
-    ["Accountancy & insurance", r.accountancyInsurance],
-    ["Other expenses", r.otherExpenses],
-    ["VAT paid (FRS)", r.vatPaidFrs],
-  ];
-  const expenseRows = allExpenseRows.filter(([, amount]) => amount > 0);
+  // Row set mirrors PlSummaryTable in pl-review-panel.tsx exactly:
+  // one row per INCOME_FIXED_SLOTS entry (Uber / Bolt / Free Now / Cash
+  // receipt / Others income) in that fixed order, then one row per
+  // EXPENSE_FIXED_SLOTS entry (Fuel / Insurance / ... / Other expense),
+  // then "Other income" / "Other adjustments" catch-alls for any custom-
+  // labelled lines the accountant added. Values are the raw per-slot
+  // amounts the client typed in (summed by label) so the accountant's
+  // live Summary and this printed P&L stay 1:1.
+  //
+  // Bottom-line Total expenses / Taxable profit / Net Profit come off
+  // the engine snapshot, matching PlSummaryTable's bottom block: the
+  // engine applies business-use % per car-cost line in
+  // allowablePerLine, which a raw sum here can't reproduce without
+  // duplicating that math, which was the whole point of making
+  // PlSummaryTable read the snapshot for those three figures.
+  const incomePerLabel = INCOME_FIXED_SLOTS.map((slot) => ({
+    label: slot.label,
+    pence: sumByLabel(
+      args.incomeLines.map((l) => ({ label: l.source, pence: l.gross_takings_pence })),
+      slot.label,
+    ),
+  }));
+  const incomeFixedLabelsLower = new Set(
+    INCOME_FIXED_SLOTS.map((s) => s.label.trim().toLowerCase()),
+  );
+  const otherIncomePence = args.incomeLines.reduce(
+    (s, r) =>
+      incomeFixedLabelsLower.has((r.source ?? "").trim().toLowerCase())
+        ? s
+        : s + (r.gross_takings_pence ?? 0),
+    0,
+  );
+  const totalIncomePence =
+    incomePerLabel.reduce((s, r) => s + r.pence, 0) + otherIncomePence;
+
+  const expensePerLabel = EXPENSE_FIXED_SLOTS.map((slot) => ({
+    label: slot.label,
+    pence: sumByLabel(
+      args.expenseLines.map((l) => ({ label: l.label, pence: l.amount_paid_pence })),
+      slot.label,
+    ),
+  }));
+  const expenseFixedLabelsLower = new Set(
+    EXPENSE_FIXED_SLOTS.map((s) => s.label.trim().toLowerCase()),
+  );
+  const otherExpensesPence = args.expenseLines.reduce(
+    (s, r) =>
+      expenseFixedLabelsLower.has((r.label ?? "").trim().toLowerCase())
+        ? s
+        : s + (r.amount_paid_pence ?? 0),
+    0,
+  );
+
+  const privateUsePence = Math.round(t.privateUseAmount * 100);
+  const toPence = (pounds: number) => Math.round(pounds * 100);
 
   return `<section class="page">
     <h1>Profit and Loss Account</h1>
@@ -490,67 +557,97 @@ function renderProfitAndLoss(args: {
         <tr class="section">
           <td class="item" colspan="3">Income</td>
         </tr>
-        ${incomeRows
+        ${incomePerLabel
           .map(
-            ([label, amount]) => `<tr class="sub">
-          <td class="item">${esc(label)}</td>
+            (r) => `<tr class="sub">
+          <td class="item">${esc(r.label)}</td>
           <td class="expense-col"></td>
-          <td class="income-col">${fmtMoneyWhole(amount)}</td>
+          <td class="income-col">${fmtMoneyPence(r.pence)}</td>
         </tr>`,
           )
           .join("")}
-        <tr class="total">
-          <td class="item">Turnover</td>
+        ${otherIncomePence > 0
+          ? `<tr class="sub">
+          <td class="item">Other income</td>
           <td class="expense-col"></td>
-          <td class="income-col">${fmtMoneyWhole(t.turnover)}</td>
+          <td class="income-col">${fmtMoneyPence(otherIncomePence)}</td>
+        </tr>`
+          : ""}
+        <tr class="total">
+          <td class="item">Total income</td>
+          <td class="expense-col"></td>
+          <td class="income-col">${fmtMoneyPence(totalIncomePence)}</td>
         </tr>
 
         <tr class="section">
           <td class="item" colspan="3">Less: Expenses</td>
         </tr>
-        ${expenseRows
+        ${expensePerLabel
           .map(
-            ([label, amount]) => `<tr class="sub">
-          <td class="item">${esc(label)}</td>
-          <td class="expense-col">${fmtMoneyWhole(amount)}</td>
+            (r) => `<tr class="sub">
+          <td class="item">${esc(r.label)}</td>
+          <td class="expense-col">${fmtMoneyPence(r.pence)}</td>
           <td class="income-col"></td>
         </tr>`,
           )
           .join("")}
+        ${otherExpensesPence > 0
+          ? `<tr class="sub">
+          <td class="item">Other adjustments</td>
+          <td class="expense-col">${fmtMoneyPence(otherExpensesPence)}</td>
+          <td class="income-col"></td>
+        </tr>`
+          : ""}
         <tr class="total">
-          <td class="item">Total expenses</td>
-          <td class="expense-col">${fmtMoneyWhole(t.expensesTotal)}</td>
+          <td class="item">Total</td>
+          <td class="expense-col">${fmtMoneyPence(toPence(t.expensesTotal))}</td>
+          <td class="income-col"></td>
+        </tr>
+
+        <tr class="less">
+          <td class="item">Less: Private use</td>
+          <td class="expense-col">${fmtMoneyPence(privateUsePence)}</td>
           <td class="income-col"></td>
         </tr>
 
         <tr class="grand">
-          <td class="item">Net profit</td>
-          <td class="expense-col"></td>
-          <td class="income-col">${fmtMoneyWhole(t.netProfit)}</td>
-        </tr>
-
-        ${privateUse > 0
-          ? `<tr class="less">
-              <td class="item">Less: Private use</td>
-              <td class="expense-col">${fmtMoneyWhole(privateUse)}</td>
-              <td class="income-col"></td>
-            </tr>`
-          : ""}
-        ${t.capitalAllowances > 0
-          ? `<tr class="less">
-              <td class="item">Less: Capital allowances</td>
-              <td class="expense-col">${fmtMoneyWhole(t.capitalAllowances)}</td>
-              <td class="income-col"></td>
-            </tr>`
-          : ""}
-        <tr class="grand">
           <td class="item">Taxable profit</td>
           <td class="expense-col"></td>
-          <td class="income-col">${fmtMoneyWhole(t.taxableProfit)}</td>
+          <td class="income-col">${fmtMoneyPence(toPence(t.taxableProfit))}</td>
+        </tr>
+
+        <tr class="grand">
+          <td class="item">Net Profit</td>
+          <td class="expense-col"></td>
+          <td class="income-col">${fmtMoneyPence(toPence(t.netProfit))}</td>
         </tr>
       </tbody>
     </table>
   </section>`;
+}
+
+// Case-insensitive trim match, sum pence for a given label across the
+// passed-in rows. Direct port of PlSummaryTable's sumByLabel helper
+// (pl-review-panel.tsx) so the PDF's per-row sums and the accountant's
+// live Summary table can't drift apart on label-matching semantics.
+function sumByLabel(
+  rows: Array<{ label: string; pence: number }>,
+  label: string,
+): number {
+  const wanted = label.trim().toLowerCase();
+  return rows.reduce(
+    (s, r) =>
+      (r.label ?? "").trim().toLowerCase() === wanted ? s + (r.pence ?? 0) : s,
+    0,
+  );
+}
+
+function fmtMoneyPence(pence: number): string {
+  const safe = Number.isFinite(pence) ? pence : 0;
+  return "£" + (safe / 100).toLocaleString("en-GB", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 const ACCOUNTANT_REPORT_PARAGRAPH = `In accordance with the engagement letter dated and signed by you, we have compiled the Profit and Loss Account for the year on the basis of the accounting records provided and the information and explanations given to us. Our work has been carried out on the understanding that you have taken responsibility for the completeness and accuracy of the records; accordingly, we do not express an audit opinion on the figures. The accounts are prepared solely for the purpose of your Self Assessment tax return, and are not intended for any other purpose.`;
@@ -796,11 +893,6 @@ function fmtMoney(n: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-}
-
-function fmtMoneyWhole(n: number): string {
-  const safe = Number.isFinite(n) ? n : 0;
-  return "£" + Math.round(safe).toLocaleString("en-GB");
 }
 
 function esc(s: string | null | undefined): string {

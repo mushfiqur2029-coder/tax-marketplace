@@ -241,6 +241,25 @@ export async function updateCaseStatusAction(
           `Can't mark complete while add-ons are unpaid: ${list}.`,
         );
       }
+
+      // Phase M+6 proof-of-submission gate (migration 0122). PCH
+      // automated cases require the Capium submission PDF on
+      // pch_cases.proof_of_submission_path before this flip is
+      // allowed. The UI disables the button but the gate lives
+      // here too so a stale tab or a hand-crafted request can't
+      // get past it. Non-PCH tiers are unaffected.
+      if (tierRow?.tier === "uber_phv_automated") {
+        const { data: pchHead } = await admin
+          .from("pch_cases")
+          .select("proof_of_submission_path")
+          .eq("case_id", caseId)
+          .maybeSingle();
+        if (!pchHead?.proof_of_submission_path) {
+          throw new Error(
+            "Upload proof of submission before marking this case complete.",
+          );
+        }
+      }
     }
 
     // Concurrency guard: scope the UPDATE to the status we read

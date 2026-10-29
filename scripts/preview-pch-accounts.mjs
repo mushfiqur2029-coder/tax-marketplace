@@ -50,7 +50,11 @@ const html = renderPchAccountsHtml({
   utr: "1234567890",
   taxYear: "2024/25",
   snapshot,
-  privateUsePence: 50000, // £500 private use
+  // Preview-only sample lines; the real action pulls these from
+  // pch_income_lines / pch_expense_lines. Keeping them empty here is
+  // fine - the P&L page then shows every fixed slot at £0.
+  incomeLines: [],
+  expenseLines: [],
   declarationStatuses: {
     p11d: "applicable",
     interest: "not_applicable",

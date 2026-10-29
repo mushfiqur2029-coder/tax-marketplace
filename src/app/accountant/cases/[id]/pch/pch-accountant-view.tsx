@@ -58,6 +58,12 @@ type LiveHead = AccountantProgressInputs & {
   // its "locked" banner and nothing without a page reload when the
   // accountant clicks Re-open or the client re-submits.
   intakeSubmittedAt: string | null;
+  // Migration 0122: Capium submission confirmation PDF path. Required
+  // for cases.status to move filed -> complete. Live-synced so the
+  // ReadyToFilePanel's upload tile and "Mark filed and complete"
+  // button react without a reload (same reasoning as the other
+  // Phase I fields).
+  proofOfSubmissionPath: string | null;
 };
 
 export function PchAccountantView(props: {
@@ -77,6 +83,11 @@ export function PchAccountantView(props: {
   clientApprovedAt: string | null;
   clientApprovedSignatureName: string | null;
   intakeSubmittedAt: string | null;
+  proofOfSubmissionPath: string | null;
+  taxYear: string;
+  initialManualTaxLiabilityPence: number | null;
+  initialManualTaxDueJanPence: number | null;
+  initialManualTaxDueJulPence: number | null;
   updateCaseStatus: (
     caseId: string,
     next: "complete",
@@ -109,6 +120,7 @@ export function PchAccountantView(props: {
       clientApprovedAt: props.clientApprovedAt,
       clientApprovedSignatureName: props.clientApprovedSignatureName,
       intakeSubmittedAt: props.intakeSubmittedAt,
+      proofOfSubmissionPath: props.proofOfSubmissionPath,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -134,6 +146,10 @@ export function PchAccountantView(props: {
         prev.clientApprovedSignatureName,
       ),
       intakeSubmittedAt: pick(row.intake_submitted_at, prev.intakeSubmittedAt),
+      proofOfSubmissionPath: pick(
+        row.proof_of_submission_path,
+        prev.proofOfSubmissionPath,
+      ),
     }),
   });
 
@@ -194,11 +210,15 @@ export function PchAccountantView(props: {
         <FinalDocumentsPanel
           caseId={props.caseId}
           plConfirmed={!!liveHead.plConfirmedAt}
+          taxYear={props.taxYear}
           initialSaForwardingPdfPath={liveHead.saForwardingPdfPath}
           initialPchAccountsPdfPath={liveHead.pchAccountsPdfPath}
           initialSa302UploadPath={liveHead.sa302UploadPath}
           initialSa100UploadPath={liveHead.sa100UploadPath}
           initialDocsSentForApprovalAt={liveHead.docsSentForApprovalAt}
+          initialManualTaxLiabilityPence={props.initialManualTaxLiabilityPence}
+          initialManualTaxDueJanPence={props.initialManualTaxDueJanPence}
+          initialManualTaxDueJulPence={props.initialManualTaxDueJulPence}
           signUrl={props.signDocUrl}
         />
 
@@ -214,6 +234,8 @@ export function PchAccountantView(props: {
             caseStatus={liveStatus === "complete" ? "complete" : "filed"}
             clientApprovedAt={liveHead.clientApprovedAt}
             clientApprovedSignatureName={liveHead.clientApprovedSignatureName}
+            proofOfSubmissionPath={liveHead.proofOfSubmissionPath}
+            signUrl={props.signDocUrl}
             updateCaseStatus={props.updateCaseStatus}
           />
         ) : null}

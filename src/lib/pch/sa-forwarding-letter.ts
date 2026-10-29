@@ -3,21 +3,27 @@ import "server-only";
 // SA Tax Return forwarding letter PDF generator for the Phase I
 // "Generate documents" button on the accountant workspace.
 //
-// Mail-merged from pch_cases + the latest engine snapshot:
+// Mail-merged from pch_cases:
 //   {TaxPayerName}        -> cl_name
 //   {Address line(s)}     -> cl_address (+ cl_postcode)
 //   {UTR}                 -> cl_utr
 //   {TaxYearLabel}        -> head.tax_year (e.g. "2024/25")
 //   {TaxYearEnd}          -> 5 April <endYear>
 //   {Year+1}              -> endYear + 1 (deadline year)
-//   {TaxLiability}        -> snapshot.tax.totalTaxAndNic
-//   {DueBy31Jan}          -> snapshot.tax.dueBy31Jan
-//                           (balancingPayment + poaForNextYear)
-//   {DueBy31Jul}          -> snapshot.tax.dueBy31Jul (= poaForNextYear)
+//   {TaxLiability}        -> head.manual_tax_liability_pence
+//   {DueBy31Jan}          -> head.manual_tax_due_jan_pence
+//   {DueBy31Jul}          -> head.manual_tax_due_jul_pence
 //   {PaymentRef}          -> plain UTR digits (no K suffix). This
 //                           reverses the Phase I.2 "K-suffix confirmed"
 //                           decision after the user attached a sample
 //                           showing a plain-UTR reference.
+//
+// The three money amounts used to come off snapshot.tax.* (totalTax
+// AndNic / dueBy31Jan / dueBy31Jul). The accountant now files via
+// Capium and keys the real HMRC-stamped figures in by hand before
+// generating the letter, so those three amounts are per-case manual
+// inputs. If any of the three is null when generate is clicked the
+// action refuses with a clear error.
 //
 // Letterhead: Sterling Ledger logo on the left, generated date on the
 // right, same horizontal band. Firm block (name + legal + address)
@@ -31,7 +37,6 @@ import "server-only";
 import { renderPdfFromHtml } from "@/lib/engagement/pdf";
 import { logoDataUrl } from "@/lib/branding/logo";
 import type { createAdminClient } from "@/lib/supabase/admin";
-import type { TaxEngineOutput } from "@/lib/tax-engine";
 
 export const FIRM_TRADING_NAME = "NAFH ACCOUNTANTS";
 export const FIRM_LEGAL_NAME = "SHANN ACCOUNTANCY AND FINANCIAL SERVICES LTD";
@@ -43,7 +48,9 @@ type HeadRow = {
   cl_postcode: string | null;
   cl_utr: string | null;
   tax_year: string | null;
-  engine_snapshot: unknown;
+  manual_tax_liability_pence: number | null;
+  manual_tax_due_jan_pence: number | null;
+  manual_tax_due_jul_pence: number | null;
 };
 
 export async function generateSaForwardingLetterPdf(
@@ -52,16 +59,23 @@ export async function generateSaForwardingLetterPdf(
 ): Promise<Uint8Array> {
   const { data: head, error } = await admin
     .from("pch_cases")
-    .select("cl_name, cl_address, cl_postcode, cl_utr, tax_year, engine_snapshot")
+    .select(
+      "cl_name, cl_address, cl_postcode, cl_utr, tax_year, manual_tax_liability_pence, manual_tax_due_jan_pence, manual_tax_due_jul_pence",
+    )
     .eq("case_id", caseId)
     .single();
   if (error || !head) {
     throw new Error("Could not load pch_cases head for forwarding letter.");
   }
   const row = head as HeadRow;
-  const snapshot = (row.engine_snapshot ?? null) as TaxEngineOutput | null;
-  if (!snapshot) {
-    throw new Error("Engine snapshot missing. Confirm the P&L before generating documents.");
+  if (
+    row.manual_tax_liability_pence === null
+    || row.manual_tax_due_jan_pence === null
+    || row.manual_tax_due_jul_pence === null
+  ) {
+    throw new Error(
+      "Enter the tax liability and both due-by figures before generating the forwarding letter.",
+    );
   }
   const html = renderSaForwardingLetterHtml({
     taxpayerName: row.cl_name ?? "",
@@ -69,7 +83,9 @@ export async function generateSaForwardingLetterPdf(
     postcode: row.cl_postcode ?? "",
     utr: row.cl_utr ?? "",
     taxYear: row.tax_year ?? "",
-    snapshot,
+    manualTaxLiabilityPence: row.manual_tax_liability_pence,
+    manualTaxDueJanPence: row.manual_tax_due_jan_pence,
+    manualTaxDueJulPence: row.manual_tax_due_jul_pence,
   });
   return renderPdfFromHtml(html);
 }
@@ -84,14 +100,19 @@ export function renderSaForwardingLetterHtml(fields: {
   postcode: string;
   utr: string;
   taxYear: string;
-  snapshot: TaxEngineOutput;
+  // All three in pence; the three fmtMoney() calls below divide to
+  // pounds for display. Required (not nullable): the fetch above
+  // throws before reaching the renderer when any of them is unset.
+  manualTaxLiabilityPence: number;
+  manualTaxDueJanPence: number;
+  manualTaxDueJulPence: number;
 }): string {
   const { endYear } = parseTaxYear(fields.taxYear);
   const yearPlus1 = endYear + 1;
   const paymentRef = buildPaymentRef(fields.utr);
-  const taxLiability = fmtMoney(fields.snapshot.tax.totalTaxAndNic);
-  const dueBy31Jan = fmtMoney(fields.snapshot.tax.dueBy31Jan);
-  const dueBy31Jul = fmtMoney(fields.snapshot.tax.dueBy31Jul);
+  const taxLiability = fmtMoney(fields.manualTaxLiabilityPence / 100);
+  const dueBy31Jan = fmtMoney(fields.manualTaxDueJanPence / 100);
+  const dueBy31Jul = fmtMoney(fields.manualTaxDueJulPence / 100);
   const todayFmt = new Date().toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",

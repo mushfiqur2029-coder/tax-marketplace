@@ -189,7 +189,7 @@ export default async function PchAccountantPage({
   const [head, slotMeta, caseDocs, incomeLines, expenseLines, vehicleRes] = await Promise.all([
     admin
       .from("pch_cases")
-      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, client_approved_signature_name, engine_snapshot, intake_submitted_at")
+      .select("cl_name, cl_dob, cl_address, cl_postcode, cl_utr, cl_nino, cl_phone, cl_email, tax_year, pl_confirmed_at, pl_confirmed_by, sa_forwarding_pdf_path, pch_accounts_pdf_path, sa302_upload_path, sa100_upload_path, docs_sent_for_approval_at, client_approved_at, client_approved_signature_name, engine_snapshot, intake_submitted_at, proof_of_submission_path, manual_tax_liability_pence, manual_tax_due_jan_pence, manual_tax_due_jul_pence")
       .eq("case_id", id)
       .single(),
     admin.from("pch_doc_slots").select("code, section, display_name"),
@@ -306,6 +306,19 @@ export default async function PchAccountantPage({
         (head.data?.client_approved_signature_name as string | null) ?? null
       }
       intakeSubmittedAt={(head.data?.intake_submitted_at as string | null) ?? null}
+      proofOfSubmissionPath={
+        (head.data?.proof_of_submission_path as string | null) ?? null
+      }
+      taxYear={(head.data?.tax_year as string | null) ?? ""}
+      initialManualTaxLiabilityPence={
+        (head.data?.manual_tax_liability_pence as number | null) ?? null
+      }
+      initialManualTaxDueJanPence={
+        (head.data?.manual_tax_due_jan_pence as number | null) ?? null
+      }
+      initialManualTaxDueJulPence={
+        (head.data?.manual_tax_due_jul_pence as number | null) ?? null
+      }
       updateCaseStatus={updateCaseStatus}
       messagesPanel={
         <CaseConversationsPanel

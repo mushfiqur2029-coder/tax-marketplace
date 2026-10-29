@@ -11,23 +11,17 @@ Module._load = function (request, parent, isMain) {
 const mod = await import("../src/lib/pch/sa-forwarding-letter.ts");
 const { renderSaForwardingLetterHtml, FIRM_TRADING_NAME, FIRM_LEGAL_NAME, FIRM_ADDRESS, buildPaymentRef } = mod;
 
-const snapshot = {
-  tax: {
-    totalTaxAndNic: 7842.60,
-    balancingPayment: 7842.60,
-    poaForNextYear: 3921.30,
-    dueBy31Jan: 11763.90,
-    dueBy31Jul: 3921.30,
-  },
-};
-
 const html = renderSaForwardingLetterHtml({
   taxpayerName: "Alex Driver",
   address: "12 Example Street, Romford",
   postcode: "RM1 1AA",
   utr: "1234567890",
   taxYear: "2024/25",
-  snapshot,
+  // Preview-only sample values; the real action pulls these from the
+  // three pch_cases.manual_tax_* columns the accountant types in.
+  manualTaxLiabilityPence: 784260,
+  manualTaxDueJanPence: 1176390,
+  manualTaxDueJulPence: 392130,
 });
 
 const text = html

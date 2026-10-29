@@ -76,6 +76,14 @@ async function requireAccountantPchCase(caseId: string) {
 
 export async function generateFinalDocsAction(
   caseId: string,
+  // Three manual tax figures the accountant types in on the Generate
+  // Docs panel before clicking generate. generateSaForwardingLetterPdf
+  // reads these back off pch_cases when it runs - we persist them
+  // here first so the fetch inside the PDF generator sees fresh
+  // values and refuses with a clear error if any of them is missing.
+  taxLiabilityPence: number,
+  taxDueJanPence: number,
+  taxDueJulPence: number,
 ): Promise<
   ActionResultWith<{
     saForwardingPdfPath: string;
@@ -97,6 +105,33 @@ export async function generateFinalDocsAction(
         error: "Confirm the P&L before generating the final documents.",
       };
     }
+
+    // Validate the three manual figures before anything expensive
+    // runs. Non-negative finite integer-pence; anything else is a
+    // bug in the UI's parse-pounds-to-pence conversion.
+    const manual = { taxLiabilityPence, taxDueJanPence, taxDueJulPence };
+    for (const [k, v] of Object.entries(manual)) {
+      if (!Number.isFinite(v) || v < 0 || !Number.isInteger(v)) {
+        return {
+          ok: false,
+          error: `Invalid ${k}: enter a non-negative amount in pounds.`,
+        };
+      }
+    }
+
+    // Persist the manual tax figures so generateSaForwardingLetterPdf
+    // picks them up when it fetches the row - keeps that generator a
+    // single source of truth (one SELECT per field) rather than
+    // threading them in through a second code path.
+    const manualUpd = await admin
+      .from("pch_cases")
+      .update({
+        manual_tax_liability_pence: taxLiabilityPence,
+        manual_tax_due_jan_pence: taxDueJanPence,
+        manual_tax_due_jul_pence: taxDueJulPence,
+      })
+      .eq("case_id", caseId);
+    if (manualUpd.error) return { ok: false, error: manualUpd.error.message };
 
     const [letterBytes, accountsBytes] = await Promise.all([
       generateSaForwardingLetterPdf(caseId, admin),
@@ -237,6 +272,89 @@ export async function deletePchFinalDocAction(
     const upd = await admin
       .from("pch_cases")
       .update({ [column]: null })
+      .eq("case_id", caseId);
+    if (upd.error) return { ok: false, error: upd.error.message };
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Remove failed." };
+  }
+}
+
+// -------------------------------------------------------------------
+// Proof of submission upload (migration 0122). PDF-only, written to
+// pch_cases.proof_of_submission_path. updateCaseStatusAction then
+// refuses to flip a PCH case to 'complete' until this path is set.
+//
+// Deliberately NOT routed through the UPLOAD_ALLOWED allow-list that
+// uploadPchFinalDocAction uses: the target column is hard-coded here
+// rather than caller-supplied so this entry point can never be
+// redirected at an arbitrary pch_cases column by a stale/malicious
+// caller.
+// -------------------------------------------------------------------
+
+export async function uploadProofOfSubmissionAction(
+  caseId: string,
+  formData: FormData,
+): Promise<ActionResultWith<{ path: string }>> {
+  try {
+    const { me, admin } = await requireAccountantPchCase(caseId);
+
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Pick a file first." };
+    }
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) return { ok: false, error: "File is over 25 MB." };
+
+    // Capium hands back a PDF; images aren't the right shape for this
+    // proof and reject them explicitly rather than letting one slip
+    // through under the generic SA302/SA100 allow-list.
+    const typeLower = (file.type || "").toLowerCase();
+    const nameLower = file.name.toLowerCase();
+    const isPdf = typeLower === "application/pdf" || nameLower.endsWith(".pdf");
+    if (!isPdf) {
+      return { ok: false, error: "Upload the Capium submission PDF." };
+    }
+
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const path = `${caseId}/final/proof-of-submission-${randomUUID()}-${safe}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const up = await admin.storage
+      .from("case-documents")
+      .upload(path, bytes, { contentType: file.type || "application/pdf" });
+    if (up.error) return { ok: false, error: "Upload failed: " + up.error.message };
+
+    const docIns = await admin.from("case_documents").insert({
+      case_id: caseId,
+      uploaded_by: me.id,
+      file_name: file.name,
+      file_url: path,
+      requirement_key: "pch-proof-of-submission",
+    });
+    if (docIns.error) return { ok: false, error: docIns.error.message };
+
+    const upd = await admin
+      .from("pch_cases")
+      .update({ proof_of_submission_path: path })
+      .eq("case_id", caseId);
+    if (upd.error) return { ok: false, error: upd.error.message };
+
+    revalidatePath(`/accountant/cases/${caseId}/pch`);
+    return { ok: true, path };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Upload failed." };
+  }
+}
+
+export async function deleteProofOfSubmissionAction(
+  caseId: string,
+): Promise<ActionResult> {
+  try {
+    const { admin } = await requireAccountantPchCase(caseId);
+    const upd = await admin
+      .from("pch_cases")
+      .update({ proof_of_submission_path: null })
       .eq("case_id", caseId);
     if (upd.error) return { ok: false, error: upd.error.message };
     revalidatePath(`/accountant/cases/${caseId}/pch`);
