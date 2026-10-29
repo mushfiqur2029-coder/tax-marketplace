@@ -62,6 +62,15 @@ import { normalizeLabelCore } from "@/lib/pch/label-normalize";
 // surface can agree on the same five labels.
 const FIXED_SLOTS = INCOME_FIXED_SLOTS;
 
+// After same-payee grouping, a case can still have a long tail of
+// genuinely distinct one-off income lines (different platforms,
+// different one-time deposits) that can't be merged without
+// misrepresenting them as one payee. Rather than show every group at
+// once, the biggest totals (already sorted first) show by default
+// and the rest sit behind "Show N more" - nothing is hidden from the
+// accountant, it's still all there and editable, just collapsed.
+const INCOME_VISIBLE_GROUPS = 18;
+
 function matchesSlot(label: string, source: string): boolean {
   return source.trim().toLowerCase() === label.toLowerCase();
 }
@@ -219,6 +228,7 @@ function ExtraIncomeRows({
   const [adding, setAdding] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showAllGroups, setShowAllGroups] = useState(false);
 
   const needsReview = extras.filter((x) => !x.likely_personal);
   const skippedPersonal = extras.filter((x) => x.likely_personal);
@@ -232,6 +242,13 @@ function ExtraIncomeRows({
     .sort((a, b) => sumIncomePence(b.items) - sumIncomePence(a.items));
   const skippedPersonalGroups = groupIncomeExtrasByLabel(skippedPersonal)
     .sort((a, b) => sumIncomePence(b.items) - sumIncomePence(a.items));
+
+  // Biggest totals first (already sorted), smallest one-off lines
+  // collapsed behind "Show N more" so the default view stays short.
+  const visibleGroups = showAllGroups
+    ? needsReviewGroups
+    : needsReviewGroups.slice(0, INCOME_VISIBLE_GROUPS);
+  const hiddenGroupCount = needsReviewGroups.length - visibleGroups.length;
 
   const toggleSelected = (id: string) => {
     setSelected((prev) => {
@@ -359,7 +376,7 @@ function ExtraIncomeRows({
             {selected.size === needsReview.length ? "Deselect all" : "Select all"}
           </button>
           <ul className="mb-3 space-y-1.5">
-            {needsReviewGroups.map((g) =>
+            {visibleGroups.map((g) =>
               g.items.length === 1 ? (
                 <ExtraIncomeRow
                   key={g.items[0].key}
@@ -386,6 +403,23 @@ function ExtraIncomeRows({
               ),
             )}
           </ul>
+          {hiddenGroupCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowAllGroups(true)}
+              className="mb-3 text-[11px] font-medium text-sky hover:underline"
+            >
+              Show {hiddenGroupCount} more line{hiddenGroupCount === 1 ? "" : "s"}
+            </button>
+          ) : showAllGroups && needsReviewGroups.length > INCOME_VISIBLE_GROUPS ? (
+            <button
+              type="button"
+              onClick={() => setShowAllGroups(false)}
+              className="mb-3 text-[11px] font-medium text-sky hover:underline"
+            >
+              Show fewer
+            </button>
+          ) : null}
         </>
       )}
 

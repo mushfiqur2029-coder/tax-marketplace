@@ -63,6 +63,15 @@ import { normalizeLabelCore } from "@/lib/pch/label-normalize";
 // and classifications.
 const FIXED_SLOTS = EXPENSE_FIXED_SLOTS;
 
+// After same-payee grouping, a case can still have a long tail of
+// genuinely distinct one-off expense lines (different shops,
+// different one-time purchases) that can't be merged without
+// misrepresenting them as one payee. Rather than show every group at
+// once, the biggest totals (already sorted first) show by default
+// and the rest sit behind "Show N more" - nothing is hidden from the
+// accountant, it's still all there and editable, just collapsed.
+const EXPENSE_VISIBLE_GROUPS = 32;
+
 export function Section3Expenses({
   caseId,
   editable,
@@ -229,6 +238,7 @@ function ExtraExpenseRows({
   const [adding, setAdding] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showAllGroups, setShowAllGroups] = useState(false);
 
   const needsReview = extras.filter((x) => !x.likely_personal);
   const skippedPersonal = extras.filter((x) => x.likely_personal);
@@ -242,6 +252,13 @@ function ExtraExpenseRows({
     .sort((a, b) => sumExpensePence(b.items) - sumExpensePence(a.items));
   const skippedPersonalGroups = groupExpenseExtrasByLabel(skippedPersonal)
     .sort((a, b) => sumExpensePence(b.items) - sumExpensePence(a.items));
+
+  // Biggest totals first (already sorted), smallest one-off lines
+  // collapsed behind "Show N more" so the default view stays short.
+  const visibleGroups = showAllGroups
+    ? needsReviewGroups
+    : needsReviewGroups.slice(0, EXPENSE_VISIBLE_GROUPS);
+  const hiddenGroupCount = needsReviewGroups.length - visibleGroups.length;
 
   const toggleSelected = (id: string) => {
     setSelected((prev) => {
@@ -372,7 +389,7 @@ function ExtraExpenseRows({
             {selected.size === needsReview.length ? "Deselect all" : "Select all"}
           </button>
           <ul className="mb-3 space-y-1.5">
-            {needsReviewGroups.map((g) =>
+            {visibleGroups.map((g) =>
               g.items.length === 1 ? (
                 <ExtraExpenseRow
                   key={g.items[0].key}
@@ -399,6 +416,23 @@ function ExtraExpenseRows({
               ),
             )}
           </ul>
+          {hiddenGroupCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowAllGroups(true)}
+              className="mb-3 text-[11px] font-medium text-sky hover:underline"
+            >
+              Show {hiddenGroupCount} more line{hiddenGroupCount === 1 ? "" : "s"}
+            </button>
+          ) : showAllGroups && needsReviewGroups.length > EXPENSE_VISIBLE_GROUPS ? (
+            <button
+              type="button"
+              onClick={() => setShowAllGroups(false)}
+              className="mb-3 text-[11px] font-medium text-sky hover:underline"
+            >
+              Show fewer
+            </button>
+          ) : null}
         </>
       )}
 
