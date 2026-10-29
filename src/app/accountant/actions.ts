@@ -5,7 +5,7 @@ import { after } from "next/server";
 import { requireApprovedAccountant } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendPchInReviewEmail } from "@/lib/pch/status-emails";
+import { sendPchInReviewEmail, sendPchCompleteDocsEmail } from "@/lib/pch/status-emails";
 import {
   insertAddonPendingAdminNotifications,
   insertAddonReadyToPayNotification,
@@ -285,6 +285,17 @@ export async function updateCaseStatusAction(
       throw new Error(
         `Case moved on while you were working. It's no longer at ${current} - reload the page.`,
       );
+    }
+
+    // Case just reached "complete" (the proof-of-submission gate above
+    // already guarantees that doc is on file). Email all five final
+    // documents to the client, bcc'd to the Sterling Ledger backup
+    // inboxes, so everyone has a copy without needing to come back to
+    // the portal. Deferred with after() and never awaited inline,
+    // same as every other PCH status email, since a slow/failed send
+    // must never block or fail this status transition.
+    if (next === "complete" && tierRow?.tier === "uber_phv_automated") {
+      after(() => sendPchCompleteDocsEmail(caseId));
     }
 
     revalidatePath(`/accountant/cases/${caseId}`);
