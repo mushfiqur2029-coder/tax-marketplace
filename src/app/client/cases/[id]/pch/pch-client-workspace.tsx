@@ -231,6 +231,28 @@ export function PchClientWorkspace(props: {
     }),
   });
 
+  // IntakeMethodChoice's write to pch_cases is wrapped in
+  // markLocalMutation() to suppress the generic RealtimeRefresh
+  // "someone else changed this" banner, but that same marker makes
+  // the useLiveRow above actively IGNORE the realtime echo of the
+  // viewer's own write. So after a successful pick(), liveHead.
+  // intake_method never flips from null to the new value and the
+  // choice component never unmounts.
+  //
+  // Fix is local to this component: track the pick in local state
+  // and prefer it over liveHead for the branch decision below.
+  // Server-rendered first paint still comes from liveHead (seeded
+  // off props.intakeMethod, which is the authoritative server read),
+  // so refreshes / new tabs / cross-tab live sync all still work.
+  // Only the single-session self-write transition relies on this
+  // override. The underlying useLiveRow / markLocalMutation
+  // contract stays unchanged (it's correct for the banner-
+  // suppression use case every other caller in this app relies on).
+  const [localIntakeMethod, setLocalIntakeMethod] = useState<
+    "manual" | "auto_upload" | null
+  >(null);
+  const effectiveIntakeMethod = localIntakeMethod ?? liveHead.intake_method;
+
   type LiveAddon = { id: string; description: string; amount_pence: number; status: string };
   const liveAddonsAll = useLiveList<LiveAddon>(
     props.pendingAddons.map((a) => ({ ...a, status: "pending_payment" })),
@@ -374,9 +396,12 @@ export function PchClientWorkspace(props: {
             cases created after migration 0123 land here with
             intake_method = null and see the picker.
           */}
-          {liveHead.intake_method === null ? (
-            <IntakeMethodChoice caseId={props.caseId} />
-          ) : liveHead.intake_method === "auto_upload" ? (
+          {effectiveIntakeMethod === null ? (
+            <IntakeMethodChoice
+              caseId={props.caseId}
+              onPicked={(method) => setLocalIntakeMethod(method)}
+            />
+          ) : effectiveIntakeMethod === "auto_upload" ? (
             <AutoUploadIntakeFlow
               caseId={props.caseId}
               editable={editable}

@@ -25,7 +25,17 @@ import { useState, useTransition } from "react";
 import { setIntakeMethodAction } from "@/app/client/pch/actions";
 import { markLocalMutation } from "@/lib/realtime-self-mutation";
 
-export function IntakeMethodChoice({ caseId }: { caseId: string }) {
+export function IntakeMethodChoice({
+  caseId, onPicked,
+}: {
+  caseId: string;
+  // Fires once setIntakeMethodAction returns ok. The parent flips
+  // its local override state so this component unmounts and the
+  // real intake flow mounts, without waiting on the realtime
+  // subscription (which is actively suppressing the viewer's own
+  // write via markLocalMutation below).
+  onPicked: (method: "manual" | "auto_upload") => void;
+}) {
   const [pending, start] = useTransition();
   const [picking, setPicking] = useState<"manual" | "auto_upload" | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -34,12 +44,12 @@ export function IntakeMethodChoice({ caseId }: { caseId: string }) {
     start(async () => {
       setErr(null);
       setPicking(method);
-      // Same mark-around-the-write pattern the submit button uses: the
-      // live-row subscription on this page watches pch_cases, so a
-      // self-mutation window keeps the realtime echo from double-
-      // firing an unwanted RealtimeRefresh for the client's own
-      // choice. The parent's useLiveRow will re-render without this
-      // component mounted once the UPDATE lands.
+      // markLocalMutation suppresses the generic RealtimeRefresh
+      // "someone else changed this" banner for the viewer's own
+      // write; harmless to keep here. We no longer rely on
+      // useLiveRow echoing the row change back - that same suppress
+      // marker causes it to drop the viewer's own echo. The parent
+      // takes the new value via onPicked() below instead.
       markLocalMutation();
       const r = await setIntakeMethodAction(caseId, method);
       markLocalMutation();
@@ -48,6 +58,7 @@ export function IntakeMethodChoice({ caseId }: { caseId: string }) {
         setErr(r.error);
         return;
       }
+      onPicked(method);
     });
 
   const manualSaving = pending && picking === "manual";
