@@ -33,6 +33,13 @@ export type BulkExtractedItem = {
   // Must exactly match a label from INCOME_FIXED_SLOTS or
   // EXPENSE_FIXED_SLOTS if confident, else null.
   suggestedSlot: string | null;
+  // True when this line is clearly not related to the driver's
+  // taxi work (a personal transfer, a non-driving subscription, an
+  // unrelated salary credit). Only meaningful when suggestedSlot is
+  // null; ignored otherwise. Used by the review UI to route the
+  // line into a collapsed "Skipped as personal" tray instead of the
+  // main review list.
+  likelyPersonal: boolean;
   amountPounds: number;
   // yyyy-mm-dd if visible on the document.
   date: string | null;
@@ -103,6 +110,11 @@ const TOOL_SCHEMA = {
             description:
               "Exact match of one of the fixed slot labels listed in the system prompt, OR null if this line doesn't cleanly map to one.",
           },
+          likelyPersonal: {
+            type: "boolean",
+            description:
+              "True only when this line is clearly personal and not related to the driver's taxi work (see system prompt). False whenever unsure.",
+          },
           amountPounds: {
             type: "number",
             description: "Pounds (not pence), always positive. 0 or negative is a bug - skip the item instead.",
@@ -117,7 +129,7 @@ const TOOL_SCHEMA = {
             description: "One sentence pointer back to this specific line on the document, e.g. 'Line 14 of statement, 12 Apr' or 'Total on receipt'. Under 120 characters.",
           },
         },
-        required: ["kind", "label", "suggestedSlot", "amountPounds", "confidence", "note"],
+        required: ["kind", "label", "suggestedSlot", "likelyPersonal", "amountPounds", "confidence", "note"],
         additionalProperties: false,
       },
     },
@@ -146,6 +158,8 @@ function buildSystemPrompt(): string {
     + ". Set suggestedSlot to that EXACT label (case-sensitive, no paraphrasing). "
     + "\n\n"
     + "Otherwise set suggestedSlot to null and describe the line plainly in the label field; the client will see it as its own editable row and can decide what to do with it. "
+    + "\n\n"
+    + "When suggestedSlot is null, also set likelyPersonal. Set likelyPersonal to true only when the line is clearly not related to the driver's taxi work: a transfer to or from a named individual with no fuel, platform, repair or business keyword, a subscription unrelated to driving (for example Apple, Netflix or Spotify), a salary or wages credit from an employer that is not a private hire platform, or a cash deposit with no stated business purpose. Set likelyPersonal to false for anything you are not confident is personal, anything with a plausible business purpose, or any larger amount where guessing wrong would hide a real cost or fare from the tax return. When genuinely unsure, prefer false so the driver sees the line rather than it being hidden. When suggestedSlot is NOT null, set likelyPersonal to false. "
     + "\n\n"
     + "amountPounds is always a positive number in pounds (not pence). "
     + "Skip any transaction where you can't read a clear amount, rather than guessing a value or returning 0. "
@@ -239,13 +253,20 @@ export async function extractBulkIntakeDocument(
       r.confidence === "high" || r.confidence === "medium" || r.confidence === "low"
         ? r.confidence
         : "low";
+    const suggestedSlot =
+      typeof r.suggestedSlot === "string" && r.suggestedSlot.length > 0
+        ? r.suggestedSlot
+        : null;
+    // A matched slot is a known business category by definition, so
+    // likelyPersonal is forced false regardless of what the model
+    // returned for it. This enforces the prompt's own rule server
+    // side rather than trusting the model to have followed it.
+    const likelyPersonal = suggestedSlot === null && r.likelyPersonal === true;
     items.push({
       kind: r.kind,
       label: label.slice(0, 80),
-      suggestedSlot:
-        typeof r.suggestedSlot === "string" && r.suggestedSlot.length > 0
-          ? r.suggestedSlot
-          : null,
+      suggestedSlot,
+      likelyPersonal,
       amountPounds: amount,
       date: typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date)
         ? r.date

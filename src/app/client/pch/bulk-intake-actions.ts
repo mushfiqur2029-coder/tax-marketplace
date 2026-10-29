@@ -259,6 +259,35 @@ export async function markLineReviewedAction(
   }
 }
 
+// Bulk toggle used by the "Not related to my driving work" and
+// "Move to my review list" actions on the review screen. personal=true
+// routes the row into the collapsed tray; personal=false moves it
+// back into the main review list. Does not delete anything, so a
+// wrong guess (by the model or the client) is always reversible.
+export async function setLinesPersonalAction(
+  caseId: string,
+  table: ReviewableTable,
+  lineIds: string[],
+  personal: boolean,
+): Promise<ActionResult> {
+  try {
+    const { admin } = await requirePchIntakeEditable(caseId);
+    if (lineIds.length === 0) return { ok: true };
+    const tableName =
+      table === "income" ? "pch_income_lines" : "pch_expense_lines";
+    const upd = await admin
+      .from(tableName)
+      .update({ likely_personal: personal, client_reviewed: true })
+      .eq("case_id", caseId)
+      .in("id", lineIds);
+    if (upd.error) return { ok: false, error: upd.error.message };
+    revalidatePath(`/client/cases/${caseId}/pch`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
 export async function addExtraIncomeLineAction(
   caseId: string,
   patch: { label: string; amount_pence: number },

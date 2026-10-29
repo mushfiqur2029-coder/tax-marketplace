@@ -185,6 +185,7 @@ async function applyExtractedItem(
       source_upload_id: uploadId,
       extraction_confidence: item.confidence,
       extraction_note: noteLine,
+      likely_personal: item.likelyPersonal,
     });
     if (ins.error) throw new Error(ins.error.message);
     return true;
@@ -227,6 +228,7 @@ async function applyExtractedItem(
     source_upload_id: uploadId,
     extraction_confidence: item.confidence,
     extraction_note: noteLine,
+    likely_personal: item.likelyPersonal,
   });
   if (ins.error) throw new Error(ins.error.message);
   return true;

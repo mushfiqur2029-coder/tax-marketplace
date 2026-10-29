@@ -25,6 +25,7 @@ import {
   addExtraIncomeLineAction,
   deleteIncomeLineAction,
   markLineReviewedAction,
+  setLinesPersonalAction,
   updateExtraIncomeLineAction,
 } from "@/app/client/pch/bulk-intake-actions";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
@@ -43,6 +44,12 @@ export type IncomeLine = {
   auto_extracted?: boolean;
   client_reviewed?: boolean;
   extraction_note?: string | null;
+  // Phase B UX fix: true when the extractor judged this line clearly
+  // personal (a bank transfer to a named individual, a non-driving
+  // subscription, an unrelated salary credit). Only meaningful on an
+  // extra row; routes it into the collapsed "Skipped as personal"
+  // tray instead of the main review list.
+  likely_personal?: boolean;
 };
 
 export type IntakeAttachment = { docId: string; fileName: string };
@@ -188,21 +195,44 @@ function ExtraIncomeRows({
     auto_extracted: boolean;
     client_reviewed: boolean;
     extraction_note: string | null;
+    likely_personal: boolean;
   };
 
   const [extras, setExtras] = useState<UiExtra[]>(() =>
-    initial.map((l) => ({
-      key: l.id,
-      id: l.id,
-      label: l.source,
-      gross_takings_pence: l.gross_takings_pence,
-      auto_extracted: l.auto_extracted ?? false,
-      client_reviewed: l.client_reviewed ?? false,
-      extraction_note: l.extraction_note ?? null,
-    })),
+    initial
+      .map((l) => ({
+        key: l.id,
+        id: l.id,
+        label: l.source,
+        gross_takings_pence: l.gross_takings_pence,
+        auto_extracted: l.auto_extracted ?? false,
+        client_reviewed: l.client_reviewed ?? false,
+        extraction_note: l.extraction_note ?? null,
+        likely_personal: l.likely_personal ?? false,
+      }))
+      // Biggest amounts first, once, on mount. Not re-sorted on edit
+      // so a row being typed into doesn't jump around.
+      .sort((a, b) => b.gross_takings_pence - a.gross_takings_pence),
   );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const needsReview = extras.filter((x) => !x.likely_personal);
+  const skippedPersonal = extras.filter((x) => x.likely_personal);
+
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const selectAllNeedsReview = () => {
+    setSelected(new Set(needsReview.map((x) => x.id)));
+  };
+  const clearSelection = () => setSelected(new Set());
 
   const add = async () => {
     if (!editable || adding) return;
@@ -212,7 +242,6 @@ function ExtraIncomeRows({
       const r = await addExtraIncomeLineAction(caseId, { label: "", amount_pence: 0 });
       if (!r.ok) { setErr(r.error); return; }
       setExtras((prev) => [
-        ...prev,
         {
           key: r.id,
           id: r.id,
@@ -221,7 +250,9 @@ function ExtraIncomeRows({
           auto_extracted: false,
           client_reviewed: true,
           extraction_note: null,
+          likely_personal: false,
         },
+        ...prev,
       ]);
     } finally {
       setAdding(false);
@@ -238,33 +269,119 @@ function ExtraIncomeRows({
     }
   };
 
+  const patchExtra = (id: string, patch: Partial<UiExtra>) => {
+    setExtras((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  };
+
+  const setPersonal = async (ids: string[], personal: boolean) => {
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setErr(null);
+    try {
+      const r = await setLinesPersonalAction(caseId, "income", ids, personal);
+      if (!r.ok) { setErr(r.error); return; }
+      setExtras((prev) =>
+        prev.map((x) =>
+          ids.includes(x.id) ? { ...x, likely_personal: personal, client_reviewed: true } : x,
+        ),
+      );
+      clearSelection();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div className="mt-6">
-      <h3 className="mb-2 text-sm font-semibold text-slate-900">
-        Other income lines
-      </h3>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-900">
+          Other income lines{needsReview.length > 0 ? ` (${needsReview.length})` : ""}
+        </h3>
+        {selected.size > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPersonal([...selected], true)}
+              disabled={!editable || bulkBusy}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            >
+              Not related to my driving work ({selected.size})
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs font-medium text-slate-500 hover:text-slate-700"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+      </div>
       <p className="mb-3 text-xs text-slate-600">
         Everything else your uploads turned up, plus anything you want
-        to add by hand. Edit the label or amount if we got it wrong.
+        to add by hand. Edit the label or amount if we got it wrong,
+        or select a few and mark them as not related to your driving.
       </p>
-      {extras.length === 0 ? (
+
+      {needsReview.length === 0 ? (
         <p className="mb-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
           Nothing extra yet. Add a line below if you have income that
           doesn't fit the categories above.
         </p>
       ) : (
-        <ul className="mb-3 space-y-2">
-          {extras.map((x) => (
-            <ExtraIncomeRow
-              key={x.key}
-              caseId={caseId}
-              editable={editable}
-              initial={x}
-              onRemove={() => removeExtra(x.id)}
-            />
-          ))}
-        </ul>
+        <>
+          <button
+            type="button"
+            onClick={selected.size === needsReview.length ? clearSelection : selectAllNeedsReview}
+            className="mb-2 text-[11px] font-medium text-sky hover:underline"
+          >
+            {selected.size === needsReview.length ? "Deselect all" : "Select all"}
+          </button>
+          <ul className="mb-3 space-y-1.5">
+            {needsReview.map((x) => (
+              <ExtraIncomeRow
+                key={x.key}
+                caseId={caseId}
+                editable={editable}
+                row={x}
+                selected={selected.has(x.id)}
+                onToggleSelect={() => toggleSelected(x.id)}
+                onPatch={(patch) => patchExtra(x.id, patch)}
+                onRemove={() => removeExtra(x.id)}
+              />
+            ))}
+          </ul>
+        </>
       )}
+
+      {skippedPersonal.length > 0 ? (
+        <details className="mb-3 rounded-lg border border-slate-200 bg-slate-50">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700">
+            Skipped as personal ({skippedPersonal.length})
+          </summary>
+          <ul className="space-y-1 px-3 pb-3">
+            {skippedPersonal.map((x) => (
+              <li
+                key={x.key}
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-2 text-xs text-slate-600"
+              >
+                <span className="truncate">
+                  {x.label || "(no label)"}, £{penceToStr(x.gross_takings_pence) || "0.00"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPersonal([x.id], false)}
+                  disabled={!editable || bulkBusy}
+                  className="shrink-0 text-[11px] font-semibold text-sky hover:underline disabled:opacity-50"
+                >
+                  Actually, this is related, move to my review list
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
       <button
         type="button"
         onClick={add}
@@ -279,11 +396,11 @@ function ExtraIncomeRows({
 }
 
 function ExtraIncomeRow({
-  caseId, editable, initial, onRemove,
+  caseId, editable, row, selected, onToggleSelect, onPatch, onRemove,
 }: {
   caseId: string;
   editable: boolean;
-  initial: {
+  row: {
     id: string;
     label: string;
     gross_takings_pence: number;
@@ -291,36 +408,40 @@ function ExtraIncomeRow({
     client_reviewed: boolean;
     extraction_note: string | null;
   };
+  selected: boolean;
+  onToggleSelect: () => void;
+  onPatch: (patch: { label?: string; gross_takings_pence?: number; client_reviewed?: boolean }) => void;
   onRemove: () => Promise<void>;
 }) {
-  const [reviewed, setReviewed] = useState<boolean>(initial.client_reviewed);
-  const [extractionNote] = useState<string | null>(initial.extraction_note);
+  const [reviewed, setReviewed] = useState<boolean>(row.client_reviewed);
 
   const label = useDebouncedSave<string>({
-    initial: initial.label,
+    initial: row.label,
     save: async (v) => {
-      const r = await updateExtraIncomeLineAction(caseId, initial.id, { label: v });
+      const r = await updateExtraIncomeLineAction(caseId, row.id, { label: v });
       if (!r.ok) throw new Error(r.error);
       setReviewed(true);
+      onPatch({ label: v, client_reviewed: true });
     },
   });
   const amount = useDebouncedSave<string>({
-    initial: penceToStr(initial.gross_takings_pence),
+    initial: penceToStr(row.gross_takings_pence),
     save: async (v) => {
       const pence = strToPence(v);
-      const r = await updateExtraIncomeLineAction(caseId, initial.id, {
+      const r = await updateExtraIncomeLineAction(caseId, row.id, {
         amount_pence: pence,
       });
       if (!r.ok) throw new Error(r.error);
       setReviewed(true);
+      onPatch({ gross_takings_pence: pence, client_reviewed: true });
     },
   });
 
-  const needsReview = initial.auto_extracted && !reviewed;
+  const needsReview = row.auto_extracted && !reviewed;
 
   const markReviewed = async () => {
     setReviewed(true);
-    const r = await markLineReviewedAction(caseId, "income", initial.id);
+    const r = await markLineReviewedAction(caseId, "income", row.id);
     if (!r.ok) setReviewed(false);
   };
 
@@ -332,22 +453,22 @@ function ExtraIncomeRow({
   };
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-white p-3">
-      {needsReview ? (
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
-            Auto-read, not yet checked
-          </span>
-          <button
-            type="button"
-            onClick={markReviewed}
-            className="text-[11px] font-semibold text-sky hover:underline"
-          >
-            Looks right
-          </button>
-        </div>
-      ) : null}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+    <li className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          disabled={!editable}
+          aria-label={`Select ${row.label || "this row"}`}
+          className="h-4 w-4 shrink-0 self-start rounded border-slate-300 text-sky sm:self-center"
+        />
+        {needsReview ? (
+          <span
+            title="Auto-read, not yet checked"
+            className="inline-flex h-2 w-2 shrink-0 self-start rounded-full bg-amber-400 sm:self-center"
+          />
+        ) : null}
         <input
           type="text"
           value={label.value}
@@ -355,7 +476,7 @@ function ExtraIncomeRow({
           placeholder="What's this for?"
           disabled={!editable}
           maxLength={80}
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+          className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
         />
         <div className="flex items-center gap-1">
           <span className="text-sm text-slate-500">£</span>
@@ -366,13 +487,23 @@ function ExtraIncomeRow({
             onChange={(e) => amount.onChange(cleanMoneyInput(e.target.value))}
             placeholder="0.00"
             disabled={!editable}
-            className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+            className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
           />
+          {needsReview ? (
+            <button
+              type="button"
+              onClick={markReviewed}
+              title="Looks right"
+              className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-sky hover:bg-sky/10"
+            >
+              ✓
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={remove}
             disabled={!editable || removing}
-            aria-label={`Remove ${initial.label}`}
+            aria-label={`Remove ${row.label}`}
             title="Delete row"
             className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
           >
@@ -380,9 +511,9 @@ function ExtraIncomeRow({
           </button>
         </div>
       </div>
-      {extractionNote ? (
-        <p className="mt-1.5 whitespace-pre-wrap text-[11px] text-slate-500">
-          From your upload: {extractionNote}
+      {row.extraction_note ? (
+        <p className="mt-1 whitespace-pre-wrap text-[11px] text-slate-500">
+          From your upload: {row.extraction_note}
         </p>
       ) : null}
     </li>

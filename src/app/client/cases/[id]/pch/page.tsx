@@ -119,13 +119,13 @@ export default async function PchClientPage({
       // "Auto-read, not yet checked" badge where applicable.
       admin
         .from("pch_income_lines")
-        .select("id, source, gross_takings_pence, auto_extracted, client_reviewed, extraction_note")
+        .select("id, source, gross_takings_pence, auto_extracted, client_reviewed, extraction_note, likely_personal")
         .eq("case_id", id)
         .order("sort_order"),
       // Section 3: expense lines (fixed slots + airport rows).
       admin
         .from("pch_expense_lines")
-        .select("id, label, amount_paid_pence, category, sa103s_box, car_cost, auto_extracted, client_reviewed, extraction_note")
+        .select("id, label, amount_paid_pence, category, sa103s_box, car_cost, auto_extracted, client_reviewed, extraction_note, likely_personal")
         .eq("case_id", id)
         .order("sort_order"),
       // Section 3 vehicle subsection: pch_vehicle row keyed on case_id.
@@ -308,6 +308,7 @@ export default async function PchClientPage({
           auto_extracted: (l.auto_extracted as boolean | null) ?? false,
           client_reviewed: (l.client_reviewed as boolean | null) ?? false,
           extraction_note: (l.extraction_note as string | null) ?? null,
+          likely_personal: (l.likely_personal as boolean | null) ?? false,
         }))}
         expenseLines={(expenseRes.data ?? []).map((l) => ({
           id: l.id as string,
@@ -319,6 +320,7 @@ export default async function PchClientPage({
           auto_extracted: (l.auto_extracted as boolean | null) ?? false,
           client_reviewed: (l.client_reviewed as boolean | null) ?? false,
           extraction_note: (l.extraction_note as string | null) ?? null,
+          likely_personal: (l.likely_personal as boolean | null) ?? false,
         }))}
         bulkIntakeUploads={(bulkIntakeUploadsRes.data ?? []).map((u) => ({
           id: u.id as string,
