@@ -222,10 +222,30 @@ function ExtraIncomeRows({
   const needsReview = extras.filter((x) => !x.likely_personal);
   const skippedPersonal = extras.filter((x) => x.likely_personal);
 
+  // Repeat transfers to the same payee (very common on a real bank
+  // statement, e.g. several "Transfer to self" lines) compress into
+  // one row showing the combined total instead of one row each.
+  // Grouped purely on the normalized label text; a single-item group
+  // renders as the normal fully-editable row, unchanged.
+  const needsReviewGroups = groupIncomeExtrasByLabel(needsReview)
+    .sort((a, b) => sumIncomePence(b.items) - sumIncomePence(a.items));
+  const skippedPersonalGroups = groupIncomeExtrasByLabel(skippedPersonal)
+    .sort((a, b) => sumIncomePence(b.items) - sumIncomePence(a.items));
+
   const toggleSelected = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleGroupSelected = (ids: string[]) => {
+    setSelected((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (allSelected) next.delete(id); else next.add(id);
+      }
       return next;
     });
   };
@@ -338,39 +358,54 @@ function ExtraIncomeRows({
             {selected.size === needsReview.length ? "Deselect all" : "Select all"}
           </button>
           <ul className="mb-3 space-y-1.5">
-            {needsReview.map((x) => (
-              <ExtraIncomeRow
-                key={x.key}
-                caseId={caseId}
-                editable={editable}
-                row={x}
-                selected={selected.has(x.id)}
-                onToggleSelect={() => toggleSelected(x.id)}
-                onPatch={(patch) => patchExtra(x.id, patch)}
-                onRemove={() => removeExtra(x.id)}
-              />
-            ))}
+            {needsReviewGroups.map((g) =>
+              g.items.length === 1 ? (
+                <ExtraIncomeRow
+                  key={g.items[0].key}
+                  caseId={caseId}
+                  editable={editable}
+                  row={g.items[0]}
+                  selected={selected.has(g.items[0].id)}
+                  onToggleSelect={() => toggleSelected(g.items[0].id)}
+                  onPatch={(patch) => patchExtra(g.items[0].id, patch)}
+                  onRemove={() => removeExtra(g.items[0].id)}
+                />
+              ) : (
+                <GroupedExtraIncomeRow
+                  key={g.key}
+                  caseId={caseId}
+                  editable={editable}
+                  label={g.label}
+                  items={g.items}
+                  selected={g.items.every((it) => selected.has(it.id))}
+                  onToggleSelect={() => toggleGroupSelected(g.items.map((it) => it.id))}
+                  onPatchItem={patchExtra}
+                  onRemoveItem={removeExtra}
+                />
+              ),
+            )}
           </ul>
         </>
       )}
 
-      {skippedPersonal.length > 0 ? (
+      {skippedPersonalGroups.length > 0 ? (
         <details className="mb-3 rounded-lg border border-slate-200 bg-slate-50">
           <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-700">
             Skipped as personal ({skippedPersonal.length})
           </summary>
           <ul className="space-y-1 px-3 pb-3">
-            {skippedPersonal.map((x) => (
+            {skippedPersonalGroups.map((g) => (
               <li
-                key={x.key}
+                key={g.key}
                 className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-2 text-xs text-slate-600"
               >
                 <span className="truncate">
-                  {x.label || "(no label)"}, £{penceToStr(x.gross_takings_pence) || "0.00"}
+                  {g.label || "(no label)"}
+                  {g.items.length > 1 ? ` ×${g.items.length}` : ""}, £{penceToStr(sumIncomePence(g.items)) || "0.00"}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setPersonal([x.id], false)}
+                  onClick={() => setPersonal(g.items.map((it) => it.id), false)}
                   disabled={!editable || bulkBusy}
                   className="shrink-0 text-[11px] font-semibold text-sky hover:underline disabled:opacity-50"
                 >
@@ -1022,6 +1057,158 @@ function MultiFileIncomeRow({
       ) : null}
       {uploadErr ? <p className="mt-1 text-xs text-rose-700">{uploadErr}</p> : null}
     </div>
+  );
+}
+
+// Groups repeat extra-income rows by their (trimmed, case-insensitive)
+// label, e.g. several "Transfer to self" bank-statement lines, so the
+// review list can show one combined total instead of one row each. A
+// blank label (a freshly added, not-yet-typed-into row) always gets
+// its own group, keyed by id, so two blank rows never merge into an
+// uneditable combined row before the client has typed anything.
+function groupIncomeExtrasByLabel<
+  T extends { id: string; label: string; gross_takings_pence: number },
+>(items: T[]): { key: string; label: string; items: T[] }[] {
+  const order: string[] = [];
+  const map = new Map<string, { label: string; items: T[] }>();
+  for (const it of items) {
+    const trimmed = it.label.trim();
+    const key = trimmed.length === 0 ? `id:${it.id}` : trimmed.toLowerCase();
+    const existing = map.get(key);
+    if (existing) {
+      existing.items.push(it);
+    } else {
+      map.set(key, { label: it.label, items: [it] });
+      order.push(key);
+    }
+  }
+  return order.map((key) => ({ key, label: map.get(key)!.label, items: map.get(key)!.items }));
+}
+
+function sumIncomePence(items: { gross_takings_pence: number }[]): number {
+  return items.reduce((sum, it) => sum + it.gross_takings_pence, 0);
+}
+
+// Compact combined row for a group of 2+ same-label rows: one
+// checkbox (selects every row in the group at once), the combined
+// total, a "looks right, all" action, a "delete all" action, and an
+// expand toggle to see (and individually remove) each underlying
+// line if the client needs to correct just one of them.
+function GroupedExtraIncomeRow({
+  caseId, editable, label, items, selected, onToggleSelect, onPatchItem, onRemoveItem,
+}: {
+  caseId: string;
+  editable: boolean;
+  label: string;
+  items: {
+    id: string;
+    gross_takings_pence: number;
+    auto_extracted: boolean;
+    client_reviewed: boolean;
+    extraction_note: string | null;
+  }[];
+  selected: boolean;
+  onToggleSelect: () => void;
+  onPatchItem: (id: string, patch: { client_reviewed?: boolean }) => void;
+  onRemoveItem: (id: string) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const totalPence = sumIncomePence(items);
+  const anyNeedsReview = items.some((it) => it.auto_extracted && !it.client_reviewed);
+
+  const markAllReviewed = async () => {
+    setBusy(true);
+    try {
+      await Promise.all(items.map((it) => markLineReviewedAction(caseId, "income", it.id)));
+      items.forEach((it) => onPatchItem(it.id, { client_reviewed: true }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeAll = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      for (const it of items) await onRemoveItem(it.id);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          disabled={!editable}
+          aria-label={`Select all ${label} lines`}
+          className="h-4 w-4 shrink-0 self-start rounded border-slate-300 text-sky sm:self-center"
+        />
+        {anyNeedsReview ? (
+          <span
+            title="Auto-read, not yet checked"
+            className="inline-flex h-2 w-2 shrink-0 self-start rounded-full bg-amber-400 sm:self-center"
+          />
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="min-w-0 flex-1 truncate text-left text-sm text-slate-900 hover:underline"
+        >
+          {expanded ? "▾" : "▸"} {label || "(no label)"} ×{items.length}
+        </button>
+        <div className="flex items-center gap-1">
+          <span className="shrink-0 text-sm font-semibold text-slate-900">
+            £{penceToStr(totalPence) || "0.00"}
+          </span>
+          {anyNeedsReview ? (
+            <button
+              type="button"
+              onClick={markAllReviewed}
+              disabled={!editable || busy}
+              title="Looks right, all"
+              className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-sky hover:bg-sky/10 disabled:opacity-50"
+            >
+              ✓
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={removeAll}
+            disabled={!editable || busy}
+            aria-label={`Remove all ${label} lines`}
+            title="Delete all"
+            className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+          >
+            {busy ? "..." : "×"}
+          </button>
+        </div>
+      </div>
+      {expanded ? (
+        <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2 pl-5">
+          {items.map((it) => (
+            <li key={it.id} className="flex items-center justify-between gap-2 text-xs text-slate-600">
+              <span className="min-w-0 flex-1 truncate">{it.extraction_note ?? "No note"}</span>
+              <span className="shrink-0">£{penceToStr(it.gross_takings_pence) || "0.00"}</span>
+              <button
+                type="button"
+                onClick={() => onRemoveItem(it.id)}
+                disabled={!editable}
+                aria-label="Remove this one line"
+                className="shrink-0 rounded px-1 text-slate-400 hover:text-rose-700 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
   );
 }
 
