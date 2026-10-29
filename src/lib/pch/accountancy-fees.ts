@@ -16,6 +16,16 @@ import "server-only";
 // is a no-op. Also called from scripts/pch-accountancy-fees-backfill
 // .mjs for the one-shot sweep across existing cases.
 //
+// The persisted amount is the full fee the client paid us: the base
+// plan fee (via effectiveFeePence) PLUS the urgency surcharge
+// (cases.urgent_fee_pence) when the case is urgent. effectiveFeePence
+// deliberately returns only the base plan fee because the checkout +
+// Stripe webhook paths add urgent_fee_pence on top separately; the
+// deductible accountancy figure the client wrote on their SA103S has
+// to include both, so this is where the sum is formed. The display
+// prefill on the client's PCH page.tsx mirrors this same sum, kept in
+// lockstep by comment at the call site.
+//
 // Slot shape kept in step with FIXED_SLOTS in
 // src/app/client/cases/[id]/pch/section-3-expenses.tsx: label
 // "Accountancy Fees", category "Accountancy & insurance", sa103s_box
@@ -53,7 +63,7 @@ export async function ensureAccountancyFeesRow(
     // vat_reg case.
     const { data: caseRow, error: caseErr } = await admin
       .from("cases")
-      .select("id, tier, custom_fee_pence")
+      .select("id, tier, custom_fee_pence, urgent_fee_pence")
       .eq("id", caseId)
       .single();
     if (caseErr) return { ok: false, error: caseErr.message };
@@ -93,13 +103,20 @@ export async function ensureAccountancyFeesRow(
     }
 
     const tier = await getTier(caseRow.tier);
-    const pence = effectiveFeePence(
+    // effectiveFeePence returns only the base plan fee; urgent cases
+    // owe us an extra urgent_fee_pence on top (held separately on the
+    // cases row and summed by the Stripe checkout + webhook paths).
+    // The deductible accountancy figure is the client's TOTAL spend
+    // with us, so add it here. Keep in step with the client PCH
+    // page.tsx caseFeePence prefill.
+    const basePence = effectiveFeePence(
       {
         custom_fee_pence: (caseRow.custom_fee_pence as number | null) ?? null,
         tier: caseRow.tier as string,
       },
       tier,
     );
+    const pence = basePence + ((caseRow.urgent_fee_pence as number | null) ?? 0);
     // Nothing worth writing. Either the tier has no price and no
     // custom_fee was set (very unusual on a PCH case) or we got a 0.
     // Don't drop a 0 row - that would be noisy and misleading.

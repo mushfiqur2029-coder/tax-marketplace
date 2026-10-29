@@ -44,7 +44,7 @@ export default async function PchClientPage({
   const admin = createAdminClient();
   const { data: caseRow } = await admin
     .from("cases")
-    .select("id, client_id, accountant_id, status, tier, custom_fee_pence")
+    .select("id, client_id, accountant_id, status, tier, custom_fee_pence, urgent_fee_pence")
     .eq("id", id)
     .single();
   if (!caseRow) notFound();
@@ -174,9 +174,17 @@ export default async function PchClientPage({
   // for this return. Look up the live tier (admin may have put it on
   // sale since the case was created) and prefer custom_fee_pence if
   // this is a bespoke-fee case; same precedence effectiveFeePence
-  // enforces everywhere else.
+  // enforces everywhere else. On an urgent case the client paid us an
+  // extra urgent_fee_pence on top of the base plan fee at checkout
+  // (deliberately not folded into effectiveFeePence so the checkout
+  // and webhook paths can reason about the two amounts separately);
+  // the deductible accountancy figure is the TOTAL they paid, so sum
+  // them here. Keep in step with ensureAccountancyFeesRow which
+  // writes the same sum into pch_expense_lines.
   const tier = await getTier(caseRow.tier);
-  const caseFeePence = effectiveFeePence(caseRow, tier);
+  const caseFeePence =
+    effectiveFeePence(caseRow, tier)
+    + ((caseRow.urgent_fee_pence as number | null) ?? 0);
 
   const priorYearOptions = await buildPriorYearOptions({
     admin,

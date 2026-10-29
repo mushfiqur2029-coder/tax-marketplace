@@ -1,0 +1,30 @@
+-- Add pch_intake_uploads to the Realtime publication so per-row
+-- useLiveRow subscriptions in BulkDocumentUpload's status chips
+-- actually receive row-change events. Without this the client UI
+-- showed every upload stuck on "Queued" forever even though the
+-- background AI extraction completed correctly and wrote
+-- status='done' on the row (14 of 15 real statements confirmed
+-- extracted successfully; the UI just never saw the updates).
+--
+-- Root cause: migration 0124 created the pch_intake_uploads table +
+-- its RLS SELECT policy but omitted the "alter publication
+-- supabase_realtime add table ..." step every other realtime-watched
+-- table in this schema already has (pch_cases, pch_income_lines,
+-- pch_expense_lines, pch_doc_extractions, etc.). The bug is additive;
+-- RLS still gates visibility, and no behaviour outside the live-chip
+-- update changes.
+--
+-- Applied live via apply_migration on 2026-10-29 by Claude; this file
+-- tracks that change (same pattern migrations 0111 and 0120 used for
+-- their own already-applied fixes).
+--
+-- NOT idempotent: ALTER PUBLICATION ADD TABLE has no "if not exists"
+-- clause, so re-running this against a database where the table is
+-- already a member of the publication throws
+-- "relation ... is already member of publication". Production has
+-- already been patched; do NOT re-apply this file's SQL to the live
+-- DB. The file exists purely so future environments (local dev, a
+-- restored-from-schema staging DB, etc.) pick the change up when
+-- migrations are replayed from zero.
+
+alter publication supabase_realtime add table public.pch_intake_uploads;
