@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { startAddonCheckoutAction } from "@/app/client/actions";
 import { AddonPayBanner } from "../addon-pay-banner";
 import { FinalPackReview } from "./final-pack-review";
+import { IntakeMethodChoice } from "./intake-method-choice";
 import { PriorYearPrompt, type PriorYearOption } from "./prior-year-prompt";
 import { Section1Identity, type Section1InitialHead } from "./section-1-identity";
 import { Section2Income, type IncomeLine } from "./section-2-income";
@@ -86,6 +87,12 @@ export function PchClientWorkspace(props: {
   // cases.status. Null = still editable; a timestamp = locked, every
   // intake-mutating server action refuses.
   intakeSubmittedAt: string | null;
+  // Migration 0123: how the client chose to enter their income /
+  // expenses. Null = hasn't picked yet; "manual" = typed fixed-slot
+  // entry; "auto_upload" = AI-extraction flow (Phase B, not yet
+  // reachable). Live-synced so the choice screen unmounts the moment
+  // setIntakeMethodAction writes the column.
+  intakeMethod: "manual" | "auto_upload" | null;
   engineSnapshot: TaxEngineOutput | null;
   engineSnapshotAt: string | null;
   // Figures-approval columns from the old Slice-7 flow. Still read so
@@ -160,6 +167,7 @@ export function PchClientWorkspace(props: {
     client_approved_at: string | null;
     client_approved_signature_name: string | null;
     intake_submitted_at: string | null;
+    intake_method: "manual" | "auto_upload" | null;
   };
   const initialHead: LiveHead = {
     final_pack_sent_at: props.finalPackSentAt,
@@ -170,6 +178,7 @@ export function PchClientWorkspace(props: {
     client_approved_at: props.approvedAt,
     client_approved_signature_name: props.approvedSignatureName,
     intake_submitted_at: props.intakeSubmittedAt,
+    intake_method: props.intakeMethod,
   };
   const liveHead = useLiveRow<LiveHead>(initialHead, {
     table: "pch_cases",
@@ -208,6 +217,10 @@ export function PchClientWorkspace(props: {
         row.intake_submitted_at === undefined
           ? prev.intake_submitted_at
           : (row.intake_submitted_at as string | null),
+      intake_method:
+        row.intake_method === undefined
+          ? prev.intake_method
+          : (row.intake_method as "manual" | "auto_upload" | null),
     }),
   });
 
@@ -342,22 +355,40 @@ export function PchClientWorkspace(props: {
             pch24Extractions={props.pch24Extractions}
           />
 
-          <Section2Income
-            caseId={props.caseId}
-            editable={editable}
-            initial={props.incomeLines}
-            attachmentsByLineId={props.intakeAttachments}
-          />
+          {/*
+            Phase A: the client picks between typing their figures in
+            or uploading documents for AI extraction. Null intake_method
+            means they haven't picked yet, so show the choice screen
+            and hide income/expenses/vehicle until they do - that keeps
+            the two flows from clashing visually. Every pre-existing
+            case was backfilled to 'manual' by migration 0123, so they
+            fall straight through to Section2Income without ever seeing
+            the choice screen (preserving today's behaviour). Only new
+            cases created after migration 0123 land here with
+            intake_method = null and see the picker.
+          */}
+          {liveHead.intake_method === null ? (
+            <IntakeMethodChoice caseId={props.caseId} />
+          ) : (
+            <>
+              <Section2Income
+                caseId={props.caseId}
+                editable={editable}
+                initial={props.incomeLines}
+                attachmentsByLineId={props.intakeAttachments}
+              />
 
-          <Section3Expenses
-            caseId={props.caseId}
-            editable={editable}
-            initial={props.expenseLines}
-            caseFeePence={props.caseFeePence}
-            attachmentsByLineId={props.intakeAttachments}
-            privateUseInitialPence={props.vehicleInitial.private_use_amount_pence ?? 0}
-            privateUseAttachments={props.privateUseAttachments}
-          />
+              <Section3Expenses
+                caseId={props.caseId}
+                editable={editable}
+                initial={props.expenseLines}
+                caseFeePence={props.caseFeePence}
+                attachmentsByLineId={props.intakeAttachments}
+                privateUseInitialPence={props.vehicleInitial.private_use_amount_pence ?? 0}
+                privateUseAttachments={props.privateUseAttachments}
+              />
+            </>
+          )}
 
           <Section4Vehicle
             caseId={props.caseId}

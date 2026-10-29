@@ -235,6 +235,9 @@ export default async function PchClientPage({
         finalPackConfirmedAt={(head.data?.final_pack_confirmed_at as string | null) ?? null}
         finalPackConfirmedName={(head.data?.final_pack_confirmed_name as string | null) ?? null}
         intakeSubmittedAt={(head.data?.intake_submitted_at as string | null) ?? null}
+        intakeMethod={
+          (head.data?.intake_method as "manual" | "auto_upload" | null) ?? null
+        }
         saForwardingPdfPath={(head.data?.sa_forwarding_pdf_path as string | null) ?? null}
         pchAccountsPdfPath={(head.data?.pch_accounts_pdf_path as string | null) ?? null}
         sa302UploadPath={(head.data?.sa302_upload_path as string | null) ?? null}
