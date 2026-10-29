@@ -854,17 +854,15 @@ export async function confirmFinalPackAction(
 }
 
 // -------------------------------------------------------------------
-// Phase A of the intake redesign: the client picks between typing in
-// their income/expenses by hand (today's fixed-slot grid) or
-// uploading bank statements / receipts for AI extraction. The AI
-// extraction pipeline itself is Phase B; this action just writes
-// the choice to pch_cases.intake_method so the client workspace can
-// gate which flow renders.
+// Intake redesign: the client picks between typing in their income/
+// expenses by hand (today's fixed-slot grid) or uploading bank
+// statements / receipts for AI extraction. This action writes the
+// choice to pch_cases.intake_method so the client workspace can gate
+// which flow renders.
 //
-// One-way choice: refuse if the column is already set. Phase A
-// deliberately refuses auto_upload even though the DB check allows
-// it, because the extraction pipeline hasn't landed - the UI also
-// disables that card but this is the real server-side gate.
+// One-way choice: refuse if the column is already set. Phase B
+// landed the real extraction pipeline, so both values are now
+// accepted; the earlier Phase A auto_upload refusal is gone.
 // -------------------------------------------------------------------
 export async function setIntakeMethodAction(
   caseId: string,
@@ -872,13 +870,6 @@ export async function setIntakeMethodAction(
 ): Promise<ActionResult> {
   if (method !== "manual" && method !== "auto_upload") {
     return { ok: false, error: "Unknown intake method." };
-  }
-  if (method === "auto_upload") {
-    return {
-      ok: false,
-      error:
-        "Document upload isn't available yet, pick Enter it yourself for now.",
-    };
   }
   const { caseRow } = await requirePchCase(caseId);
   const lock = assertEditableByClient(caseRow);

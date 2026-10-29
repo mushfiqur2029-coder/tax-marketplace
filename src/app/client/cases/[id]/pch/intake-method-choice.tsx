@@ -1,19 +1,19 @@
 "use client";
 
-// Phase A of the PCH intake redesign. Shown once, in the main
-// intake-flow branch, between Section1Identity and Section2Income,
-// ONLY when pch_cases.intake_method is still null for this case.
-// Once the client picks, setIntakeMethodAction writes the column
-// and the parent's useLiveRow on pch_cases flips intake_method
-// which unmounts this component and renders the normal flow.
+// Phase A UI, Phase B wiring. Shown once, in the main intake-flow
+// branch, between Section1Identity and Section2Income, ONLY when
+// pch_cases.intake_method is still null for this case. Once the
+// client picks, setIntakeMethodAction writes the column and the
+// parent's useLiveRow on pch_cases flips intake_method which
+// unmounts this component and renders the real intake flow for the
+// chosen method.
 //
-// Phase A ships two cards: "Upload your documents" (Option 1) and
-// "Enter it yourself" (Option 2). Option 2 writes 'manual' and
-// drops the client straight into today's fixed-slot grid. Option 1
-// is a real, polished tile but marked "Coming soon" and
-// non-interactive - the AI extraction pipeline is Phase B and
-// isn't live yet. Server-side setIntakeMethodAction also refuses
-// 'auto_upload' as belt-and-braces.
+// Both cards are now fully wired: Option 1 writes 'auto_upload' and
+// drops the client into Phase B's BulkDocumentUpload + review flow;
+// Option 2 writes 'manual' and drops them into today's fixed-slot
+// grid. The server action setIntakeMethodAction accepts either value
+// as a one-way choice (refuses only if intake_method is already
+// set).
 //
 // Mobile-first: single column by default (grid-cols-1), two columns
 // at md:+. Whole card is the tap target, not a small button inside
@@ -30,10 +30,10 @@ export function IntakeMethodChoice({ caseId }: { caseId: string }) {
   const [picking, setPicking] = useState<"manual" | "auto_upload" | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const pickManual = () =>
+  const pick = (method: "manual" | "auto_upload") =>
     start(async () => {
       setErr(null);
-      setPicking("manual");
+      setPicking(method);
       // Same mark-around-the-write pattern the submit button uses: the
       // live-row subscription on this page watches pch_cases, so a
       // self-mutation window keeps the realtime echo from double-
@@ -41,7 +41,7 @@ export function IntakeMethodChoice({ caseId }: { caseId: string }) {
       // choice. The parent's useLiveRow will re-render without this
       // component mounted once the UPDATE lands.
       markLocalMutation();
-      const r = await setIntakeMethodAction(caseId, "manual");
+      const r = await setIntakeMethodAction(caseId, method);
       markLocalMutation();
       if (!r.ok) {
         setPicking(null);
@@ -51,6 +51,7 @@ export function IntakeMethodChoice({ caseId }: { caseId: string }) {
     });
 
   const manualSaving = pending && picking === "manual";
+  const autoSaving = pending && picking === "auto_upload";
 
   return (
     <section className="mb-8">
@@ -61,19 +62,16 @@ export function IntakeMethodChoice({ caseId }: { caseId: string }) {
       </p>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* Option 1: Upload - Phase A ships this as a well-designed
-            tile that is deliberately disabled with a "Coming soon"
-            pill so what's being built next is visible rather than
-            hidden. The AI extraction pipeline lands in Phase B. */}
-        <div
-          aria-disabled="true"
-          className="relative flex min-h-[220px] cursor-not-allowed select-none flex-col rounded-xl border border-slate-200 bg-white p-5 opacity-60 sm:p-6"
+        {/* Option 1: Upload documents - Phase B flow. Picking this
+            drops the client into BulkDocumentUpload + the fixed grids
+            with extra-rows review. */}
+        <button
+          type="button"
+          onClick={() => pick("auto_upload")}
+          disabled={pending}
+          aria-busy={autoSaving}
+          className="group relative flex min-h-[220px] cursor-pointer flex-col rounded-xl border border-slate-200 bg-white p-5 text-left transition hover:border-sky hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky/40 disabled:cursor-wait sm:p-6"
         >
-          <div className="absolute right-4 top-4">
-            <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-              Coming soon
-            </span>
-          </div>
           <UploadCloudIcon />
           <h3 className="mt-4 text-base font-bold text-ink">
             Upload your documents
@@ -83,15 +81,27 @@ export function IntakeMethodChoice({ caseId }: { caseId: string }) {
             them and sort everything into the right categories for you
             to check.
           </p>
-        </div>
+          <div className="mt-auto flex items-center gap-2 pt-4 text-sm font-semibold text-sky">
+            {autoSaving ? (
+              <>
+                <Spinner />
+                Setting up.
+              </>
+            ) : (
+              <>
+                <span>Start uploading</span>
+                <ArrowRightIcon />
+              </>
+            )}
+          </div>
+        </button>
 
-        {/* Option 2: Manual - fully wired. Whole card is the tap
-            target. Loading state covers the brief gap between the
-            action succeeding and the parent's useLiveRow echoing the
-            new intake_method value through. */}
+        {/* Option 2: Manual. Loading state covers the brief gap
+            between the action succeeding and the parent's useLiveRow
+            echoing the new intake_method value through. */}
         <button
           type="button"
-          onClick={pickManual}
+          onClick={() => pick("manual")}
           disabled={pending}
           aria-busy={manualSaving}
           className="group relative flex min-h-[220px] cursor-pointer flex-col rounded-xl border border-slate-200 bg-white p-5 text-left transition hover:border-sky hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky/40 disabled:cursor-wait sm:p-6"
