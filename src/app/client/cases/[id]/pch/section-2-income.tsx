@@ -55,6 +55,7 @@ export type IncomeLine = {
 export type IntakeAttachment = { docId: string; fileName: string };
 
 import { INCOME_FIXED_SLOTS, type IncomeSlot } from "@/lib/pch/intake-slots";
+import { normalizeLabelCore } from "@/lib/pch/label-normalize";
 
 // Phase J: five fixed sources mirroring the PL.xlsx template rows.
 // Lives in src/lib/pch/intake-slots.ts so the accountant P&L review
@@ -1060,12 +1061,14 @@ function MultiFileIncomeRow({
   );
 }
 
-// Groups repeat extra-income rows by their (trimmed, case-insensitive)
-// label, e.g. several "Transfer to self" bank-statement lines, so the
-// review list can show one combined total instead of one row each. A
-// blank label (a freshly added, not-yet-typed-into row) always gets
-// its own group, keyed by id, so two blank rows never merge into an
-// uneditable combined row before the client has typed anything.
+// Groups repeat extra-income rows by normalized payee (see
+// label-normalize.ts: strips legal suffixes like PLC/LTD and
+// transaction-type descriptor clauses, so "Whitbread Group PL" and
+// "Whitbread Group PLC - salary/wages payment" merge even though the
+// AI worded the two occurrences differently). A blank label (a
+// freshly added, not-yet-typed-into row) always gets its own group,
+// keyed by id, so two blank rows never merge into an uneditable
+// combined row before the client has typed anything.
 function groupIncomeExtrasByLabel<
   T extends { id: string; label: string; gross_takings_pence: number },
 >(items: T[]): { key: string; label: string; items: T[] }[] {
@@ -1073,7 +1076,8 @@ function groupIncomeExtrasByLabel<
   const map = new Map<string, { label: string; items: T[] }>();
   for (const it of items) {
     const trimmed = it.label.trim();
-    const key = trimmed.length === 0 ? `id:${it.id}` : trimmed.toLowerCase();
+    const core = normalizeLabelCore(trimmed);
+    const key = trimmed.length === 0 ? `id:${it.id}` : core.length > 0 ? core : trimmed.toLowerCase();
     const existing = map.get(key);
     if (existing) {
       existing.items.push(it);

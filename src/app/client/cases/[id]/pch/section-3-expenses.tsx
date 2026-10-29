@@ -54,6 +54,7 @@ export type ExpenseLine = {
 };
 
 import { EXPENSE_FIXED_SLOTS, type ExpenseSlot } from "@/lib/pch/intake-slots";
+import { normalizeLabelCore } from "@/lib/pch/label-normalize";
 
 // Phase J: 13 fixed cards in exact spec order. MOT and Road Tax are
 // separate rows; "Parking, Congestion & ULEZ" uses the old Parking
@@ -1253,11 +1254,13 @@ function MultiFilePrivateUseRow({
   );
 }
 
-// Groups repeat extra-expense rows by their (trimmed, case-insensitive)
-// label, e.g. several "Transfer to self" bank-statement lines, so the
-// review list can show one combined total instead of one row each. A
-// blank label (a freshly added, not-yet-typed-into row) always gets
-// its own group, keyed by id, so two blank rows never merge into an
+// Groups repeat extra-expense rows by normalized payee (see
+// label-normalize.ts: strips legal suffixes like PLC/LTD and
+// transaction-type descriptor clauses, so "Munchies Original" and a
+// slightly differently worded occurrence of the same payee merge
+// even though the AI worded the two lines differently). A blank
+// label (a freshly added, not-yet-typed-into row) always gets its
+// own group, keyed by id, so two blank rows never merge into an
 // uneditable combined row before the client has typed anything.
 function groupExpenseExtrasByLabel<
   T extends { id: string; label: string; amount_paid_pence: number },
@@ -1266,7 +1269,8 @@ function groupExpenseExtrasByLabel<
   const map = new Map<string, { label: string; items: T[] }>();
   for (const it of items) {
     const trimmed = it.label.trim();
-    const key = trimmed.length === 0 ? `id:${it.id}` : trimmed.toLowerCase();
+    const core = normalizeLabelCore(trimmed);
+    const key = trimmed.length === 0 ? `id:${it.id}` : core.length > 0 ? core : trimmed.toLowerCase();
     const existing = map.get(key);
     if (existing) {
       existing.items.push(it);
