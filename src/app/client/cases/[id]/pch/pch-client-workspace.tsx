@@ -9,6 +9,12 @@ import { startAddonCheckoutAction } from "@/app/client/actions";
 import { AddonPayBanner } from "../addon-pay-banner";
 import { FinalPackReview } from "./final-pack-review";
 import { IntakeMethodChoice } from "./intake-method-choice";
+import { BulkDocumentUpload } from "./bulk-document-upload";
+import type { BulkIntakeUploadView } from "@/app/client/pch/bulk-intake-actions";
+import {
+  EXPENSE_FIXED_SLOTS,
+  INCOME_FIXED_SLOTS,
+} from "@/lib/pch/intake-slots";
 import { PriorYearPrompt, type PriorYearOption } from "./prior-year-prompt";
 import { Section1Identity, type Section1InitialHead } from "./section-1-identity";
 import { Section2Income, type IncomeLine } from "./section-2-income";
@@ -123,6 +129,7 @@ export function PchClientWorkspace(props: {
   pch24Extractions: Section1Pch24Extraction[];
   incomeLines: IncomeLine[];
   expenseLines: ExpenseLine[];
+  bulkIntakeUploads: BulkIntakeUploadView[];
   intakeAttachments: Record<string, Array<{ docId: string; fileName: string }>>;
   vehicleInitial: VehicleInitial;
   privateUseAttachments: Array<{ docId: string; fileName: string }>;
@@ -369,6 +376,18 @@ export function PchClientWorkspace(props: {
           */}
           {liveHead.intake_method === null ? (
             <IntakeMethodChoice caseId={props.caseId} />
+          ) : liveHead.intake_method === "auto_upload" ? (
+            <AutoUploadIntakeFlow
+              caseId={props.caseId}
+              editable={editable}
+              incomeLines={props.incomeLines}
+              expenseLines={props.expenseLines}
+              intakeAttachments={props.intakeAttachments}
+              caseFeePence={props.caseFeePence}
+              vehicleInitial={props.vehicleInitial}
+              privateUseAttachments={props.privateUseAttachments}
+              bulkIntakeUploads={props.bulkIntakeUploads}
+            />
           ) : (
             <>
               <Section2Income
@@ -850,6 +869,100 @@ function ApprovalSection({
       </div>
       {err && <p className="text-red-600 text-xs">{err}</p>}
     </div>
+  );
+}
+
+// Phase B: the auto_upload intake flow. Renders in place of the
+// manual-path Section2+Section3 duo when the client picked
+// intake_method='auto_upload'. Composes:
+//
+//   BulkDocumentUpload   - dropzone + live-tracked list of uploads
+//   Section2Income       - fixed 5-slot grid + extra income rows
+//   Section3Expenses     - fixed 13-slot grid + Less: Private use +
+//                          extra expense rows
+//
+// The two sections are keyed on a local `linesVersion` counter: when
+// any upload's live status flips to 'done', BulkDocumentUpload fires
+// onExtractionDone, which bumps the counter and forces Section2 /
+// Section3 to remount with fresh server-fetched initial lines (both
+// use useState(() => ...) to seed their internal state from `initial`
+// once; a prop change alone wouldn't resync already-mounted state).
+//
+// Fixed/extra split is computed inline against the shared slot
+// labels: a line is "fixed" if its source/label (case-insensitive-
+// trim) exactly matches one of INCOME_FIXED_SLOTS / EXPENSE_FIXED_
+// SLOTS, otherwise it's an "extra". Pre-migration-0124 cases won't
+// have anything in the extras bucket because every row was created
+// via a fixed-slot upsert.
+function AutoUploadIntakeFlow(props: {
+  caseId: string;
+  editable: boolean;
+  incomeLines: IncomeLine[];
+  expenseLines: ExpenseLine[];
+  intakeAttachments: Record<string, Array<{ docId: string; fileName: string }>>;
+  caseFeePence: number;
+  vehicleInitial: VehicleInitial;
+  privateUseAttachments: Array<{ docId: string; fileName: string }>;
+  bulkIntakeUploads: BulkIntakeUploadView[];
+}) {
+  const [linesVersion, setLinesVersion] = useState(0);
+
+  const incomeFixedLabels = new Set(
+    INCOME_FIXED_SLOTS.map((s) => s.label.trim().toLowerCase()),
+  );
+  const expenseFixedLabels = new Set(
+    EXPENSE_FIXED_SLOTS.map((s) => s.label.trim().toLowerCase()),
+  );
+
+  const incomeFixed: IncomeLine[] = [];
+  const incomeExtras: IncomeLine[] = [];
+  for (const l of props.incomeLines) {
+    if (incomeFixedLabels.has((l.source ?? "").trim().toLowerCase())) {
+      incomeFixed.push(l);
+    } else {
+      incomeExtras.push(l);
+    }
+  }
+  const expenseFixed: ExpenseLine[] = [];
+  const expenseExtras: ExpenseLine[] = [];
+  for (const l of props.expenseLines) {
+    if (expenseFixedLabels.has((l.label ?? "").trim().toLowerCase())) {
+      expenseFixed.push(l);
+    } else {
+      expenseExtras.push(l);
+    }
+  }
+
+  return (
+    <>
+      <BulkDocumentUpload
+        caseId={props.caseId}
+        editable={props.editable}
+        initialUploads={props.bulkIntakeUploads}
+        onExtractionDone={() => setLinesVersion((v) => v + 1)}
+      />
+      <Section2Income
+        key={`income-${linesVersion}`}
+        caseId={props.caseId}
+        editable={props.editable}
+        initial={incomeFixed}
+        attachmentsByLineId={props.intakeAttachments}
+        allowExtraRows
+        extraLines={incomeExtras}
+      />
+      <Section3Expenses
+        key={`expense-${linesVersion}`}
+        caseId={props.caseId}
+        editable={props.editable}
+        initial={expenseFixed}
+        caseFeePence={props.caseFeePence}
+        attachmentsByLineId={props.intakeAttachments}
+        privateUseInitialPence={props.vehicleInitial.private_use_amount_pence ?? 0}
+        privateUseAttachments={props.privateUseAttachments}
+        allowExtraRows
+        extraLines={expenseExtras}
+      />
+    </>
   );
 }
 

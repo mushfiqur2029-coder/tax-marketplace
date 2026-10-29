@@ -22,7 +22,7 @@ type ActionErr = { ok: false; error: string };
 export type IntakeActionResult = ActionOk | ActionErr;
 export type IntakeActionResultWith<T> = (ActionOk & T) | ActionErr;
 
-async function requirePchIntakeEditable(caseId: string) {
+export async function requirePchIntakeEditable(caseId: string) {
   const me = await requireRole("client");
   const admin = createAdminClient();
   const [caseRes, pchRes] = await Promise.all([
@@ -428,7 +428,14 @@ export async function upsertPchIncomeLineAction(
     if (lineId) {
       const upd = await admin
         .from("pch_income_lines")
-        .update(row)
+        .update({
+          ...row,
+          // Any direct client edit clears the "Auto-read, not yet
+          // checked" badge: the figure now reflects an active
+          // decision by the client. No-op for manual-path rows,
+          // which were already treated as reviewed.
+          client_reviewed: true,
+        })
         .eq("id", lineId)
         .eq("case_id", caseId)
         .select("id")
@@ -531,6 +538,10 @@ export async function upsertPchExpenseLineAction(
           category: row.category,
           sa103s_box: row.sa103s_box,
           car_cost: row.car_cost,
+          // Any direct client edit clears the "Auto-read, not yet
+          // checked" badge. See the matching comment on
+          // upsertPchIncomeLineAction above.
+          client_reviewed: true,
         })
         .eq("id", lineId)
         .eq("case_id", caseId)

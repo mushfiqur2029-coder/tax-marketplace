@@ -21,6 +21,12 @@ import {
   uploadIntakeAttachmentAction,
   upsertPchIncomeLineAction,
 } from "@/app/client/pch/intake-actions";
+import {
+  addExtraIncomeLineAction,
+  deleteIncomeLineAction,
+  markLineReviewedAction,
+  updateExtraIncomeLineAction,
+} from "@/app/client/pch/bulk-intake-actions";
 import { useDebouncedSave } from "@/lib/hooks/use-debounced-save";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { isIncomeComplete } from "./intake-completion";
@@ -30,6 +36,13 @@ export type IncomeLine = {
   id: string;
   source: string;
   gross_takings_pence: number;
+  // Phase B optional metadata. Null/undefined on every row that
+  // predates migration 0124; the row components only render the
+  // "Auto-read, not yet checked" badge when auto_extracted is
+  // explicitly true, so manual-path rows show no new chrome.
+  auto_extracted?: boolean;
+  client_reviewed?: boolean;
+  extraction_note?: string | null;
 };
 
 export type IntakeAttachment = { docId: string; fileName: string };
@@ -50,16 +63,28 @@ export function Section2Income({
   editable,
   initial,
   attachmentsByLineId,
+  allowExtraRows,
+  extraLines,
 }: {
   caseId: string;
   editable: boolean;
   initial: IncomeLine[];
   attachmentsByLineId?: Record<string, IntakeAttachment[]>;
+  // Phase B: when the case picked intake_method='auto_upload', the
+  // parent passes allowExtraRows=true and separates out any
+  // extracted lines that didn't match a fixed slot into extraLines.
+  // In the manual path (allowExtraRows undefined / false) nothing
+  // extra renders - the section is byte-for-byte unchanged.
+  allowExtraRows?: boolean;
+  extraLines?: IncomeLine[];
 }) {
   type UiRow = {
     slot: IncomeSlot;
     id: string | null;
     gross_takings_pence: number;
+    auto_extracted: boolean;
+    client_reviewed: boolean;
+    extraction_note: string | null;
   };
 
   const [rows, setRows] = useState<UiRow[]>(() => {
@@ -73,6 +98,9 @@ export function Section2Income({
         slot,
         id: match?.id ?? null,
         gross_takings_pence: match?.gross_takings_pence ?? 0,
+        auto_extracted: match?.auto_extracted ?? false,
+        client_reviewed: match?.client_reviewed ?? false,
+        extraction_note: match?.extraction_note ?? null,
       };
     });
   });
@@ -126,7 +154,238 @@ export function Section2Income({
           ),
         )}
       </div>
+
+      {allowExtraRows ? (
+        <ExtraIncomeRows
+          caseId={caseId}
+          editable={editable}
+          initial={extraLines ?? []}
+        />
+      ) : null}
     </section>
+  );
+}
+
+// Phase B extra-rows block: items the bulk-intake extractor couldn't
+// match to a fixed slot plus anything the client added via "+ Add
+// income row". Each row is editable (debounced label + amount save),
+// shows the amber "Auto-read, not yet checked" badge until the
+// client acknowledges or edits it, and has a delete button. Only
+// rendered when the parent passes allowExtraRows=true (i.e. the
+// case picked intake_method='auto_upload').
+function ExtraIncomeRows({
+  caseId, editable, initial,
+}: {
+  caseId: string;
+  editable: boolean;
+  initial: IncomeLine[];
+}) {
+  type UiExtra = {
+    key: string;
+    id: string;
+    label: string;
+    gross_takings_pence: number;
+    auto_extracted: boolean;
+    client_reviewed: boolean;
+    extraction_note: string | null;
+  };
+
+  const [extras, setExtras] = useState<UiExtra[]>(() =>
+    initial.map((l) => ({
+      key: l.id,
+      id: l.id,
+      label: l.source,
+      gross_takings_pence: l.gross_takings_pence,
+      auto_extracted: l.auto_extracted ?? false,
+      client_reviewed: l.client_reviewed ?? false,
+      extraction_note: l.extraction_note ?? null,
+    })),
+  );
+  const [adding, setAdding] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const add = async () => {
+    if (!editable || adding) return;
+    setAdding(true);
+    setErr(null);
+    try {
+      const r = await addExtraIncomeLineAction(caseId, { label: "", amount_pence: 0 });
+      if (!r.ok) { setErr(r.error); return; }
+      setExtras((prev) => [
+        ...prev,
+        {
+          key: r.id,
+          id: r.id,
+          label: "",
+          gross_takings_pence: 0,
+          auto_extracted: false,
+          client_reviewed: true,
+          extraction_note: null,
+        },
+      ]);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const removeExtra = async (id: string) => {
+    const prev = extras;
+    setExtras((xs) => xs.filter((x) => x.id !== id));
+    const r = await deleteIncomeLineAction(caseId, id);
+    if (!r.ok) {
+      setExtras(prev);
+      setErr(r.error);
+    }
+  };
+
+  return (
+    <div className="mt-6">
+      <h3 className="mb-2 text-sm font-semibold text-slate-900">
+        Other income lines
+      </h3>
+      <p className="mb-3 text-xs text-slate-600">
+        Everything else your uploads turned up, plus anything you want
+        to add by hand. Edit the label or amount if we got it wrong.
+      </p>
+      {extras.length === 0 ? (
+        <p className="mb-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+          Nothing extra yet. Add a line below if you have income that
+          doesn't fit the categories above.
+        </p>
+      ) : (
+        <ul className="mb-3 space-y-2">
+          {extras.map((x) => (
+            <ExtraIncomeRow
+              key={x.key}
+              caseId={caseId}
+              editable={editable}
+              initial={x}
+              onRemove={() => removeExtra(x.id)}
+            />
+          ))}
+        </ul>
+      )}
+      <button
+        type="button"
+        onClick={add}
+        disabled={!editable || adding}
+        className="w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 hover:border-sky hover:text-sky disabled:opacity-50 sm:w-auto sm:px-4"
+      >
+        {adding ? "Adding." : "+ Add income row"}
+      </button>
+      {err ? <p className="mt-2 text-xs text-rose-700">{err}</p> : null}
+    </div>
+  );
+}
+
+function ExtraIncomeRow({
+  caseId, editable, initial, onRemove,
+}: {
+  caseId: string;
+  editable: boolean;
+  initial: {
+    id: string;
+    label: string;
+    gross_takings_pence: number;
+    auto_extracted: boolean;
+    client_reviewed: boolean;
+    extraction_note: string | null;
+  };
+  onRemove: () => Promise<void>;
+}) {
+  const [reviewed, setReviewed] = useState<boolean>(initial.client_reviewed);
+  const [extractionNote] = useState<string | null>(initial.extraction_note);
+
+  const label = useDebouncedSave<string>({
+    initial: initial.label,
+    save: async (v) => {
+      const r = await updateExtraIncomeLineAction(caseId, initial.id, { label: v });
+      if (!r.ok) throw new Error(r.error);
+      setReviewed(true);
+    },
+  });
+  const amount = useDebouncedSave<string>({
+    initial: penceToStr(initial.gross_takings_pence),
+    save: async (v) => {
+      const pence = strToPence(v);
+      const r = await updateExtraIncomeLineAction(caseId, initial.id, {
+        amount_pence: pence,
+      });
+      if (!r.ok) throw new Error(r.error);
+      setReviewed(true);
+    },
+  });
+
+  const needsReview = initial.auto_extracted && !reviewed;
+
+  const markReviewed = async () => {
+    setReviewed(true);
+    const r = await markLineReviewedAction(caseId, "income", initial.id);
+    if (!r.ok) setReviewed(false);
+  };
+
+  const [removing, setRemoving] = useState(false);
+  const remove = async () => {
+    if (removing) return;
+    setRemoving(true);
+    try { await onRemove(); } finally { setRemoving(false); }
+  };
+
+  return (
+    <li className="rounded-lg border border-slate-200 bg-white p-3">
+      {needsReview ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+            Auto-read, not yet checked
+          </span>
+          <button
+            type="button"
+            onClick={markReviewed}
+            className="text-[11px] font-semibold text-sky hover:underline"
+          >
+            Looks right
+          </button>
+        </div>
+      ) : null}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+        <input
+          type="text"
+          value={label.value}
+          onChange={(e) => label.onChange(e.target.value)}
+          placeholder="What's this for?"
+          disabled={!editable}
+          maxLength={80}
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+        />
+        <div className="flex items-center gap-1">
+          <span className="text-sm text-slate-500">£</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={amount.value}
+            onChange={(e) => amount.onChange(cleanMoneyInput(e.target.value))}
+            placeholder="0.00"
+            disabled={!editable}
+            className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm text-slate-900 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
+          />
+          <button
+            type="button"
+            onClick={remove}
+            disabled={!editable || removing}
+            aria-label={`Remove ${initial.label}`}
+            title="Delete row"
+            className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+          >
+            {removing ? "..." : "×"}
+          </button>
+        </div>
+      </div>
+      {extractionNote ? (
+        <p className="mt-1.5 whitespace-pre-wrap text-[11px] text-slate-500">
+          From your upload: {extractionNote}
+        </p>
+      ) : null}
+    </li>
   );
 }
 
@@ -135,11 +394,35 @@ function FixedIncomeRow({
 }: {
   caseId: string;
   editable: boolean;
-  row: { slot: IncomeSlot; id: string | null; gross_takings_pence: number };
+  row: {
+    slot: IncomeSlot;
+    id: string | null;
+    gross_takings_pence: number;
+    auto_extracted: boolean;
+    client_reviewed: boolean;
+    extraction_note: string | null;
+  };
   onPatch: (patch: { id?: string | null; gross_takings_pence?: number }) => void;
 }) {
   const latestRef = useRef(row);
   useEffect(() => { latestRef.current = row; }, [row]);
+  // Phase B review state. Mirrors row.client_reviewed on mount and
+  // flips to true after any save (upsertPchIncomeLineAction also
+  // sets the column server-side on update, so this just keeps the
+  // amber badge from reappearing after a successful commit). The
+  // "Looks right" button sets this too via markLineReviewedAction.
+  const [reviewed, setReviewed] = useState<boolean>(row.client_reviewed);
+  const needsReview = row.auto_extracted && !reviewed;
+  const markReviewed = async () => {
+    const current = latestRef.current.id;
+    if (!current) {
+      setReviewed(true);
+      return;
+    }
+    setReviewed(true);
+    const r = await markLineReviewedAction(caseId, "income", current);
+    if (!r.ok) setReviewed(false);
+  };
 
   // Per-row creation lock. If two save paths (amount debounce vs
   // upload handler, or two multi-file iterations) fire concurrently
@@ -199,6 +482,10 @@ function FixedIncomeRow({
       });
       if (!r.ok) throw new Error(r.error);
       onPatch({ gross_takings_pence: pence });
+      // Server-side action also sets client_reviewed=true on update;
+      // mirror locally so the badge disappears without waiting on a
+      // round-trip refetch.
+      setReviewed(true);
     },
   });
 
@@ -259,7 +546,14 @@ function FixedIncomeRow({
     >
       <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
         <span>{row.slot.label}</span>
-        <SaveStatusPill status={amount.status} error={amount.error} />
+        <div className="flex items-center gap-2">
+          {needsReview ? (
+            <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-900">
+              Auto-read
+            </span>
+          ) : null}
+          <SaveStatusPill status={amount.status} error={amount.error} />
+        </div>
       </div>
       <div className="flex items-center gap-1">
         <span className="text-sm text-slate-500">£</span>
@@ -273,6 +567,21 @@ function FixedIncomeRow({
           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
         />
       </div>
+      {row.extraction_note ? (
+        <p className="mt-1 whitespace-pre-wrap text-[11px] text-slate-500">
+          From your upload: {row.extraction_note}
+        </p>
+      ) : null}
+      {needsReview ? (
+        <button
+          type="button"
+          onClick={markReviewed}
+          disabled={!editable}
+          className="mt-1 text-[11px] font-semibold text-sky hover:underline disabled:opacity-50"
+        >
+          Looks right
+        </button>
+      ) : null}
       {row.slot.helpText ? (
         <p className="mt-1 text-[11px] text-slate-500">{row.slot.helpText}</p>
       ) : null}
@@ -312,12 +621,34 @@ function MultiFileIncomeRow({
 }: {
   caseId: string;
   editable: boolean;
-  row: { slot: IncomeSlot; id: string | null; gross_takings_pence: number };
+  row: {
+    slot: IncomeSlot;
+    id: string | null;
+    gross_takings_pence: number;
+    auto_extracted: boolean;
+    client_reviewed: boolean;
+    extraction_note: string | null;
+  };
   initialAttachments: IntakeAttachment[];
   onPatch: (patch: { id?: string | null; gross_takings_pence?: number }) => void;
 }) {
   const latestRef = useRef(row);
   useEffect(() => { latestRef.current = row; }, [row]);
+  // Same auto-review state as FixedIncomeRow above; the badge
+  // appears next to the SaveStatusPill when auto_extracted and
+  // not yet reviewed, and clears on any save or on "Looks right".
+  const [reviewed, setReviewed] = useState<boolean>(row.client_reviewed);
+  const needsReview = row.auto_extracted && !reviewed;
+  const markReviewed = async () => {
+    const current = latestRef.current.id;
+    if (!current) {
+      setReviewed(true);
+      return;
+    }
+    setReviewed(true);
+    const r = await markLineReviewedAction(caseId, "income", current);
+    if (!r.ok) setReviewed(false);
+  };
 
   // Amount is the same debounced save as the single-file rows: typing
   // in the input live-updates pch_income_lines.gross_takings_pence,
@@ -367,6 +698,7 @@ function MultiFileIncomeRow({
       });
       if (!r.ok) throw new Error(r.error);
       onPatch({ gross_takings_pence: pence });
+      setReviewed(true);
     },
   });
 
@@ -462,7 +794,14 @@ function MultiFileIncomeRow({
     >
       <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
         <span>{row.slot.label}</span>
-        <SaveStatusPill status={amount.status} error={amount.error} />
+        <div className="flex items-center gap-2">
+          {needsReview ? (
+            <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-900">
+              Auto-read
+            </span>
+          ) : null}
+          <SaveStatusPill status={amount.status} error={amount.error} />
+        </div>
       </div>
       <div className="flex items-center gap-1">
         <span className="text-sm text-slate-500">£</span>
@@ -476,6 +815,21 @@ function MultiFileIncomeRow({
           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:bg-slate-100"
         />
       </div>
+      {row.extraction_note ? (
+        <p className="mt-1 whitespace-pre-wrap text-[11px] text-slate-500">
+          From your upload: {row.extraction_note}
+        </p>
+      ) : null}
+      {needsReview ? (
+        <button
+          type="button"
+          onClick={markReviewed}
+          disabled={!editable}
+          className="mt-1 text-[11px] font-semibold text-sky hover:underline disabled:opacity-50"
+        >
+          Looks right
+        </button>
+      ) : null}
       {row.slot.helpText ? (
         <p className="mt-1 text-[11px] text-slate-500">{row.slot.helpText}</p>
       ) : null}

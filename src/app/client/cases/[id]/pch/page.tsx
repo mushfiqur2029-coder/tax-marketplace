@@ -76,6 +76,7 @@ export default async function PchClientPage({
     giftAidRes,
     generalUploadsRes,
     intakeAttachmentsRes,
+    bulkIntakeUploadsRes,
   ] = await Promise.all([
       admin.from("pch_cases").select("*").eq("case_id", id).single(),
       admin
@@ -112,15 +113,19 @@ export default async function PchClientPage({
         .order("created_at", { ascending: false })
         .limit(5),
       // Section 2: income lines (default rows seeded on first type).
+      // Phase B columns (auto_extracted / client_reviewed /
+      // extraction_note) are optional on the client-side types, but
+      // we always pull them so the row components can show the
+      // "Auto-read, not yet checked" badge where applicable.
       admin
         .from("pch_income_lines")
-        .select("id, source, gross_takings_pence")
+        .select("id, source, gross_takings_pence, auto_extracted, client_reviewed, extraction_note")
         .eq("case_id", id)
         .order("sort_order"),
       // Section 3: expense lines (fixed slots + airport rows).
       admin
         .from("pch_expense_lines")
-        .select("id, label, amount_paid_pence, category, sa103s_box, car_cost")
+        .select("id, label, amount_paid_pence, category, sa103s_box, car_cost, auto_extracted, client_reviewed, extraction_note")
         .eq("case_id", id)
         .order("sort_order"),
       // Section 3 vehicle subsection: pch_vehicle row keyed on case_id.
@@ -154,6 +159,15 @@ export default async function PchClientPage({
         .eq("case_id", id)
         .or("requirement_key.like.intake-income-attach-%,requirement_key.like.intake-expense-attach-%,requirement_key.eq.intake-private-use-attach")
         .order("uploaded_at", { ascending: true }),
+      // Phase B: bulk-intake uploads list. Newest first so the
+      // BulkDocumentUpload panel shows latest at the top. The
+      // per-row useLiveRow in that panel keeps each row's status
+      // chip in sync - this fetch just seeds the initial render.
+      admin
+        .from("pch_intake_uploads")
+        .select("id, file_name, status, items_count, error_message, uploaded_at")
+        .eq("case_id", id)
+        .order("uploaded_at", { ascending: false }),
     ]);
 
   // Accountancy Fees row prefills with what this client is paying us
@@ -283,6 +297,9 @@ export default async function PchClientPage({
           id: l.id as string,
           source: (l.source as string) ?? "",
           gross_takings_pence: Number(l.gross_takings_pence ?? 0),
+          auto_extracted: (l.auto_extracted as boolean | null) ?? false,
+          client_reviewed: (l.client_reviewed as boolean | null) ?? false,
+          extraction_note: (l.extraction_note as string | null) ?? null,
         }))}
         expenseLines={(expenseRes.data ?? []).map((l) => ({
           id: l.id as string,
@@ -291,6 +308,17 @@ export default async function PchClientPage({
           category: l.category as string,
           sa103s_box: Number(l.sa103s_box),
           car_cost: (l.car_cost ?? "No") as "Yes" | "No" | "Phone",
+          auto_extracted: (l.auto_extracted as boolean | null) ?? false,
+          client_reviewed: (l.client_reviewed as boolean | null) ?? false,
+          extraction_note: (l.extraction_note as string | null) ?? null,
+        }))}
+        bulkIntakeUploads={(bulkIntakeUploadsRes.data ?? []).map((u) => ({
+          id: u.id as string,
+          file_name: u.file_name as string,
+          status: u.status as "pending" | "processing" | "done" | "error",
+          items_count: (u.items_count as number | null) ?? null,
+          error_message: (u.error_message as string | null) ?? null,
+          uploaded_at: u.uploaded_at as string,
         }))}
         intakeAttachments={Object.fromEntries(intakeAttachmentsByLine)}
         privateUseAttachments={privateUseAttachments}
