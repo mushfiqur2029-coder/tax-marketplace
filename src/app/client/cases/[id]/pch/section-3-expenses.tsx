@@ -1255,13 +1255,15 @@ function MultiFilePrivateUseRow({
 }
 
 // Groups repeat extra-expense rows by normalized payee (see
-// label-normalize.ts: strips legal suffixes like PLC/LTD and
-// transaction-type descriptor clauses, so "Munchies Original" and a
-// slightly differently worded occurrence of the same payee merge
-// even though the AI worded the two lines differently). A blank
-// label (a freshly added, not-yet-typed-into row) always gets its
-// own group, keyed by id, so two blank rows never merge into an
-// uneditable combined row before the client has typed anything.
+// label-normalize.ts: strips money amounts, generic transaction
+// words wherever they appear in the label, and a trailing legal
+// suffix like PLC/LTD, so differently worded occurrences of the same
+// real payee - e.g. "ALTAB HUSSAIN FPO - outgoing transfer to self"
+// and "Altab Hussain own transfer / personal withdrawal" - collapse
+// into one group). A blank label (a freshly added, not-yet-typed-into
+// row) always gets its own group, keyed by id, so two blank rows
+// never merge into an uneditable combined row before the client has
+// typed anything.
 function groupExpenseExtrasByLabel<
   T extends { id: string; label: string; amount_paid_pence: number },
 >(items: T[]): { key: string; label: string; items: T[] }[] {
@@ -1274,6 +1276,13 @@ function groupExpenseExtrasByLabel<
     const existing = map.get(key);
     if (existing) {
       existing.items.push(it);
+      // Prefer the shortest non-blank label seen for this group as
+      // the display label - with word order and filler words varying
+      // a lot across occurrences, the shortest wording tends to be
+      // the cleanest one to show.
+      if (trimmed.length > 0 && trimmed.length < existing.label.trim().length) {
+        existing.label = it.label;
+      }
     } else {
       map.set(key, { label: it.label, items: [it] });
       order.push(key);
