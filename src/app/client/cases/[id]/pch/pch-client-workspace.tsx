@@ -315,6 +315,8 @@ export function PchClientWorkspace(props: {
           sa302UploadPath={props.sa302UploadPath}
           sa100UploadPath={props.sa100UploadPath}
           signDocUrl={props.signDocUrl}
+          incomeLines={props.incomeLines}
+          expenseLines={props.expenseLines}
         />
       ) : awaitingApproval && liveHead.final_pack_sent_at ? (
         <FinalPackReview
@@ -349,6 +351,8 @@ export function PchClientWorkspace(props: {
           sa302UploadPath={props.sa302UploadPath}
           sa100UploadPath={props.sa100UploadPath}
           signDocUrl={props.signDocUrl}
+          incomeLines={props.incomeLines}
+          expenseLines={props.expenseLines}
         />
       ) : (
         <IntakeProgressProvider initial={initialCompletionFromProps(props)}>
@@ -638,6 +642,8 @@ function ApprovalView(props: {
   sa302UploadPath: string | null;
   sa100UploadPath: string | null;
   signDocUrl: (path: string) => Promise<ActionResult<string>>;
+  incomeLines: IncomeLine[];
+  expenseLines: ExpenseLine[];
 }) {
   return (
     <div className="space-y-6">
@@ -659,7 +665,11 @@ function ApprovalView(props: {
         signDocUrl={props.signDocUrl}
       />
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <SnapshotTable s={props.snapshot} />
+        <SnapshotTable
+          s={props.snapshot}
+          incomeLines={props.incomeLines}
+          expenseLines={props.expenseLines}
+        />
       </div>
       <ApprovalSection
         caseId={props.caseId}
@@ -680,6 +690,8 @@ function FiledView(props: {
   sa302UploadPath: string | null;
   sa100UploadPath: string | null;
   signDocUrl: (path: string) => Promise<ActionResult<string>>;
+  incomeLines: IncomeLine[];
+  expenseLines: ExpenseLine[];
 }) {
   return (
     <div className="space-y-6">
@@ -699,7 +711,11 @@ function FiledView(props: {
         signDocUrl={props.signDocUrl}
       />
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <SnapshotTable s={props.snapshot} />
+        <SnapshotTable
+          s={props.snapshot}
+          incomeLines={props.incomeLines}
+          expenseLines={props.expenseLines}
+        />
       </div>
     </div>
   );
@@ -798,35 +814,107 @@ function FinalDocCard({
   );
 }
 
-function SnapshotTable({ s }: { s: TaxEngineOutput }) {
-  // Only the P&L is surfaced to the client. The Tax & NIC breakdown
-  // (income tax, Class 4 NIC, total due, balancing payment, POA, MTD
-  // status) was removed deliberately: that is advice the client
-  // should receive from their accountant with the accompanying
-  // caveats, not something the portal should quote back at them
-  // directly. The accountant's TotalsStrip and SA302 still carry
-  // these figures; this surface shows the P&L figures the client is
-  // being asked to approve, nothing more.
-  const money = (n: number) =>
-    "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const row = (label: string, v: string | number) => (
-    <tr>
+// Only the P&L is surfaced to the client. The Tax & NIC breakdown
+// (income tax, Class 4 NIC, total due, balancing payment, POA, MTD
+// status) is deliberately left out: that is advice the client should
+// receive from their accountant with the accompanying caveats, not
+// something the portal should quote back at them directly. The
+// accountant's TotalsStrip and SA302 still carry these figures; this
+// surface shows the full P&L breakdown line by line, matching the
+// "PCH Accounts" PDF (pch-accounts-pdf.ts) and the accountant's own
+// PlSummaryTable (pl-review-panel.tsx) row for row, so the client
+// isn't left squinting at five summary numbers before approving.
+function sumByLabel(rows: Array<{ label: string; pence: number }>, label: string): number {
+  const wanted = label.trim().toLowerCase();
+  return rows.reduce(
+    (sum, r) => ((r.label ?? "").trim().toLowerCase() === wanted ? sum + (r.pence ?? 0) : sum),
+    0,
+  );
+}
+
+function SnapshotTable({
+  s, incomeLines, expenseLines,
+}: {
+  s: TaxEngineOutput;
+  incomeLines: IncomeLine[];
+  expenseLines: ExpenseLine[];
+}) {
+  const money = (pence: number) =>
+    "£" + (pence / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const toPence = (pounds: number) => Math.round(pounds * 100);
+
+  const incomeRows = incomeLines.map((l) => ({ label: l.source, pence: l.gross_takings_pence }));
+  const expenseRows = expenseLines.map((l) => ({ label: l.label, pence: l.amount_paid_pence }));
+
+  const incomePerLabel = INCOME_FIXED_SLOTS.map((slot) => ({
+    label: slot.label,
+    pence: sumByLabel(incomeRows, slot.label),
+  }));
+  const incomeFixedLabelsLower = new Set(
+    INCOME_FIXED_SLOTS.map((slot) => slot.label.trim().toLowerCase()),
+  );
+  const otherIncomePence = incomeRows.reduce(
+    (sum, r) =>
+      incomeFixedLabelsLower.has((r.label ?? "").trim().toLowerCase()) ? sum : sum + (r.pence ?? 0),
+    0,
+  );
+  const totalIncomePence = incomePerLabel.reduce((sum, r) => sum + r.pence, 0) + otherIncomePence;
+
+  const expensePerLabel = EXPENSE_FIXED_SLOTS.map((slot) => ({
+    label: slot.label,
+    pence: sumByLabel(expenseRows, slot.label),
+  }));
+  const expenseFixedLabelsLower = new Set(
+    EXPENSE_FIXED_SLOTS.map((slot) => slot.label.trim().toLowerCase()),
+  );
+  const otherExpensesPence = expenseRows.reduce(
+    (sum, r) =>
+      expenseFixedLabelsLower.has((r.label ?? "").trim().toLowerCase()) ? sum : sum + (r.pence ?? 0),
+    0,
+  );
+
+  const expensesTotalPence = toPence(s.pl.expensesTotal);
+  const privateUsePence = toPence(s.pl.privateUseAmount);
+  const taxableProfitPence = toPence(s.pl.taxableProfit);
+  const netProfitPence = toPence(s.pl.netProfit);
+
+  const row = (label: string, pence: number, bold?: boolean) => (
+    <tr key={label} className={bold ? "font-bold" : undefined}>
       <td className="py-1 pr-4 text-slate-600">{label}</td>
-      <td className="py-1 font-medium text-right">
-        {typeof v === "number" ? money(v) : v}
+      <td className="py-1 font-medium text-right">{money(pence)}</td>
+    </tr>
+  );
+  const sectionHeader = (label: string) => (
+    <tr key={"header-" + label}>
+      <td colSpan={2} className="pt-3 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
       </td>
     </tr>
   );
+
   return (
     <div>
       <h4 className="text-sm font-bold mb-2">Profit &amp; Loss</h4>
       <table className="w-full text-sm">
         <tbody>
-          {row("Turnover", s.pl.turnover)}
-          {row("Total expenses", s.pl.expensesTotal)}
-          {row("Net profit", s.pl.netProfit)}
-          {row("Capital allowances", s.pl.capitalAllowances)}
-          {row("Taxable profit", s.pl.taxableProfit)}
+          {sectionHeader("Income")}
+          {incomePerLabel.map((r) => row(r.label, r.pence))}
+          {otherIncomePence > 0 ? row("Other income", otherIncomePence) : null}
+          {row("Total income", totalIncomePence, true)}
+
+          {sectionHeader("Less: Expenses")}
+          {expensePerLabel.map((r) => row(r.label, r.pence))}
+          {otherExpensesPence > 0 ? row("Other adjustments", otherExpensesPence) : null}
+          {row("Total expenses", expensesTotalPence, true)}
+
+          <tr>
+            <td className="pt-3 py-1 pr-4 text-slate-600">Less: Private use</td>
+            <td className="pt-3 py-1 text-right font-medium text-rose-700">
+              {privateUsePence > 0 ? "-" + money(privateUsePence) : money(0)}
+            </td>
+          </tr>
+          {row("Taxable profit", taxableProfitPence, true)}
+          {row("Net profit", netProfitPence, true)}
         </tbody>
       </table>
     </div>
