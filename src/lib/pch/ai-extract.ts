@@ -1,14 +1,14 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
 // AI document extraction for PCH automated cases.
 //
-// Each client-uploaded document is handed to Claude Sonnet with a
-// per-slot tool-use schema that pins the model to a strict JSON shape.
-// The response includes a confidence rating per field so the client UI
-// can flag anything the model wasn't sure about: those fields never
-// auto-fill, the client enters them by hand (or re-uploads a clearer
-// scan).
+// Each client-uploaded document is handed to an OpenAI vision model
+// with a per-slot JSON-schema (structured outputs, strict mode) that
+// pins the model to a strict JSON shape. The response includes a
+// confidence rating per field so the client UI can flag anything the
+// model wasn't sure about: those fields never auto-fill, the client
+// enters them by hand (or re-uploads a clearer scan).
 //
 // NEVER AUTO-SUBMIT. Every extracted value lands in a "proposed"
 // state until the client confirms or edits it. The intake tables stay
@@ -46,21 +46,23 @@ export type DocumentInput = {
 //   skip      - no AI pass (final approval doc, identity scan, etc.)
 export type SlotExtractionMode = "extract" | "flag" | "skip";
 
-function client(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+function client(): OpenAI {
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not set. Document extraction is disabled.");
+    throw new Error("OPENAI_API_KEY is not set. Document extraction is disabled.");
   }
-  return new Anthropic({ apiKey });
+  return new OpenAI({ apiKey });
 }
 
-// Shared "ExtractedField" schema. Every tool-call schema reuses this.
+// Shared "ExtractedField" schema. Every structured-output schema below
+// reuses this. OpenAI's strict-mode JSON Schema supports anyOf but not
+// oneOf, so a multi-typed field is expressed that way.
 function fieldSchema(description: string) {
   return {
     type: "object",
     properties: {
       value: {
-        oneOf: [{ type: "string" }, { type: "number" }, { type: "null" }],
+        anyOf: [{ type: "string" }, { type: "number" }, { type: "null" }],
         description,
       },
       confidence: {
@@ -103,8 +105,8 @@ function docLevelFields() {
 //   mode    - whether to run AI at all
 //   title   - short label used in prompts
 //   prompt  - what the model should look for in that doc
-//   schema  - tool-call input schema (only for mode = "extract" / "flag")
-//   model   - which Claude model handles it (default sonnet-4-6)
+//   schema  - structured-output JSON schema (only for mode = "extract" / "flag")
+//   model   - which OpenAI model handles it (default gpt-6.1-sol)
 //
 // All schemas share the docLevelFields() prelude so the result shape is
 // predictable across slots.
@@ -133,7 +135,7 @@ type SlotDefinition = {
   schema?: Record<string, unknown>;
 };
 
-const MODEL_SONNET = "claude-sonnet-4-6";
+const MODEL_GPT = "gpt-6.1-sol";
 
 function schemaWith(fields: Record<string, unknown>, required: string[]) {
   return {
@@ -160,7 +162,7 @@ export const SLOT_DEFINITIONS: Record<string, SlotDefinition> = {
     prompt: (ctx) => photoIdPrompt(ctx),
     toolName: "extract_photo_id",
     toolDescription: "Extract name, DOB, address, postcode from a UK Photo ID.",
-    model: MODEL_SONNET,
+    model: MODEL_GPT,
     schema: schemaWith(
       {
         documentNumber: fieldSchema(
@@ -214,41 +216,54 @@ async function runExtraction(
   doc: DocumentInput,
   ctx: ExtractionContext,
 ): Promise<ExtractionResult> {
-  const anthropic = client();
+  const openai = client();
   const base64 = Buffer.from(doc.bytes).toString("base64");
 
-  const docContent: Anthropic.ContentBlockParam =
+  const docContent =
     doc.mimeType === "application/pdf"
-      ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
-      : { type: "image", source: { type: "base64", media_type: doc.mimeType, data: base64 } };
+      ? {
+          type: "input_file" as const,
+          file_data: `data:application/pdf;base64,${base64}`,
+          filename: "document.pdf",
+        }
+      : {
+          type: "input_image" as const,
+          image_url: `data:${doc.mimeType};base64,${base64}`,
+          detail: "high" as const,
+        };
 
   const prompt = typeof def.prompt === "function" ? def.prompt(ctx) : def.prompt;
-  const response = await anthropic.messages.create({
-    model: def.model ?? MODEL_SONNET,
-    max_tokens: 3072,
-    system:
+  const response = await openai.responses.create({
+    model: def.model ?? MODEL_GPT,
+    max_output_tokens: 3072,
+    reasoning: { effort: "low" },
+    instructions:
       "You read UK Self Assessment supporting documents for a private-hire driver and extract strict structured values. Report confidence honestly: 'missing' and null is always better than a guess. Document type sanity check: if the uploaded file is not the expected '" + def.title + "', set overallConfidence='low' and documentType to what you actually see so the client is prompted to re-upload.",
-    tools: [
-      {
+    text: {
+      format: {
+        type: "json_schema",
         name: def.toolName!,
-        description: def.toolDescription ?? "Extract structured values from the uploaded document.",
-        input_schema: def.schema as Anthropic.Tool["input_schema"],
+        schema: def.schema!,
+        strict: true,
       },
-    ],
-    tool_choice: { type: "tool", name: def.toolName! },
-    messages: [
+    },
+    input: [
       {
         role: "user",
-        content: [docContent, { type: "text", text: prompt }],
+        content: [docContent, { type: "input_text", text: prompt }],
       },
     ],
   });
 
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
-    throw new Error("Model did not return a tool call (stop_reason=" + response.stop_reason + ").");
+  if (response.status === "incomplete") {
+    throw new Error(
+      "Model response was truncated (reason=" + (response.incomplete_details?.reason ?? "unknown") + ").",
+    );
   }
-  const input = toolUse.input as Record<string, unknown>;
+  if (!response.output_text) {
+    throw new Error("Model did not return any structured output.");
+  }
+  const input = JSON.parse(response.output_text) as Record<string, unknown>;
   const overallConfidence = (input.overallConfidence as ExtractionConfidence) ?? "low";
   const documentType = (input.documentType as string) ?? "";
   const { overallConfidence: _oc, documentType: _dt, ...fields } = input;

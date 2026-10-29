@@ -227,6 +227,56 @@ export async function setDeclarationStatusAction(
 const UTR_REGEX = /\b(\d{10})\b/;
 const NINO_REGEX = /\b([A-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D])\b/i;
 
+// Shared vision call for every short single-answer OCR prompt below
+// (UTR/NINO, fixed-row amounts, attachment amounts, private-use
+// amounts). One short prompt in, one short text answer out via
+// OpenAI's Responses API - no structured-output schema needed for
+// these, just like the old single-field Anthropic calls this
+// replaces. Returns null on any failure (bad response, network
+// error) so every caller can fall back the same way the file it's
+// already saved still counts as a partial success.
+const OCR_MODEL = "gpt-6.1-sol";
+
+async function callOpenAiVision(
+  apiKey: string,
+  bytes: Uint8Array,
+  mediaType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp",
+  prompt: string,
+  maxOutputTokens = 256,
+): Promise<string | null> {
+  try {
+    const base64 = Buffer.from(bytes).toString("base64");
+    const contentBlock: Record<string, unknown> =
+      mediaType === "application/pdf"
+        ? { type: "input_file", file_data: `data:application/pdf;base64,${base64}`, filename: "document.pdf" }
+        : { type: "input_image", image_url: `data:${mediaType};base64,${base64}`, detail: "high" };
+
+    const resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OCR_MODEL,
+        max_output_tokens: maxOutputTokens,
+        reasoning: { effort: "minimal" },
+        input: [
+          {
+            role: "user",
+            content: [contentBlock, { type: "input_text", text: prompt }],
+          },
+        ],
+      }),
+    });
+    if (!resp.ok) return null;
+    const body = (await resp.json()) as { output_text?: string };
+    return typeof body.output_text === "string" ? body.output_text : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function extractUtrFromUploadAction(
   caseId: string,
   formData: FormData,
@@ -325,12 +375,11 @@ async function extractSingleField(
       .single();
     if (insert.error) return { ok: false, error: insert.error.message };
 
-    // Run OCR via Claude vision. Keep the call shape minimal: one
-    // field, one short prompt, no tool-use.
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // Run OCR via OpenAI vision. Keep the call shape minimal: one
+    // field, one short prompt, no structured output.
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return { ok: false, error: "OCR temporarily unavailable." };
 
-    const base64 = Buffer.from(bytes).toString("base64");
     const mediaType = isPdf
       ? "application/pdf"
       : isPng
@@ -338,42 +387,13 @@ async function extractSingleField(
         : isWebp
           ? "image/webp"
           : "image/jpeg";
-    const sourceType = isPdf ? "base64" : "base64";
-    const contentBlock: Record<string, unknown> = isPdf
-      ? { type: "document", source: { type: sourceType, media_type: mediaType, data: base64 } }
-      : { type: "image", source: { type: sourceType, media_type: mediaType, data: base64 } };
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        // Same model id the proven ai-extract.ts pipeline uses, so a
-        // model-id typo can't quietly take the UTR/NI OCR offline for
-        // every client with nothing in logs pointing at why.
-        model: "claude-sonnet-4-6",
-        max_tokens: 128,
-        messages: [
-          {
-            role: "user",
-            content: [
-              contentBlock,
-              { type: "text", text: cfg.prompt },
-            ],
-          },
-        ],
-      }),
-    });
-    if (!resp.ok) {
+    const raw = await callOpenAiVision(apiKey, bytes, mediaType, cfg.prompt);
+    if (raw === null) {
       // Partial success: file is stored, OCR failed. Don't fail the
       // action; the client's typed value stays the source of truth.
       return { ok: true, value: null };
     }
-    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
-    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
 
     // Try to normalise the model's answer; fall back to pattern-match
     // against the full raw string in case the model wrapped the value
@@ -812,10 +832,9 @@ async function extractAmountForLine(
       .eq("case_id", caseId);
     if (evidenceUpdate.error) return { ok: false, error: evidenceUpdate.error.message };
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return { ok: true, value: null };
 
-    const base64 = Buffer.from(bytes).toString("base64");
     const mediaType = isPdf
       ? "application/pdf"
       : isPng
@@ -823,31 +842,9 @@ async function extractAmountForLine(
         : isWebp
           ? "image/webp"
           : "image/jpeg";
-    const contentBlock: Record<string, unknown> = isPdf
-      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
-      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 128,
-        messages: [
-          {
-            role: "user",
-            content: [contentBlock, { type: "text", text: cfg.prompt }],
-          },
-        ],
-      }),
-    });
-    if (!resp.ok) return { ok: true, value: null };
-    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
-    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
+    const raw = await callOpenAiVision(apiKey, bytes, mediaType, cfg.prompt);
+    if (raw === null) return { ok: true, value: null };
 
     // Model may wrap the figure in prose; pattern-match if needed.
     let candidate: string | null = null;
@@ -977,13 +974,12 @@ export async function uploadIntakeAttachmentAction(
     const docId = docIns.data.id as string;
     const fileName = docIns.data.file_name as string;
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
     }
 
     const prompt = lineType === "income" ? INCOME_ATTACH_PROMPT : EXPENSE_ATTACH_PROMPT;
-    const base64 = Buffer.from(bytes).toString("base64");
     const mediaType = isPdf
       ? "application/pdf"
       : isPng
@@ -991,33 +987,11 @@ export async function uploadIntakeAttachmentAction(
         : isWebp
           ? "image/webp"
           : "image/jpeg";
-    const contentBlock: Record<string, unknown> = isPdf
-      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
-      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 128,
-        messages: [
-          {
-            role: "user",
-            content: [contentBlock, { type: "text", text: prompt }],
-          },
-        ],
-      }),
-    });
-    if (!resp.ok) {
+    const raw = await callOpenAiVision(apiKey, bytes, mediaType, prompt);
+    if (raw === null) {
       return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
     }
-    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
-    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
 
     let candidate: string | null = null;
     const asNum = Number(raw.trim());
@@ -1374,12 +1348,11 @@ export async function uploadPrivateUseAttachmentAction(
       if (upsert.error) return { ok: false, error: upsert.error.message };
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
     }
 
-    const base64 = Buffer.from(bytes).toString("base64");
     const mediaType = isPdf
       ? "application/pdf"
       : isPng
@@ -1387,33 +1360,11 @@ export async function uploadPrivateUseAttachmentAction(
         : isWebp
           ? "image/webp"
           : "image/jpeg";
-    const contentBlock: Record<string, unknown> = isPdf
-      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
-      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 128,
-        messages: [
-          {
-            role: "user",
-            content: [contentBlock, { type: "text", text: EXPENSE_ATTACH_PROMPT }],
-          },
-        ],
-      }),
-    });
-    if (!resp.ok) {
+    const raw = await callOpenAiVision(apiKey, bytes, mediaType, EXPENSE_ATTACH_PROMPT);
+    if (raw === null) {
       return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
     }
-    const body = (await resp.json()) as { content?: Array<{ type: string; text?: string }> };
-    const raw = (body.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("\n");
 
     let candidate: string | null = null;
     const asNum = Number(raw.trim());

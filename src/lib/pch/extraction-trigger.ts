@@ -148,7 +148,7 @@ export async function runPchExtractionJob(extractionId: string): Promise<void> {
       .update({
         status: "done",
         extracted_at: new Date().toISOString(),
-        model: SLOT_DEFINITIONS[ext.slot_code]?.model ?? "claude-sonnet-4-6",
+        model: SLOT_DEFINITIONS[ext.slot_code]?.model ?? "gpt-6.1-sol",
         overall_confidence: result.overallConfidence,
         document_type: result.documentType,
         fields: result.fields,

@@ -186,9 +186,9 @@ export async function uploadPchDocumentAction(
 
   // Allowed file types per slot:
   //   PCH-14 (bank statements): PDF, CSV, XLSX, plus phone photos
-  //     (JPG/PNG/WebP) parsed via Claude vision. HEIC is rejected with
-  //     a specific re-export message because Anthropic's vision API
-  //     accepts JPEG/PNG/WebP only.
+  //     (JPG/PNG/WebP) parsed via OpenAI vision. HEIC is rejected with
+  //     a specific re-export message because the vision API accepts
+  //     JPEG/PNG/WebP only.
   //   PCH-24 (Photo ID): PDF, JPG, PNG, HEIC
   //   Everything else: PDF, JPG, PNG (original Phase 3 spec)
   const nameLower = file.name.toLowerCase();

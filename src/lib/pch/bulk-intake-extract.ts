@@ -1,5 +1,5 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import {
   EXPENSE_FIXED_SLOTS,
   INCOME_FIXED_SLOTS,
@@ -17,12 +17,13 @@ import {
 // slot label as the only valid value for suggestedSlot when the
 // model is confident.
 //
-// Single tool-use call per document, model forced to call the tool.
-// If stop_reason indicates truncation (max_tokens hit) or no
-// tool_use block comes back, throw a clear "too many lines, split
-// the file" error - do NOT silently return a partial list.
+// Single structured-output call per document, model forced into the
+// report_lines JSON schema. If the response status is "incomplete"
+// (max_output_tokens hit) or no output_text comes back, throw a clear
+// "too many lines, split the file" error - do NOT silently return a
+// partial list.
 
-const MODEL_SONNET = "claude-sonnet-4-6";
+const MODEL_GPT = "gpt-6.1-sol";
 const MAX_TOKENS = 8192;
 const MAX_ITEMS = 300;
 
@@ -63,14 +64,14 @@ export type BulkExtractionResult = {
   documentSummary: string;
 };
 
-function client(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+function client(): OpenAI {
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "ANTHROPIC_API_KEY is not set. Bulk intake extraction is disabled.",
+      "OPENAI_API_KEY is not set. Bulk intake extraction is disabled.",
     );
   }
-  return new Anthropic({ apiKey });
+  return new OpenAI({ apiKey });
 }
 
 // Slot label lists for the system prompt. These must stay in sync
@@ -134,7 +135,7 @@ const TOOL_SCHEMA = {
             description: "One sentence pointer back to this specific line on the document, e.g. 'Line 14 of statement, 12 Apr' or 'Total on receipt'. Under 120 characters.",
           },
         },
-        required: ["kind", "label", "suggestedSlot", "likelyPersonal", "amountPounds", "confidence", "note"],
+        required: ["kind", "label", "suggestedSlot", "likelyPersonal", "amountPounds", "date", "confidence", "note"],
         additionalProperties: false,
       },
     },
@@ -177,55 +178,49 @@ function buildSystemPrompt(): string {
 export async function extractBulkIntakeDocument(
   doc: BulkIntakeDocument,
 ): Promise<BulkExtractionResult> {
-  const anthropic = client();
+  const openai = client();
 
-  // CSV/spreadsheet data goes in as plain text, not a document/image
+  // CSV/spreadsheet data goes in as plain text, not a file/image
   // block; there is nothing to render or OCR, and reading it as text
   // is both cheaper and more reliable than treating it as an image.
-  const docContent: Anthropic.ContentBlockParam =
+  const docContent =
     doc.mimeType === "text/csv"
       ? {
-          type: "text",
+          type: "input_text" as const,
           text: Buffer.from(doc.bytes).toString("utf-8"),
         }
       : doc.mimeType === "application/pdf"
         ? {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: Buffer.from(doc.bytes).toString("base64"),
-            },
+            type: "input_file" as const,
+            file_data: `data:application/pdf;base64,${Buffer.from(doc.bytes).toString("base64")}`,
+            filename: "document.pdf",
           }
         : {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: doc.mimeType,
-              data: Buffer.from(doc.bytes).toString("base64"),
-            },
+            type: "input_image" as const,
+            image_url: `data:${doc.mimeType};base64,${Buffer.from(doc.bytes).toString("base64")}`,
+            detail: "high" as const,
           };
 
-  const response = await anthropic.messages.create({
-    model: MODEL_SONNET,
-    max_tokens: MAX_TOKENS,
-    system: buildSystemPrompt(),
-    tools: [
-      {
+  const response = await openai.responses.create({
+    model: MODEL_GPT,
+    max_output_tokens: MAX_TOKENS,
+    reasoning: { effort: "low" },
+    instructions: buildSystemPrompt(),
+    text: {
+      format: {
+        type: "json_schema",
         name: TOOL_NAME,
-        description:
-          "Return every distinct income or expense line visible on the uploaded document. One object per line, categorised against the fixed slot taxonomy where possible.",
-        input_schema: TOOL_SCHEMA as unknown as Anthropic.Tool["input_schema"],
+        schema: TOOL_SCHEMA,
+        strict: true,
       },
-    ],
-    tool_choice: { type: "tool", name: TOOL_NAME },
-    messages: [
+    },
+    input: [
       {
         role: "user",
         content: [
           docContent,
           {
-            type: "text",
+            type: "input_text",
             text: "List every income and expense line visible on this document for the Self Assessment return.",
           },
         ],
@@ -233,24 +228,23 @@ export async function extractBulkIntakeDocument(
     ],
   });
 
-  // Truncation guard: max_tokens hit means the tool_use JSON is almost
+  // Truncation guard: an "incomplete" status means the JSON is almost
   // certainly cut off mid-array. Rather than silently return whatever
-  // the SDK managed to parse (if anything), surface a clear error so
-  // the client knows to split the file.
-  if (response.stop_reason === "max_tokens") {
+  // could be parsed (if anything), surface a clear error so the
+  // client knows to split the file.
+  if (response.status === "incomplete") {
     throw new Error(
       "Document produced too many lines to read in one pass, try splitting it into smaller files.",
     );
   }
 
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
+  if (!response.output_text) {
     throw new Error(
-      "Document could not be read (stop_reason=" + response.stop_reason + ").",
+      "Document could not be read (status=" + response.status + ").",
     );
   }
 
-  const input = toolUse.input as {
+  const input = JSON.parse(response.output_text) as {
     documentSummary?: string;
     items?: BulkExtractedItem[];
   };
