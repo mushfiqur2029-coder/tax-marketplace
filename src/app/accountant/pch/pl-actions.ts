@@ -26,7 +26,7 @@
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeAll, type TaxEngineOutput } from "@/lib/tax-engine";
 import { hydrateInputsFromDb } from "@/lib/pch/engine-snapshot";
@@ -55,6 +55,7 @@ async function requireAccountantPchCase(caseId: string) {
   if (data.tier !== "uber_phv_automated") {
     throw new Error("Not a PCH automated case.");
   }
+  assertNotSuspended(me.status, "work on this case");
   return { me, admin, caseRow: data };
 }
 

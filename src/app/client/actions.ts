@@ -772,6 +772,18 @@ export async function getDocumentSignedUrl(
   try {
     const { supabase, caseRow } = await assertCaseOwner(caseId);
     void caseRow;
+    // Defense in depth: every storage object under BUCKET is written
+    // under a `${caseId}/...` prefix (confirmed across every upload
+    // action in this codebase), so a path that isn't under this case's
+    // own prefix can't be a legitimate document for it. The storage
+    // RLS policy already enforces this independently, but checking it
+    // here too means a signed URL is never even generated for a path
+    // that doesn't belong to the case the caller was just verified to
+    // own, rather than relying solely on RLS as the only backstop -
+    // matching the equivalent check in getVatCycleDocSignedUrl.
+    if (!filePath.startsWith(`${caseId}/`)) {
+      throw new Error("That document doesn't belong to this case.");
+    }
     const { data, error } = await supabase.storage
       .from(BUCKET)
       .createSignedUrl(filePath, 60);

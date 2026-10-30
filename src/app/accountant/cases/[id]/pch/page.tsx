@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SLLink } from "@/components/sl-button";
 import { redirect } from "next/navigation";
 import { getCurrentUser, requireApprovedAccountant } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -60,9 +60,9 @@ export default async function PchAccountantPage({
             been removed by an admin, or the link may be out of date.
           </p>
           <div className="mt-5">
-            <Link href="/accountant" className="btn-sl btn-sl-primary">
+            <SLLink href="/accountant">
               Back to your cases
-            </Link>
+            </SLLink>
           </div>
         </div>
       </>
@@ -90,9 +90,9 @@ export default async function PchAccountantPage({
               check it.
             </p>
             <div className="mt-5">
-              <Link href="/accountant" className="btn-sl btn-sl-primary">
+              <SLLink href="/accountant">
                 Back to your cases
-              </Link>
+              </SLLink>
             </div>
           </div>
         </>
@@ -170,9 +170,9 @@ export default async function PchAccountantPage({
             accountant claimed it before you got here. Head back to the
             queue for the next one.
           </p>
-          <Link href="/accountant?view=queue" className="btn-sl btn-sl-primary">
+          <SLLink href="/accountant?view=queue">
             Back to the queue
-          </Link>
+          </SLLink>
         </div>
       </>
     );

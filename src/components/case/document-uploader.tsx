@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "@/lib/action-result";
 import { CameraCaptureModal } from "@/components/case/camera-capture-modal";
+import { SLButton } from "@/components/sl-button";
 
 type Props = {
   action: (fd: FormData) => Promise<ActionResult>;
@@ -300,10 +301,10 @@ export function DocumentUploader({
         />
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          <button
+          <SLButton
             type="button"
+            variant="primary"
             onClick={() => inputRef.current?.click()}
-            className="btn-sl btn-sl-primary"
             disabled={anyUploading || dropZoneDisabled}
           >
             {anyUploading
@@ -311,9 +312,10 @@ export function DocumentUploader({
               : multiple
                 ? "Choose files"
                 : "Choose file"}
-          </button>
-          <button
+          </SLButton>
+          <SLButton
             type="button"
+            variant="outline"
             onClick={() => {
               // Modal path for anywhere getUserMedia works (every
               // modern desktop + mobile browser over https/localhost).
@@ -323,7 +325,6 @@ export function DocumentUploader({
               if (canUseGetUserMedia) setCameraModalOpen(true);
               else cameraRef.current?.click();
             }}
-            className="btn-sl btn-sl-outline"
             disabled={anyUploading || dropZoneDisabled}
             aria-label="Take a photo of this document"
           >
@@ -333,7 +334,7 @@ export function DocumentUploader({
               <circle cx="12" cy="13" r="4" />
             </svg>
             Take photo
-          </button>
+          </SLButton>
         </div>
       </div>
 

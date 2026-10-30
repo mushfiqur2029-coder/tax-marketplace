@@ -104,3 +104,22 @@ export async function requireApprovedAccountant() {
   }
   return me;
 }
+
+// Suspended accountants keep read access to their assigned cases (RLS is
+// unchanged), but every case-mutating server action - PCH, Limited
+// Company/VAT, and wallet withdrawals alike - must go through this gate.
+// Blocking here rather than in RLS means Realtime subscriptions and
+// SELECTs still work; only the mutations are refused. Shared here (rather
+// than left as the private copy that used to live only in
+// src/app/accountant/actions.ts) so every accountant action file,
+// including the PCH-specific ones and the wallet withdrawal action, can
+// enforce it - a suspended accountant should not be able to keep filing
+// tax documents or requesting payouts just because one entry point
+// forgot the check.
+export function assertNotSuspended(status: string, action: string): void {
+  if (status === "suspended") {
+    throw new Error(
+      `Your account is suspended and can't ${action}. Contact support to reinstate.`,
+    );
+  }
+}

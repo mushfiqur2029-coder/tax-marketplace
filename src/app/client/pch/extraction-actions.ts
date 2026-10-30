@@ -51,6 +51,25 @@ async function requireClientForExtraction(extractionId: string) {
     .single();
   if (!caseRow || caseRow.client_id !== me.id) throw new Error("Not your case.");
   if (caseRow.tier !== "uber_phv_automated") throw new Error("Not a PCH case.");
+  // Primary lock: migration 0119's intake_submitted_at flag, same gate
+  // requirePchIntakeEditable (intake-actions.ts) uses for every other
+  // intake-mutating action. cases.status alone isn't enough here - it
+  // stays 'submitted' for the whole filling period, so a client who has
+  // clicked "Submit for review" (locking intake_submitted_at) but whose
+  // case an accountant hasn't claimed yet would otherwise still pass
+  // the status-only check below and be able to mutate pch_cases/
+  // pch_vehicle/income/expense lines through this review workflow after
+  // the accountant's snapshot is supposed to be stable.
+  const { data: pchHead } = await admin
+    .from("pch_cases")
+    .select("intake_submitted_at")
+    .eq("case_id", ext.case_id)
+    .maybeSingle();
+  if (pchHead?.intake_submitted_at) {
+    throw new Error(
+      "Your return is submitted and locked. Message your accountant if something needs to change.",
+    );
+  }
   // Match the same edit lock as the main intake actions: stays open
   // through submitted / in_review / prepared so the client can keep
   // confirming or correcting extracted fields even after an accountant

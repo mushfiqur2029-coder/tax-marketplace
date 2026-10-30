@@ -107,21 +107,30 @@ export default async function AdminAdminsPage() {
           </ul>
         </section>
 
-        <aside className="card-sl p-6">
-          <span className="eyebrow">Add an admin</span>
-          <p className="mt-2 text-xs text-slate">
-            The new admin can sign in with the temporary password below and
-            change it later from their profile.
-          </p>
-          <div className="mt-4">
-            <AddAdminForm create={create} />
-          </div>
-          <p className="mt-4 text-[11px] text-slate">
-            Bootstrap the very first admin via SQL. see{" "}
-            <code className="rounded bg-cloud px-1 py-0.5 text-[10px] text-ink">supabase/README.md</code>
-            .
-          </p>
-        </aside>
+        {callerIsPrimary ? (
+          <aside className="card-sl p-6">
+            <span className="eyebrow">Add an admin</span>
+            <p className="mt-2 text-xs text-slate">
+              The new admin can sign in with the temporary password below and
+              change it later from their profile.
+            </p>
+            <div className="mt-4">
+              <AddAdminForm create={create} />
+            </div>
+            <p className="mt-4 text-[11px] text-slate">
+              Bootstrap the very first admin via SQL. see{" "}
+              <code className="rounded bg-cloud px-1 py-0.5 text-[10px] text-ink">supabase/README.md</code>
+              .
+            </p>
+          </aside>
+        ) : (
+          <aside className="card-sl p-6">
+            <span className="eyebrow">Add an admin</span>
+            <p className="mt-2 text-xs text-slate">
+              Only the primary admin can create new admin accounts.
+            </p>
+          </aside>
+        )}
       </div>
     </>
   );

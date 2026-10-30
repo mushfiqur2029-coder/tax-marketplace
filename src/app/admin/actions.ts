@@ -171,7 +171,17 @@ export async function createAdminAction(input: {
   password: string;
 }): Promise<ActionResult<string>> {
   try {
-    await requireRole("admin");
+    const me = await requireRole("admin");
+    // Primary-admin-only, same tier as removeAdminAction below: an
+    // ordinary admin minting new full-privilege admin accounts is a
+    // privilege-escalation path (a compromised or malicious ordinary
+    // admin could create an unlimited number of admins indistinguishable
+    // from legitimate ones, each with every admin capability - reveal
+    // bank details, mark withdrawals paid, approve accountants, reassign
+    // cases, edit pricing).
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Only the primary admin can create new admin accounts.");
+    }
     const admin = createAdminClient();
     const name = input.name.trim();
     const email = input.email.trim();
@@ -759,11 +769,33 @@ export async function reassignCaseAction(
     statusPatch.status = "submitted";
   }
 
-  const { error: updateErr } = await supabase
-    .from("cases")
-    .update(statusPatch)
-    .eq("id", caseId);
-  if (updateErr) throw new Error(updateErr.message);
+  // Concurrency guard: scope the UPDATE to the accountant_id we read
+  // moments ago (prevAccountantId, including the null/"unassigned"
+  // case via .is() rather than .eq(), since PostgREST's eq.null isn't
+  // the same filter), same pattern as the case-status-transition
+  // actions elsewhere in the app. Without this, two admins reassigning
+  // the same case at once could race: each reads the same stale
+  // accountant_id, and whichever UPDATE lands last silently clobbers
+  // the other's assignment - the accountant the first admin just
+  // assigned never finds out they were bumped, and the admin_actions
+  // audit rows below (built from each admin's own stale read) would
+  // describe a reassignment sequence that didn't actually happen.
+  let updateQuery = supabase.from("cases").update(statusPatch).eq("id", caseId);
+  updateQuery =
+    prevAccountantId === null
+      ? updateQuery.is("accountant_id", null)
+      : updateQuery.eq("accountant_id", prevAccountantId);
+  const { data: flipped, error: updateErr } = await updateQuery
+    .select("id")
+    .single();
+  if (updateErr && (updateErr as { code?: string }).code !== "PGRST116") {
+    throw new Error(updateErr.message);
+  }
+  if (!flipped) {
+    throw new Error(
+      "This case was reassigned by someone else a moment ago. Reload and try again.",
+    );
+  }
 
   // Log to admin_actions for both the old and new accountant. Both
   // rows carry action='case_reassigned' (0075) so the audit log can

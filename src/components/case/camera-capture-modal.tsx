@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { SLButton } from "@/components/sl-button";
 
 type Props = {
   open: boolean;
@@ -76,6 +77,7 @@ export function CameraCaptureModal({ open, onClose, onCapture }: Props) {
     if (phase.kind !== "idle") return;
 
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhase({ kind: "requesting" });
 
     (async () => {
@@ -157,6 +159,7 @@ export function CameraCaptureModal({ open, onClose, onCapture }: Props) {
     if (!open) {
       stopStream(streamRef.current);
       streamRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPhase({ kind: "idle" });
     }
   }, [open, stopStream]);
@@ -306,38 +309,26 @@ export function CameraCaptureModal({ open, onClose, onCapture }: Props) {
           <div className="flex gap-2">
             {phase.kind === "preview" ? (
               <>
-                <button
-                  type="button"
-                  onClick={handleRetake}
-                  className="btn-sl btn-sl-outline"
-                >
+                <SLButton type="button" variant="outline" onClick={handleRetake}>
                   Retake
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUsePhoto}
-                  className="btn-sl btn-sl-primary"
-                >
+                </SLButton>
+                <SLButton type="button" variant="primary" onClick={handleUsePhoto}>
                   Use photo
-                </button>
+                </SLButton>
               </>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="btn-sl btn-sl-outline"
-                >
+                <SLButton type="button" variant="outline" onClick={onClose}>
                   Cancel
-                </button>
-                <button
+                </SLButton>
+                <SLButton
                   type="button"
+                  variant="primary"
                   onClick={handleCapture}
                   disabled={phase.kind !== "live"}
-                  className="btn-sl btn-sl-primary"
                 >
                   Capture
-                </button>
+                </SLButton>
               </>
             )}
           </div>

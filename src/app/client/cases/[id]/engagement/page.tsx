@@ -152,9 +152,9 @@ export default async function EngagementPage({
     signDate: null,
   });
 
-  const sign = async (dataUrl: string) => {
+  const sign = async (dataUrl: string, accepted: boolean) => {
     "use server";
-    return signEngagementAction(id, dataUrl);
+    return signEngagementAction(id, dataUrl, accepted);
   };
   const setIdentity = async (input: {
     companyName: string;

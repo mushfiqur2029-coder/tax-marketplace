@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { requireApprovedAccountant } from "@/lib/auth";
+import { requireApprovedAccountant, assertNotSuspended } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPchInReviewEmail, sendPchCompleteDocsEmail } from "@/lib/pch/status-emails";
@@ -32,18 +32,6 @@ import {
 } from "@/lib/vat/cycle";
 
 export type { ActionResult };
-
-// Suspended accountants keep read access to their assigned cases (RLS is
-// unchanged), but every case-mutating server action goes through this
-// gate. Blocking here rather than in RLS means Realtime subscriptions and
-// SELECTs still work, only the mutations are refused.
-function assertNotSuspended(status: string, action: string): void {
-  if (status === "suspended") {
-    throw new Error(
-      `Your account is suspended and can't ${action}. Contact support to reinstate.`,
-    );
-  }
-}
 
 type CaseStatus =
   | "draft"

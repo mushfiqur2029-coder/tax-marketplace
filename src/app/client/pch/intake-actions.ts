@@ -16,6 +16,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
+import { validateDateNotInFuture } from "@/lib/pch/validation";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -684,6 +685,17 @@ export async function savePchVehicleFieldAction(
     }
     if (field === "previous_method" && dbValue !== null && !VEHICLE_PREVIOUS_METHODS.has(dbValue as string)) {
       return { ok: false, error: "Unknown previous_method." };
+    }
+    // purchase_date was the one "date"-kind field with no validation at
+    // all in this per-field save path - a client could save a purchase
+    // date next year (or any unparseable string) and it would flow
+    // straight into the capital-allowances calc with nothing flagging
+    // it before the figures reach the accountant/client-approval
+    // screens. validateDateNotInFuture is the same check used
+    // elsewhere in the intake for date fields (src/lib/pch/validation.ts).
+    if (field === "purchase_date" && dbValue !== null) {
+      const dateErr = validateDateNotInFuture(dbValue as string, "Purchase date");
+      if (dateErr) return { ok: false, error: dateErr };
     }
 
     const { admin } = await requirePchIntakeEditable(caseId);

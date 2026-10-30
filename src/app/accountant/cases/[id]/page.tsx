@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SLLink } from "@/components/sl-button";
 import { loadAccountantCase } from "@/lib/case-accountant";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -120,9 +121,9 @@ export default async function AccountantCaseDetailPage({
             been removed by an admin, or the link may be out of date.
           </p>
           <div className="mt-5">
-            <Link href="/accountant" className="btn-sl btn-sl-primary">
+            <SLLink href="/accountant">
               Back to your cases
-            </Link>
+            </SLLink>
           </div>
         </div>
       </>
@@ -147,12 +148,9 @@ export default async function AccountantCaseDetailPage({
             queue for the next one.
           </p>
           <div className="mt-5">
-            <Link
-              href="/accountant?view=queue"
-              className="btn-sl btn-sl-primary"
-            >
+            <SLLink href="/accountant?view=queue">
               Back to the queue
-            </Link>
+            </SLLink>
           </div>
         </div>
       </>

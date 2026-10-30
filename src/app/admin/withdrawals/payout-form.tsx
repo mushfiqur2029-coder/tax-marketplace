@@ -44,13 +44,14 @@ export function PayoutForm({
         onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
       />
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <SLButton
           type="button"
+          variant="outline"
           onClick={() => fileRef.current?.click()}
-          className="btn-sl btn-sl-outline !text-[13px]"
+          className="!text-[13px]"
         >
           {fileName ?? "Choose receipt"}
-        </button>
+        </SLButton>
         <SLButton
           type="submit"
           variant="primary"

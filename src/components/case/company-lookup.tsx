@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { SLButton } from "@/components/sl-button";
 
 // Lightweight structural equality for CompanyPick. Prevents the
 // "reset local state when prop changes" effect from firing when the
@@ -364,14 +365,15 @@ export function CompanyLookup({
         ) : null}
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <button
+          <SLButton
             type="button"
+            variant="primary"
             onClick={submitManual}
             disabled={busy}
-            className="btn-sl btn-sl-primary w-full sm:w-auto"
+            className="w-full sm:w-auto"
           >
             {busy ? "Saving…" : "Use these details"}
-          </button>
+          </SLButton>
         </div>
       </div>
     );

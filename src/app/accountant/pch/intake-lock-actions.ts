@@ -18,7 +18,7 @@
 //     numbers the client has approved.
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -38,6 +38,7 @@ async function requireAccountantPchCase(caseId: string) {
   if (data.tier !== "uber_phv_automated") {
     throw new Error("Not a PCH automated case.");
   }
+  assertNotSuspended(me.status, "work on this case");
   return { me, admin, caseRow: data };
 }
 

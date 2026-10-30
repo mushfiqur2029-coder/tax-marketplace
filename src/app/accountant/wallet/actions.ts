@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireApprovedAccountant } from "@/lib/auth";
+import { requireApprovedAccountant, assertNotSuspended } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { insertWithdrawalRequestedNotifications } from "@/lib/notifications";
@@ -16,6 +16,7 @@ export async function requestWithdrawalAction(input: {
 }): Promise<ActionResult> {
   try {
   const me = await requireApprovedAccountant();
+  assertNotSuspended(me.status, "request a withdrawal");
   const accountName = input.accountName.trim();
   const sortCode = input.sortCode.trim();
   const accountNumber = input.accountNumber.trim();

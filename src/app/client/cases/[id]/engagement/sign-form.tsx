@@ -7,7 +7,7 @@ import { SignaturePad } from "@/components/engagement/signature-pad";
 import type { ActionResult } from "@/lib/action-result";
 
 type Props = {
-  sign: (signatureDataUrl: string) => Promise<ActionResult>;
+  sign: (signatureDataUrl: string, accepted: boolean) => Promise<ActionResult>;
   fee: string;
   // Set true while an upstream prerequisite is unmet (e.g. company
   // identity not yet picked). The form still renders in full so the
@@ -38,7 +38,7 @@ export function EngagementSignForm({ sign, fee, disabled }: Props) {
           return;
         }
         start(async () => {
-          const res = await sign(signatureDataUrl);
+          const res = await sign(signatureDataUrl, accepted);
           if (!res.ok) {
             setError(res.error);
             return;

@@ -201,9 +201,18 @@ export async function clearCompanyIdentityAction(
 export async function signEngagementAction(
   caseId: string,
   signatureDataUrl: string,
+  accepted: boolean,
 ): Promise<ActionResult> {
   try {
     const me = await requireRole("client");
+    // The form's "I accept" checkbox was only enforced client-side -
+    // the button stayed disabled until ticked, but a direct call to
+    // this action (bypassing the rendered form) could sign without it
+    // ever being true. Enforce it server-side too, same as every other
+    // required field on this action.
+    if (!accepted) {
+      throw new Error("You must tick the acceptance box before signing.");
+    }
 
     const supabase = await createClient();
     const { data: caseRow, error: caseErr } = await supabase

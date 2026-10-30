@@ -128,13 +128,9 @@ export function AvatarPicker({
           <SLButton type="button" variant="primary" onClick={snap}>
             Snap photo
           </SLButton>
-          <button
-            type="button"
-            onClick={closeCamera}
-            className="btn-sl btn-sl-ghost"
-          >
+          <SLButton type="button" variant="ghost" onClick={closeCamera}>
             Cancel
-          </button>
+          </SLButton>
         </div>
       </div>
     );
