@@ -16,6 +16,27 @@
   --color-slate: #5b6b85;
   --color-line: #e3e9f5;
 
+  /* Semantic layer (D5). Named by MEANING, not appearance, so a future
+     re-colour (or dark mode) is a change to these ten lines, not a grep
+     across every page for the raw hex/palette variable it happens to use
+     today. Mapped onto the existing palette now so adopting them is a
+     drop-in replacement with zero visual change; nothing in the app
+     references these yet, so defining them here changes nothing. */
+  --color-brand: var(--color-navy-deep);
+  --color-brand-accent: var(--color-sky);
+  --color-success: var(--color-mint);
+  --color-success-bg: rgba(19, 217, 160, 0.10);
+  --color-success-border: rgba(19, 217, 160, 0.4);
+  --color-danger: #dc2626;
+  --color-danger-bg: rgba(220, 38, 38, 0.08);
+  --color-danger-border: rgba(220, 38, 38, 0.35);
+  --color-warning: #d99f19;
+  --color-warning-bg: rgba(217, 159, 25, 0.10);
+  --color-warning-border: rgba(217, 159, 25, 0.45);
+  --color-info: var(--color-sky);
+  --color-info-bg: rgba(25, 156, 217, 0.08);
+  --color-info-border: rgba(25, 156, 217, 0.35);
+
   --font-sans: var(--font-inter);
   --font-heading: var(--font-space-grotesk);
   --font-mono: var(--font-plex-mono);
@@ -243,6 +264,109 @@
     border: 1px solid var(--line);
     border-radius: 20px;
     box-shadow: var(--shadow-sm);
+  }
+
+  /* Typography scale (D3). 5 heading sizes + 3 body sizes, named by
+     role so new pages pick a size instead of inventing a new
+     text-[17px] combination. Purely additive: nothing existing uses
+     these classes, so adding them changes no page. New/rebuilt pages
+     should reach for these instead of ad-hoc text-size utilities. */
+  .text-display {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    font-size: clamp(2rem, 1.6rem + 1.6vw, 3.25rem);
+    line-height: 1.08;
+    color: var(--ink);
+  }
+  .h1-sl {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-size: clamp(1.5rem, 1.3rem + 0.8vw, 2.125rem);
+    line-height: 1.15;
+    color: var(--ink);
+  }
+  .h2-sl {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    font-size: clamp(1.25rem, 1.15rem + 0.4vw, 1.625rem);
+    line-height: 1.2;
+    color: var(--ink);
+  }
+  .h3-sl {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    font-size: 1.125rem;
+    line-height: 1.3;
+    color: var(--ink);
+  }
+  .h4-sl {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 0.9375rem;
+    line-height: 1.35;
+    color: var(--ink);
+  }
+  .body-lg-sl { font-size: 1rem; line-height: 1.6; color: var(--ink); }
+  .body-sm-sl { font-size: 0.875rem; line-height: 1.55; color: var(--slate); }
+  .caption-sl {
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--slate);
+    letter-spacing: 0.01em;
+  }
+
+  /* Spacing rhythm (D4). Fixed vertical gaps by relationship, not by
+     whatever space-y-N felt right on a given page: 32px between major
+     sections, 16px between related blocks within a section, 8px for
+     tightly grouped elements (a label and its field). Apply with
+     space-y-sl-loose / -default / -tight on a flex/grid column, same
+     pattern as Tailwind's own space-y-*. */
+  .space-y-sl-loose > * + * { margin-top: 2rem; }
+  .space-y-sl-default > * + * { margin-top: 1rem; }
+  .space-y-sl-tight > * + * { margin-top: 0.5rem; }
+
+  /* Status pill, built on the semantic color layer so a status's color
+     always maps to its meaning (success/danger/warning/info) rather
+     than a page picking whichever hex looked right. */
+  .pill-sl {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .pill-sl-success {
+    color: #0d7a5a;
+    background: var(--color-success-bg);
+    border-color: var(--color-success-border);
+  }
+  .pill-sl-danger {
+    color: #a11c1c;
+    background: var(--color-danger-bg);
+    border-color: var(--color-danger-border);
+  }
+  .pill-sl-warning {
+    color: #8a5c05;
+    background: var(--color-warning-bg);
+    border-color: var(--color-warning-border);
+  }
+  .pill-sl-info {
+    color: var(--navy-deep);
+    background: var(--color-info-bg);
+    border-color: var(--color-info-border);
+  }
+  .pill-sl-neutral {
+    color: var(--slate);
+    background: var(--cloud);
+    border-color: var(--line);
   }
 
   /* Deadline pulse for close deadlines */

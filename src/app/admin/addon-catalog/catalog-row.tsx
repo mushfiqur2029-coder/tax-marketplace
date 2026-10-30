@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
+import { useToast } from "@/components/toast/toast-provider";
 import type { ActionResult } from "@/lib/action-result";
 
 type Row = {
@@ -26,6 +27,7 @@ type UpdateFn = (
 
 export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
   const router = useRouter();
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(row.name);
   const [description, setDescription] = useState(row.description);
@@ -47,6 +49,7 @@ export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
       });
       if (res.ok) {
         setEditing(false);
+        toast.success(`${name.trim()} saved.`);
         router.refresh();
       } else setError(res.error);
     });
@@ -65,6 +68,7 @@ export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
         // Deactivate flips the pill colour + moves the row between
         // "Active" and "Inactive" sections, needs a page re-render
         // since both lists live in the server component.
+        toast.success(row.active ? `${row.name} deactivated.` : `${row.name} activated.`);
         router.refresh();
       } else setError(res.error);
     });

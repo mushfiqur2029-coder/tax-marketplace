@@ -43,6 +43,7 @@ import {
   type VatApprovalPayload,
 } from "@/lib/vat/cycle";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { FloatingChatButton } from "@/components/case/floating-chat-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
@@ -356,6 +357,7 @@ export default async function AdminCasePage({
         title="Case oversight"
         description={`Client ${client?.email ?? "."} · Accountant ${acc?.email ?? "unassigned"}`}
       />
+      <FloatingChatButton />
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <StatusPill status={row.status} />
         {row.is_urgent ? <UrgentPill /> : null}
@@ -960,7 +962,7 @@ export default async function AdminCasePage({
           </section>
         </div>
 
-        <aside className="card-sl p-4 sm:p-6">
+        <aside id="case-chat" className="card-sl scroll-mt-20 p-4 sm:p-6">
           <span className="eyebrow">All chat threads</span>
           <div className="mt-3">
             <MultiThreadChat

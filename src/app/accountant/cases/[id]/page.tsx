@@ -25,6 +25,7 @@ import {
   companyNameFromAnswers,
 } from "@/lib/case/company-label";
 import { AccountantSuspensionBanner } from "@/app/accountant/suspension-banner";
+import { FloatingChatButton } from "@/components/case/floating-chat-button";
 import { StatusPill } from "@/components/case/status-pill";
 import { DeadlinePill } from "@/components/case/deadline-pill";
 import { UrgentPill } from "@/components/case/urgent-pill";
@@ -520,6 +521,7 @@ export default async function AccountantCaseDetailPage({
         }
       />
       <AccountantSuspensionBanner />
+      <FloatingChatButton />
       {/* Non-PCH case view: documents + chat panels already live-merge
           internally (case_documents in DocumentsPanel, case_messages in
           CaseMessagesPanel). Status flips and addon flips refresh on
@@ -1064,7 +1066,7 @@ export default async function AccountantCaseDetailPage({
           ) : null}
         </div>
 
-        <aside className="card-sl p-4 sm:p-6">
+        <aside id="case-chat" className="card-sl scroll-mt-20 p-4 sm:p-6">
           <span className="eyebrow">Chat</span>
           <p className="mt-2 text-xs text-slate">
             {data.isMine

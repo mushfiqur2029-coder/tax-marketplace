@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { SLButton } from "@/components/sl-button";
+import { useToast } from "@/components/toast/toast-provider";
 import type { PlanTier } from "@/lib/plans";
 import type { ActionResult } from "@/lib/action-result";
 import type { ServiceCatalogPatch } from "@/lib/service-catalog";
@@ -20,6 +21,7 @@ export function ServiceCatalogRow({
   update: UpdateFn;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export function ServiceCatalogRow({
       });
       if (res.ok) {
         setEditing(false);
+        toast.success(`${title.trim()} saved.`);
         router.refresh();
       } else setError(res.error);
     });
@@ -112,8 +115,12 @@ export function ServiceCatalogRow({
     setError(null);
     start(async () => {
       const res = await update(tier.id, { active: !isActive });
-      if (res.ok) router.refresh();
-      else setError(res.error);
+      if (res.ok) {
+        toast.success(
+          isActive ? `${tier.title} deactivated.` : `${tier.title} activated.`,
+        );
+        router.refresh();
+      } else setError(res.error);
     });
   };
 

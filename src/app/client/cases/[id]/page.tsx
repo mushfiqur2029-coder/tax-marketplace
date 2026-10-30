@@ -44,6 +44,7 @@ import {
   type ChatMessage,
   type ChatThread,
 } from "@/components/case/multi-thread-chat";
+import { FloatingChatButton } from "@/components/case/floating-chat-button";
 import { formatDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -356,6 +357,7 @@ export default async function CaseDetailPage({
         }
       />
       <ClientSuspensionBanner />
+      <FloatingChatButton />
       {/* Non-PCH case view: documents + chat panels already live-merge
           inside themselves. Status/addon flips refresh on navigation. */}
       {paid === "1" && data.progress.paid ? (
@@ -603,7 +605,7 @@ export default async function CaseDetailPage({
               ) : null}
             </div>
 
-            <aside className="card-sl p-4 sm:p-6">
+            <aside id="case-chat" className="card-sl scroll-mt-20 p-4 sm:p-6">
               <span className="eyebrow">Chat</span>
               <p className="mt-2 text-xs text-slate">
                 Message your accountant, or contact Sterling Ledger support.

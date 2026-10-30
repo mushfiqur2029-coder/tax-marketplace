@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
+import { ToastProvider } from "@/components/toast/toast-provider";
 import "./globals.css";
 
 const inter = Inter({
@@ -33,7 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${spaceGrotesk.variable} ${plexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans bg-cloud text-ink">
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );
