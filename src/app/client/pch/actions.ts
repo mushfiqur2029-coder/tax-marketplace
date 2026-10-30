@@ -26,7 +26,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { flipClientApprovalToFiled } from "@/lib/cases/approval-flip";
@@ -59,6 +59,7 @@ type ActionResultWith<T> = (ActionOk & T) | ActionErr;
 // -------------------------------------------------------------------
 async function requirePchCase(caseId: string) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "edit your return");
   const admin = createAdminClient();
   const [caseRes, pchRes] = await Promise.all([
     admin

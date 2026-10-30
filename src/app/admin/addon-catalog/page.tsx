@@ -1,4 +1,4 @@
-import { requireRole } from "@/lib/auth";
+import { requireRole, isPrimaryAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createAddonCatalogAction,
@@ -17,7 +17,8 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function AdminAddonCatalogPage() {
-  await requireRole("admin");
+  const me = await requireRole("admin");
+  const callerIsPrimary = isPrimaryAdmin(me);
   const admin = createAdminClient();
 
   // Active first, then inactive; alphabetical within each group.
@@ -72,12 +73,26 @@ export default async function AdminAddonCatalogPage() {
         title="Add-on catalog"
         description="Preset add-ons accountants can offer clients mid-case. Edits do not change historical add-ons. Existing case rows snapshot the price they were sold at."
       />
+      {!callerIsPrimary ? (
+        <div
+          role="status"
+          className="mb-6 rounded-xl border px-4 py-3 text-sm"
+          style={{
+            background: "var(--color-info-bg)",
+            borderColor: "var(--color-info-border)",
+            color: "var(--navy-deep)",
+          }}
+        >
+          Only the primary admin can edit the add-on catalog. You can view it below.
+        </div>
+      ) : null}
       <div className="mb-6">
         <CustomCapCard
           initialPence={
             customCapRow?.amount_pence ?? CUSTOM_ADDON_CAP_FALLBACK_PENCE
           }
           save={saveCustomCap}
+          readOnly={!callerIsPrimary}
         />
       </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
@@ -98,7 +113,7 @@ export default async function AdminAddonCatalogPage() {
               <ul className="grid gap-3">
                 {active.map((r) => (
                   <li key={r.key}>
-                    <CatalogRow row={r} update={update} />
+                    <CatalogRow row={r} update={update} readOnly={!callerIsPrimary} />
                   </li>
                 ))}
               </ul>
@@ -116,7 +131,7 @@ export default async function AdminAddonCatalogPage() {
               <ul className="grid gap-3">
                 {inactive.map((r) => (
                   <li key={r.key}>
-                    <CatalogRow row={r} update={update} />
+                    <CatalogRow row={r} update={update} readOnly={!callerIsPrimary} />
                   </li>
                 ))}
               </ul>
@@ -132,7 +147,7 @@ export default async function AdminAddonCatalogPage() {
             You can&apos;t change it later.
           </p>
           <div className="mt-4">
-            <AddCatalogItemForm create={create} />
+            <AddCatalogItemForm create={create} readOnly={!callerIsPrimary} />
           </div>
         </aside>
       </div>

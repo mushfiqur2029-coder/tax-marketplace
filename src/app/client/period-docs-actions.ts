@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
@@ -27,6 +27,7 @@ const BUCKET = "case-documents";
 // onboarding submitted, period dates set, period docs not yet submitted.
 async function assertCaseInPeriodUpload(caseId: string) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "upload period documents");
   const supabase = await createClient();
   const { data: caseRow, error } = await supabase
     .from("cases")

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/service-catalog";
@@ -88,6 +88,7 @@ export async function setCompanyIdentityAction(
 ): Promise<ActionResult> {
   try {
     const me = await requireRole("client");
+    assertNotSuspended(me.status, "update company details");
     const supabase = await createClient();
 
     const { data: caseRow, error: caseErr } = await supabase
@@ -156,6 +157,7 @@ export async function clearCompanyIdentityAction(
 ): Promise<ActionResult> {
   try {
     const me = await requireRole("client");
+    assertNotSuspended(me.status, "update company details");
     const supabase = await createClient();
 
     const { data: caseRow, error: caseErr } = await supabase
@@ -205,6 +207,7 @@ export async function signEngagementAction(
 ): Promise<ActionResult> {
   try {
     const me = await requireRole("client");
+    assertNotSuspended(me.status, "sign the engagement letter");
     // The form's "I accept" checkbox was only enforced client-side -
     // the button stayed disabled until ticked, but a direct call to
     // this action (bypassing the rendered form) could sign without it

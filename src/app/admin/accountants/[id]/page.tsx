@@ -228,6 +228,7 @@ export default async function AdminAccountantDetail({
                   "use server";
                   return setAccountantLegalIdentityAction(accId, input);
                 }}
+                readOnly={!callerIsPrimary}
               />
             </div>
           </section>

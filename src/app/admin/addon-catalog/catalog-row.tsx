@@ -25,7 +25,15 @@ type UpdateFn = (
   },
 ) => Promise<ActionResult>;
 
-export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
+export function CatalogRow({
+  row,
+  update,
+  readOnly,
+}: {
+  row: Row;
+  update: UpdateFn;
+  readOnly?: boolean;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
@@ -103,7 +111,7 @@ export function CatalogRow({ row, update }: { row: Row; update: UpdateFn }) {
           £{priceGbp}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {!editing ? (
+          {readOnly ? null : !editing ? (
             <>
               <SLButton
                 type="button"

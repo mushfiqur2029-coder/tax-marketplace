@@ -13,6 +13,18 @@
  * reach without scrolling the whole page) with no risk to the chat
  * component itself.
  *
+ * Positioning: the bottom-right corner is already contested by three
+ * other fixed-position elements that can appear on these same pages -
+ * the realtime "new activity" banner (realtime-refresh.tsx, bottom-4),
+ * the notification-bell toast stack (notification-bell.tsx, bottom-4,
+ * z-60), and the app-wide ToastProvider (toast-provider.tsx, bottom-0/
+ * bottom-6, z-95). Rather than coordinate z-index against three
+ * independent, transient, variable-height stacks (fragile - a second
+ * toast or a taller banner would just push the overlap back), this
+ * button sits well above all of them (bottom-24) with a lower z-index,
+ * so it never fights an active toast/banner for the same pixels and a
+ * taller stack simply never reaches it.
+ *
  * Usage: give the chat panel's wrapping element id="case-chat" and
  * `scroll-mt-20` (or similar, enough to clear any sticky header) so the
  * browser's native anchor scroll lands with room to spare, then render
@@ -22,7 +34,7 @@ export function FloatingChatButton() {
   return (
     <a
       href="#case-chat"
-      className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-2xl xl:hidden"
+      className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-2xl xl:hidden"
       style={{
         background: "linear-gradient(135deg, var(--navy) 0%, var(--sky) 100%)",
         boxShadow: "0 14px 30px -10px rgba(25,156,217,0.55)",

@@ -15,7 +15,7 @@
 // entered manually; nothing is written for them.
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   SLOT_APPLY_MAPS,
@@ -37,6 +37,7 @@ type FieldStates = Record<string, FieldState>;
 
 async function requireClientForExtraction(extractionId: string) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "edit your return");
   const admin = createAdminClient();
   const { data: ext } = await admin
     .from("pch_doc_extractions")

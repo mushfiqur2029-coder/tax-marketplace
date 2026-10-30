@@ -7,6 +7,7 @@ import type { ActionResult } from "@/lib/action-result";
 
 export function AddCatalogItemForm({
   create,
+  readOnly,
 }: {
   create: (input: {
     key: string;
@@ -14,6 +15,7 @@ export function AddCatalogItemForm({
     description: string;
     amountPence: number;
   }) => Promise<ActionResult>;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [key, setKey] = useState("");
@@ -23,6 +25,14 @@ export function AddCatalogItemForm({
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+
+  if (readOnly) {
+    return (
+      <p className="rounded-lg border border-line bg-cloud px-3 py-2 text-xs text-slate">
+        Only the primary admin can add new add-ons.
+      </p>
+    );
+  }
 
   return (
     <form

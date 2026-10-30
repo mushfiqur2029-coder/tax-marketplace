@@ -18,6 +18,11 @@ type Props = {
       legalCompanyNumber: string;
     },
   ) => Promise<ActionResult>;
+  // setAccountantLegalIdentityAction is primary-admin-only server-side.
+  // Passing false here (any admin who isn't the primary) disables the
+  // form instead of letting someone fill it in and only discover the
+  // rejection after clicking Save.
+  readOnly?: boolean;
 };
 
 // Three-field form for the accountant_profiles columns that migration
@@ -25,7 +30,7 @@ type Props = {
 // leaving them blank keeps the letter on the Shann / NAFH / 12636834
 // fallback, which is the right behavior for every accountant we had
 // before the field was introduced.
-export function LegalIdentityForm({ accountantId, initial, save }: Props) {
+export function LegalIdentityForm({ accountantId, initial, save, readOnly }: Props) {
   const [legalName, setLegalName] = useState(initial.legalName);
   const [tradingName, setTradingName] = useState(initial.tradingName);
   const [legalCompanyNumber, setLegalCompanyNumber] = useState(
@@ -59,27 +64,37 @@ export function LegalIdentityForm({ accountantId, initial, save }: Props) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <Field
-        label="Legal name"
-        hint="Appears on the engagement letter as the signing party on our side."
-        value={legalName}
-        onChange={setLegalName}
-        placeholder="e.g. New Age Finance Hub Ltd"
-      />
-      <Field
-        label="Trading name"
-        hint="Shown in the letter footer. Leave blank to use the legal name."
-        value={tradingName}
-        onChange={setTradingName}
-        placeholder="e.g. Sterling Ledger"
-      />
-      <Field
-        label="Companies House number"
-        hint="UK Companies House registration number of the legal entity above."
-        value={legalCompanyNumber}
-        onChange={setLegalCompanyNumber}
-        placeholder="e.g. 12636834"
-      />
+      {readOnly ? (
+        <p
+          role="status"
+          className="rounded-lg border border-line bg-cloud px-3 py-2 text-xs text-slate"
+        >
+          Only the primary admin can change legal identity.
+        </p>
+      ) : null}
+      <fieldset disabled={readOnly} className="space-y-4">
+        <Field
+          label="Legal name"
+          hint="Appears on the engagement letter as the signing party on our side."
+          value={legalName}
+          onChange={setLegalName}
+          placeholder="e.g. New Age Finance Hub Ltd"
+        />
+        <Field
+          label="Trading name"
+          hint="Shown in the letter footer. Leave blank to use the legal name."
+          value={tradingName}
+          onChange={setTradingName}
+          placeholder="e.g. Sterling Ledger"
+        />
+        <Field
+          label="Companies House number"
+          hint="UK Companies House registration number of the legal entity above."
+          value={legalCompanyNumber}
+          onChange={setLegalCompanyNumber}
+          placeholder="e.g. 12636834"
+        />
+      </fieldset>
 
       {error ? (
         <p role="alert" className="text-xs font-medium text-red-700">
@@ -90,7 +105,7 @@ export function LegalIdentityForm({ accountantId, initial, save }: Props) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pending || !dirty}
+          disabled={pending || !dirty || readOnly}
           className="inline-flex items-center rounded-full border border-navy-deep bg-navy-deep px-4 py-2 text-xs font-bold uppercase tracking-wider text-paper hover:bg-sky hover:border-sky disabled:opacity-60"
           style={{ fontFamily: "var(--font-mono)" }}
         >

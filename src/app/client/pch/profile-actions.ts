@@ -16,7 +16,7 @@
 // updates on diff.
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ActionOk<T = Record<never, never>> = { ok: true } & T;
@@ -25,6 +25,7 @@ type ActionResult<T = Record<never, never>> = ActionOk<T> | ActionErr;
 
 async function requireClientPchCase(caseId: string) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "edit your return");
   const admin = createAdminClient();
   const { data } = await admin
     .from("cases")

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
+import { requireRole, PRIMARY_ADMIN_EMAIL } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { insertProfileChangeNotifications } from "@/lib/notifications";
@@ -230,6 +230,20 @@ export async function updateAdminProfileAction(
     if (!name) throw new Error("Name is required.");
     if (!contactNumber) throw new Error("Contact number is required.");
     if (!email) throw new Error("Email is required.");
+    // The primary admin's email is permanently fixed: protect_primary_admin_trg
+    // (migration 0056) refuses any update to public.users.email for that row,
+    // by design, so it can always be identified. Reject here, before the
+    // auth-layer email change below, rather than letting auth.users change
+    // while the public.users write then fails - that split would leave the
+    // primary admin able to log in with a new email while every
+    // PRIMARY_ADMIN_EMAIL comparison in the app (isPrimaryAdmin, the
+    // pricing/catalog gates, admin creation/removal) still reads the old one.
+    if (
+      me.email.toLowerCase() === PRIMARY_ADMIN_EMAIL &&
+      email.toLowerCase() !== PRIMARY_ADMIN_EMAIL
+    ) {
+      throw new Error("The primary admin's email can't be changed.");
+    }
 
     const avatarPath = await uploadAvatarIfProvided(me.id, avatarFile);
 

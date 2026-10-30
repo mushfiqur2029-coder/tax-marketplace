@@ -16,9 +16,14 @@ type UpdateFn = (
 export function ServiceCatalogRow({
   tier,
   update,
+  readOnly,
 }: {
   tier: PlanTier;
   update: UpdateFn;
+  // updateServiceCatalogAction is primary-admin-only server-side; hide
+  // the editing controls from everyone else instead of letting them
+  // fill the form in and only discover the rejection after Save.
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -213,7 +218,7 @@ export function ServiceCatalogRow({
           {isActive ? "Active" : "Deactivated"}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {!editing ? (
+          {readOnly ? null : !editing ? (
             <>
               <SLButton
                 type="button"

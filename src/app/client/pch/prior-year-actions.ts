@@ -14,7 +14,7 @@
 // the normal engagement letter + payment + intake pipeline applies.
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRatePackFor } from "@/lib/tax-engine";
 
@@ -27,6 +27,7 @@ export async function spawnPriorYearCasesAction(
   taxYears: string[],
 ): Promise<ActionResult> {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "start a new return");
   const admin = createAdminClient();
 
   const { data: parent } = await admin

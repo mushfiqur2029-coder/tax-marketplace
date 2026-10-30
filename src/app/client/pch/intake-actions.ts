@@ -14,7 +14,7 @@
 // so the policy stays in one place.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 import { validateDateNotInFuture } from "@/lib/pch/validation";
 
@@ -25,6 +25,7 @@ export type IntakeActionResultWith<T> = (ActionOk & T) | ActionErr;
 
 export async function requirePchIntakeEditable(caseId: string) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "edit your return");
   const admin = createAdminClient();
   const [caseRes, pchRes] = await Promise.all([
     admin

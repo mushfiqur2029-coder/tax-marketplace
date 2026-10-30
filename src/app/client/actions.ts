@@ -366,6 +366,10 @@ export async function reconcilePaymentAction(caseId: string) {
     fresh.stripe_checkout_session_id,
   );
   if (session.payment_status === "paid") {
+    // Idempotency guard matching reconcileBalancePaymentAction below: scope
+    // the write to the state just read so two concurrent reconciles (this
+    // poll racing the Stripe webhook) converge on the same row instead of
+    // each blindly overwriting the other's write.
     await admin
       .from("cases")
       .update({
@@ -377,7 +381,9 @@ export async function reconcilePaymentAction(caseId: string) {
         status: "submitted",
         submitted_at: new Date().toISOString(),
       })
-      .eq("id", caseId);
+      .eq("id", caseId)
+      .eq("status", "draft")
+      .neq("stripe_payment_status", "succeeded");
     revalidatePath(`/client/cases/${caseId}`);
     revalidatePath("/client");
   }

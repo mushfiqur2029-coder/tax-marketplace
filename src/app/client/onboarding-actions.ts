@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
@@ -29,6 +29,7 @@ const BUCKET = "case-documents";
 // independently of the onboarding submit, the two gates are orthogonal.
 async function assertCaseInOnboarding(caseId: string) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "edit your onboarding details");
   const supabase = await createClient();
   // intake_answers has to be in this SELECT: both save and submit
   // merge/validate against caseRow.intake_answers, so leaving it out

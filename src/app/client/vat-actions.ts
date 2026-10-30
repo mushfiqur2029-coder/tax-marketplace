@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { type ActionResult, fail } from "@/lib/action-result";
@@ -28,6 +28,7 @@ const VALID_UPLOAD_KEYS = new Set(VAT_CYCLE_UPLOAD_FIELDS.map((f) => f.id));
 // cycle and the case row.
 async function assertClientOnCycle(cycleId: string) {
   const me = await requireRole("client");
+  assertNotSuspended(me.status, "edit this VAT cycle");
   const admin = createAdminClient();
   const { data: cycle, error: cycErr } = await admin
     .from("vat_return_cycles")

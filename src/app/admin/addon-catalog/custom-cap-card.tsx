@@ -6,6 +6,7 @@ import type { ActionResult } from "@/lib/action-result";
 type Props = {
   initialPence: number;
   save: (amountPence: number) => Promise<ActionResult>;
+  readOnly?: boolean;
 };
 
 // Dedicated editor for the __custom_max__ sentinel row on addon_catalog
@@ -13,7 +14,7 @@ type Props = {
 // server action. The sentinel is kept out of the normal Active list on
 // the page above this card, so this card is the only control that edits
 // its amount.
-export function CustomCapCard({ initialPence, save }: Props) {
+export function CustomCapCard({ initialPence, save, readOnly }: Props) {
   const initialPounds = (initialPence / 100).toFixed(2).replace(/\.00$/, "");
   const [valueGbp, setValueGbp] = useState(initialPounds);
   const [pending, start] = useTransition();
@@ -55,6 +56,11 @@ export function CustomCapCard({ initialPence, save }: Props) {
         <em>&ldquo;over £X need to go through support&rdquo;</em> at
         submit time. Pre-migration default was £5,000.
       </p>
+      {readOnly ? (
+        <p className="mt-4 rounded-lg border border-line bg-cloud px-3 py-2 text-xs text-slate">
+          Only the primary admin can change the custom add-on cap.
+        </p>
+      ) : null}
       <form onSubmit={onSubmit} className="mt-4 flex flex-wrap items-end gap-3">
         <label className="block">
           <span
@@ -77,13 +83,14 @@ export function CustomCapCard({ initialPence, save }: Props) {
               step="1"
               value={valueGbp}
               onChange={(e) => setValueGbp(e.target.value)}
-              className="w-32 rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30"
+              disabled={readOnly}
+              className="w-32 rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30 disabled:opacity-60"
             />
           </div>
         </label>
         <button
           type="submit"
-          disabled={pending || !dirty}
+          disabled={pending || !dirty || readOnly}
           className="inline-flex items-center rounded-full border border-navy-deep bg-navy-deep px-4 py-2 text-xs font-bold uppercase tracking-wider text-paper hover:bg-sky hover:border-sky disabled:opacity-60"
           style={{ fontFamily: "var(--font-mono)" }}
         >
