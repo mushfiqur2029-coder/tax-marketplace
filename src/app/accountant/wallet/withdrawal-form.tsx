@@ -93,7 +93,7 @@ export function WithdrawalRequestForm({
       ) : null}
       {saved ? (
         <p className="text-xs font-medium text-[#0E9E77]" role="status">
-          Withdrawal requested. We'll confirm once paid.
+          Withdrawal requested. We&apos;ll confirm once paid.
         </p>
       ) : null}
 

@@ -75,6 +75,7 @@ export function PortalShell<K extends string>({
   // persists across navigations, so we need to notice pathname
   // moving even though it's set to false onItemClick as well.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDrawerOpen(false);
   }, [pathname]);
 

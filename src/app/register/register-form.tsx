@@ -184,7 +184,7 @@ export function RegisterForm() {
       {role === "accountant" ? (
         <p className="text-center text-xs text-slate">
           Sterling Ledger admins review every accountant before you can take
-          cases. You'll be able to sign in immediately; approval usually happens
+          cases. You&apos;ll be able to sign in immediately; approval usually happens
           within one working day.
         </p>
       ) : null}

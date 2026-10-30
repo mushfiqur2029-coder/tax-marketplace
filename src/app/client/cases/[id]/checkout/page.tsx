@@ -71,7 +71,7 @@ export default async function CheckoutPage({
           role="status"
           className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
         >
-          Payment cancelled. Your details are saved. pay whenever you're ready.
+          Payment cancelled. Your details are saved. pay whenever you&apos;re ready.
         </div>
       ) : null}
 
@@ -128,7 +128,7 @@ export default async function CheckoutPage({
             start={bound}
           />
           <p className="mt-3 text-[11px] text-slate">
-            You'll be redirected to Stripe. Test card <code className="font-mono">4242 4242 4242 4242</code>, any future date, any CVC.
+            You&apos;ll be redirected to Stripe. Test card <code className="font-mono">4242 4242 4242 4242</code>, any future date, any CVC.
           </p>
         </aside>
       </div>

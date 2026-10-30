@@ -25,7 +25,7 @@ export default async function LoginPage() {
             Sign in to your account
           </h1>
           <p className="mt-2 text-sm text-slate">
-            You'll be routed to your dashboard based on your role.
+            You&apos;ll be routed to your dashboard based on your role.
           </p>
           <div className="mt-6">
             <LoginForm />

@@ -208,6 +208,7 @@ export function BookingPicker({
   useEffect(() => {
     if (!selectedDate) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSlotsLoading(true);
     setSlotsError(null);
     setSlots(null);
