@@ -20,7 +20,7 @@
 // file and show a Uploading... state until it resolves; errors are
 // surfaced via throwing from onFile.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const DEFAULT_ACCEPT =
   "application/pdf,image/jpeg,image/png,image/webp,image/heic";
@@ -129,6 +129,54 @@ export function useMultiFileDrop({
   };
 
   return { dropProps, isDragOver };
+}
+
+// Visible "working on it" indicator for any upload/OCR step that
+// takes more than a moment - the licence read, bulk-intake sorting,
+// UTR/NINO lookups. Pairs a short status line with the .sl-ai-progress
+// indeterminate bar (globals.css; same sweep already used on the AI
+// chat "thinking" state) so a client watching the screen sees it's
+// actively working rather than wondering if it's stuck.
+//
+// Tracks its own elapsed time from first mount. Past
+// `escalateAfterSeconds` the copy changes to acknowledge the wait
+// instead of silently repeating the same "a few seconds" line, so a
+// genuinely slow or stuck job doesn't read as broken.
+//
+// If the caller tracks a changing id (a new extraction starting while
+// the old one's indicator is still showing), pass that id as this
+// element's `key` rather than a prop here - a key change remounts the
+// component, which is the clean way to re-anchor the clock without an
+// effect that writes state on every resetKey change.
+export function ProcessingIndicator({
+  label,
+  longWaitLabel,
+  escalateAfterSeconds = 25,
+}: {
+  label: string;
+  longWaitLabel?: string;
+  escalateAfterSeconds?: number;
+}) {
+  const [startedAt] = useState(() => Date.now());
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setElapsedSec(Math.round((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  const longWait = elapsedSec >= escalateAfterSeconds;
+  return (
+    <div>
+      <p className="mb-1.5 text-xs text-sky-800">
+        {longWait
+          ? longWaitLabel ?? "Still working on it, this is taking a bit longer than usual. Hang tight."
+          : label}
+      </p>
+      <div className="sl-ai-progress" aria-hidden="true" />
+    </div>
+  );
 }
 
 function acceptsFile(file: File, accept: string): boolean {

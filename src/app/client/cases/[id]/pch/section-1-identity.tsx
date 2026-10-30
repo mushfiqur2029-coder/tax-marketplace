@@ -23,7 +23,7 @@ import {
 import { uploadPchDocumentAction, setPchPhotoIdKindAction } from "@/app/client/pch/actions";
 import { useOptionalIntakeProgress } from "./intake-progress-context";
 import { isIdentityComplete } from "./intake-completion";
-import { TileUpload, useFileDrop } from "./upload-dropzone";
+import { TileUpload, useFileDrop, ProcessingIndicator } from "./upload-dropzone";
 
 type LicenceDoc = {
   id: string;
@@ -414,6 +414,14 @@ function HeadFieldWithOcrUpload(props: {
       {isDragOver ? (
         <p className="mt-1 text-[11px] font-medium text-sky-800">Drop to upload.</p>
       ) : null}
+      {uploading ? (
+        <div className="mt-1">
+          <ProcessingIndicator
+            label="Reading your document."
+            longWaitLabel="Still reading, this one's taking a bit longer than usual."
+          />
+        </div>
+      ) : null}
       {extracted ? (
         <p className="mt-1 text-xs text-emerald-700">
           Got {extracted} off your document. Check it's right, or edit above.
@@ -592,9 +600,13 @@ function LicenceCard({
       </div>
 
       {applyPending || readingExtraction ? (
-        <p className="mt-3 text-xs text-sky-800">
-          Reading your licence. Usually 10 to 30 seconds.
-        </p>
+        <div className="mt-3">
+          <ProcessingIndicator
+            key={readingExtraction?.id}
+            label="Reading your licence. Usually 10 to 30 seconds."
+            longWaitLabel="Still reading your licence, this one's taking longer than usual. No need to re-upload, it'll come through."
+          />
+        </div>
       ) : null}
       {applied && Object.keys(applied).length > 0 && !applyPending ? (
         <p className="mt-3 text-xs text-emerald-700">

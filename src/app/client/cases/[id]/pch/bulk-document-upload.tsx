@@ -29,7 +29,7 @@ import {
   uploadBulkIntakeDocumentAction,
   type BulkIntakeUploadView,
 } from "@/app/client/pch/bulk-intake-actions";
-import { useMultiFileDrop } from "./upload-dropzone";
+import { useMultiFileDrop, ProcessingIndicator } from "./upload-dropzone";
 
 const UPLOAD_ACCEPT =
   "application/pdf,image/jpeg,image/png,image/webp,text/csv,"
@@ -296,6 +296,19 @@ function BulkUploadRow({
           </button>
         ) : null}
       </div>
+      {live.status === "pending" || live.status === "processing" ? (
+        <div className="mt-2">
+          <ProcessingIndicator
+            key={initial.id}
+            label={
+              live.status === "pending"
+                ? "Queued, we'll start reading this shortly."
+                : "Reading and sorting this document. Usually 10 to 30 seconds."
+            }
+            longWaitLabel="Still working on it, a longer or multi-page statement can take a bit more than usual."
+          />
+        </div>
+      ) : null}
       {live.status === "error" && live.error_message ? (
         <p className="mt-2 text-xs text-rose-700">
           {live.error_message}. Re-upload the file, or split a long

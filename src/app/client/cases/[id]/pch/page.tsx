@@ -23,6 +23,21 @@ import { loadSupportThreadForCaseAndUser } from "@/lib/support/data";
 // not stale from an earlier render.
 export const dynamic = "force-dynamic";
 
+// Raises the timeout for every Server Action invoked from this page
+// (Next.js applies maxDuration to Server Actions at the page level,
+// not the action file - see maxDuration docs). The licence-OCR vision
+// call this page triggers (uploadPchDocumentAction -> after() ->
+// runPchExtractionJob) routinely takes 10-30s per the UI's own copy,
+// which is longer than the platform's un-configured function timeout.
+// Without this, a slow-but-otherwise-fine OCR call gets killed
+// mid-flight: the pch_doc_extractions row never reaches 'done' or
+// 'error', it just sits at 'pending' forever, and the client sees
+// "Reading your licence..." that never resolves - this is the
+// intermittent "sometimes the licence doesn't fetch" symptom. Covers
+// every OCR-triggering action on this page (licence, UTR/NINO,
+// bulk-intake extraction), all of which share this one page.
+export const maxDuration = 60;
+
 // Entry point for the automated PCH flow (phase 2a). One page with
 // collapsible sections: identity, income, expenses, vehicle (as a
 // subsection of expenses), sections 4-15, final general uploads.
