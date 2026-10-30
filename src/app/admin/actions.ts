@@ -867,7 +867,10 @@ export async function setAccountantLegalIdentityAction(
   },
 ): Promise<ActionResult> {
   try {
-    await requireRole("admin");
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Only the primary admin can change an accountant's legal identity.");
+    }
     const admin = createAdminClient();
 
     const normalize = (s: string) => (s.trim() ? s.trim() : null);
@@ -1150,7 +1153,10 @@ export async function createAddonCatalogAction(input: {
   amountPence: number;
 }): Promise<ActionResult> {
   try {
-    await requireRole("admin");
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Only the primary admin can create catalog add-ons.");
+    }
     const admin = createAdminClient();
 
     const key = input.key.trim().toLowerCase();
@@ -1199,7 +1205,10 @@ export async function setCustomAddonCapAction(
   amountPence: number,
 ): Promise<ActionResult> {
   try {
-    await requireRole("admin");
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Only the primary admin can change the custom add-on cap.");
+    }
     const admin = createAdminClient();
 
     const rounded = Math.round(amountPence);
@@ -1233,7 +1242,10 @@ export async function updateAddonCatalogAction(
   },
 ): Promise<ActionResult> {
   try {
-    await requireRole("admin");
+    const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Only the primary admin can edit catalog add-ons.");
+    }
     const admin = createAdminClient();
 
     const name = input.name.trim();
@@ -1484,6 +1496,9 @@ export async function updateServiceCatalogAction(
 ): Promise<ActionResult> {
   try {
     const me = await requireRole("admin");
+    if (me.email.toLowerCase() !== PRIMARY_ADMIN_EMAIL) {
+      throw new Error("Only the primary admin can edit the service catalog.");
+    }
     // Belt-and-braces: silently drop any fields the client sends that
     // are outside the admin surface.
     const safe: ServiceCatalogPatch = {};
