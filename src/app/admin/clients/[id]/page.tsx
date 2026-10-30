@@ -43,7 +43,7 @@ export default async function AdminClientDetail({
       .eq("user_id", id)
       .maybeSingle(),
   ]);
-  if (!user || user.status === undefined) notFound();
+  if (!user) notFound();
 
   // Guard the URL: this page is only meaningful for client users. Admin
   // reaching /admin/clients/<some-non-client-id> gets a 404.
