@@ -85,9 +85,19 @@ export function BulkDocumentUpload({
     setUploading(true);
     setErr(null);
     try {
-      for (const file of files) {
-        await uploadOne(file);
-      }
+      // Fire every file's upload (storage write + DB insert + after()
+      // schedule) concurrently rather than one-at-a-time. Each file's
+      // actual AI read already runs in the background and doesn't
+      // block this loop, but the *upload step itself* was still
+      // serialized - so dropping 3-4 statements at once meant the
+      // last file's reading job didn't even get scheduled until the
+      // previous files' uploads had each finished their own request
+      // round trip. Promise.all starts all of them together instead,
+      // so every file's "Reading." timer starts at roughly the same
+      // moment. uploadOne reports its own error via setErr and
+      // returns null on failure, so one bad file doesn't abort the
+      // rest - allSettled isn't needed.
+      await Promise.all(files.map((file) => uploadOne(file)));
     } finally {
       setUploading(false);
     }
