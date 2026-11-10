@@ -147,19 +147,23 @@ export async function uploadBulkIntakeDocumentAction(
       return { ok: false, error: "Upload failed: " + up.error.message };
     }
 
-    const ins = await admin
-      .from("pch_intake_uploads")
-      .insert({
-        case_id: caseId,
-        storage_path: storagePath,
-        file_name: file.name,
-        status: "pending",
-      })
-      .select("id")
-      .single();
+    // pch_claim_intake_upload (migration 0128) re-checks the cap and
+    // inserts in one locked DB call, instead of the plain insert this
+    // used to be. The SELECT count check above is a fast, friendly
+    // reject for the common case and runs before the storage upload
+    // above so a client over the cap doesn't pay that cost; this RPC
+    // is the actual enforcement, closing the race where several files
+    // dropped at once (bulk-document-upload.tsx now uploads them
+    // concurrently) could all pass that pre-check before any of them
+    // had inserted, landing the case over the 25-upload cap.
+    const ins = await admin.rpc("pch_claim_intake_upload", {
+      p_case_id: caseId,
+      p_storage_path: storagePath,
+      p_file_name: file.name,
+    });
     if (ins.error) return { ok: false, error: ins.error.message };
 
-    const uploadId = ins.data.id as string;
+    const uploadId = (ins.data as { id: string }).id;
 
     // Hand the actual extraction + write off to after() so the upload
     // response isn't blocked on the 10-60s Claude call (same deferred

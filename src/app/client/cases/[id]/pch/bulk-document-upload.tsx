@@ -321,9 +321,10 @@ function BulkUploadRow({
       ) : null}
       {live.status === "error" && live.error_message ? (
         <p className="mt-2 text-xs text-rose-700">
-          {live.error_message}. Re-upload the file, or split a long
-          statement into smaller files if the model couldn't finish
-          reading it.
+          {live.error_message}.{" "}
+          {live.items_count && live.items_count > 0
+            ? "Check the lines already added below before re-uploading this file, so you don't add them twice."
+            : "Re-upload the file, or split a long statement into smaller files if the model couldn't finish reading it."}
         </p>
       ) : null}
     </li>

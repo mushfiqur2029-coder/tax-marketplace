@@ -63,25 +63,35 @@ const MAX_NOTE_LINES = 5;
 export async function runBulkIntakeExtractionJob(uploadId: string): Promise<void> {
   const admin = createAdminClient();
 
-  // Mark the row processing BEFORE we start downloading / calling the
-  // model, so the client's live-row chip flips off "pending" the
-  // moment the job picks up (same pattern runPchExtractionJob uses).
-  const { data: upload } = await admin
-    .from("pch_intake_uploads")
-    .select("id, case_id, storage_path, file_name, status")
-    .eq("id", uploadId)
-    .single();
-  if (!upload) return;
-
-  // Belt-and-braces: if a second after() fires for the same row
-  // (e.g. retry via a replayed request), don't re-run on top of a
-  // completed/errored row.
-  if (upload.status === "done" || upload.status === "error") return;
-
-  await admin
+  // Atomic claim: pending -> processing in one UPDATE, scoped to
+  // status='pending' in the WHERE clause, instead of a SELECT to read
+  // the status followed by a separate UPDATE. The previous two-step
+  // version was a real race, not just a theoretical one: the platform
+  // can replay/retry the same after() callback, and if two
+  // invocations for the same uploadId both ran the SELECT before
+  // either ran the UPDATE, both would see status='pending', both
+  // would proceed, and both would call applyExtractedItem for every
+  // line - and because topUpIncomeSlot/topUpExpenseSlot are designed
+  // to ADD a top-up's pence onto the existing total, a duplicate run
+  // doesn't fail or collide, it silently double-counts the entire
+  // document. Scoping this single UPDATE's WHERE to status='pending'
+  // means only the first invocation to reach the database gets a
+  // non-empty result back; every other concurrent/retried invocation
+  // sees zero rows affected and returns immediately below.
+  const claim = await admin
     .from("pch_intake_uploads")
     .update({ status: "processing" })
-    .eq("id", uploadId);
+    .eq("id", uploadId)
+    .eq("status", "pending")
+    .select("id, case_id, storage_path, file_name")
+    .maybeSingle();
+  if (!claim.data) return;
+  const upload = claim.data;
+
+  // Declared outside the try so the catch block can report how many
+  // lines were actually written before a later item threw - see the
+  // catch below.
+  let written = 0;
 
   try {
     const dl = await admin.storage
@@ -95,7 +105,6 @@ export async function runBulkIntakeExtractionJob(uploadId: string): Promise<void
 
     const result = await extractBulkIntakeDocument({ bytes, mimeType });
 
-    let written = 0;
     for (const item of result.items) {
       const ok = await applyExtractedItem(admin, {
         caseId: upload.case_id as string,
@@ -115,11 +124,24 @@ export async function runBulkIntakeExtractionJob(uploadId: string): Promise<void
       .eq("id", uploadId);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown extraction error";
+    // If an item partway through the list threw (e.g. a retry-exhausted
+    // top-up write), every item before it already landed in
+    // pch_income_lines / pch_expense_lines - those amounts are real and
+    // already applied to the case. Surfacing a bare "could not read"
+    // error here would wrongly imply nothing happened, which risks the
+    // client re-uploading the same file and double-counting the lines
+    // that did succeed. Record how many actually wrote so both the
+    // error text and the UI (bulk-document-upload.tsx) can say so.
+    const prefix =
+      written > 0
+        ? `Added ${written} line${written === 1 ? "" : "s"} from this document before hitting an error: `
+        : "";
     await admin
       .from("pch_intake_uploads")
       .update({
         status: "error",
-        error_message: message.slice(0, 1000),
+        items_count: written,
+        error_message: (prefix + message).slice(0, 1000),
         processed_at: new Date().toISOString(),
       })
       .eq("id", uploadId);
@@ -167,26 +189,24 @@ async function applyExtractedItem(
       );
     }
 
-    // Unmatched: visible extra income row.
-    const sortOrder = await nextSortOrder(admin, "pch_income_lines", caseId);
-    const ins = await admin.from("pch_income_lines").insert({
-      case_id: caseId,
-      source: item.label.slice(0, 80),
-      gross_takings_pence: pence,
-      platform_fee_pence: 0,
-      on_trip_miles: 0,
-      dead_miles: 0,
-      // "Other" (not "Fares") routes this into pl.rows.otherTrading
-      // in the engine, matching how the accountant portal's
-      // addAccountantIncomeLineAction classifies freeform rows.
-      line_type: "Other",
-      sort_order: sortOrder,
-      auto_extracted: true,
-      client_reviewed: false,
-      source_upload_id: uploadId,
-      extraction_confidence: item.confidence,
-      extraction_note: noteLine,
-      likely_personal: item.likelyPersonal,
+    // Unmatched: visible extra income row. sort_order is computed and
+    // assigned inside pch_insert_income_unmatched_row (migration 0128)
+    // under a per-case advisory lock, not read here and passed in -
+    // several uploads for the same case can now run concurrently
+    // (bulk-document-upload.tsx uploads them in parallel), and a plain
+    // "read max, add 1, insert" from this process would race with
+    // another concurrent insert for the same case doing the same read.
+    // "Other" (not "Fares") routes this into pl.rows.otherTrading in
+    // the engine, matching how the accountant portal's
+    // addAccountantIncomeLineAction classifies freeform rows.
+    const ins = await admin.rpc("pch_insert_income_unmatched_row", {
+      p_case_id: caseId,
+      p_source: item.label.slice(0, 80),
+      p_gross_takings_pence: pence,
+      p_upload_id: uploadId,
+      p_confidence: item.confidence,
+      p_note: noteLine,
+      p_likely_personal: item.likelyPersonal,
     });
     if (ins.error) throw new Error(ins.error.message);
     return true;
@@ -214,22 +234,21 @@ async function applyExtractedItem(
   // expenses", sa103s_box 19, car_cost "No") - these are
   // uncategorised items that the accountant can re-slot later, NOT
   // a new tax category.
+  // sort_order assigned inside pch_insert_expense_unmatched_row
+  // (migration 0128) under a per-case advisory lock - see the income
+  // branch above for why this can no longer be a plain read-then-insert.
   const fallback = EXPENSE_FALLBACK_SLOT;
-  const sortOrder = await nextSortOrder(admin, "pch_expense_lines", caseId);
-  const ins = await admin.from("pch_expense_lines").insert({
-    case_id: caseId,
-    label: item.label.slice(0, 80),
-    amount_paid_pence: pence,
-    category: fallback.category,
-    sa103s_box: fallback.sa103s_box,
-    car_cost: fallback.car_cost,
-    sort_order: sortOrder,
-    auto_extracted: true,
-    client_reviewed: false,
-    source_upload_id: uploadId,
-    extraction_confidence: item.confidence,
-    extraction_note: noteLine,
-    likely_personal: item.likelyPersonal,
+  const ins = await admin.rpc("pch_insert_expense_unmatched_row", {
+    p_case_id: caseId,
+    p_label: item.label.slice(0, 80),
+    p_amount_paid_pence: pence,
+    p_category: fallback.category,
+    p_sa103s_box: fallback.sa103s_box,
+    p_car_cost: fallback.car_cost,
+    p_upload_id: uploadId,
+    p_confidence: item.confidence,
+    p_note: noteLine,
+    p_likely_personal: item.likelyPersonal,
   });
   if (ins.error) throw new Error(ins.error.message);
   return true;
@@ -316,24 +335,21 @@ async function topUpIncomeSlot(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const existing = await findSlotIncomeRow(admin, caseId, slotLabel);
     if (!existing) {
-      const sortOrder = await nextSortOrder(admin, "pch_income_lines", caseId);
       // line_type: "Fares" matches upsertPchIncomeLineAction's manual
       // path so the engine routes this through pl.rows.fares the same
-      // way a client-typed row would.
-      const ins = await admin.from("pch_income_lines").insert({
-        case_id: caseId,
-        source: slotLabel,
-        gross_takings_pence: addPence,
-        platform_fee_pence: 0,
-        on_trip_miles: 0,
-        dead_miles: 0,
-        line_type: "Fares",
-        sort_order: sortOrder,
-        auto_extracted: true,
-        client_reviewed: false,
-        source_upload_id: uploadId,
-        extraction_confidence: confidence,
-        extraction_note: noteLine,
+      // way a client-typed row would. sort_order is computed and
+      // assigned inside pch_insert_income_topup_row (migration 0128)
+      // under a per-case advisory lock, not read here - several
+      // uploads for the same case can run concurrently now, so a
+      // plain "read max, add 1" from this process would race with
+      // another concurrent insert for the same case.
+      const ins = await admin.rpc("pch_insert_income_topup_row", {
+        p_case_id: caseId,
+        p_source: slotLabel,
+        p_gross_takings_pence: addPence,
+        p_upload_id: uploadId,
+        p_confidence: confidence,
+        p_note: noteLine,
       });
       if (!ins.error) return true;
       if (ins.error.code === "23505") {
@@ -387,20 +403,19 @@ async function topUpExpenseSlot(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const existing = await findSlotExpenseRow(admin, caseId, slot.label);
     if (!existing) {
-      const sortOrder = await nextSortOrder(admin, "pch_expense_lines", caseId);
-      const ins = await admin.from("pch_expense_lines").insert({
-        case_id: caseId,
-        label: slot.label,
-        amount_paid_pence: addPence,
-        category: slot.category,
-        sa103s_box: slot.sa103s_box,
-        car_cost: slot.car_cost,
-        sort_order: sortOrder,
-        auto_extracted: true,
-        client_reviewed: false,
-        source_upload_id: uploadId,
-        extraction_confidence: confidence,
-        extraction_note: noteLine,
+      // sort_order computed and assigned inside
+      // pch_insert_expense_topup_row (migration 0128) under a
+      // per-case advisory lock - see topUpIncomeSlot above for why.
+      const ins = await admin.rpc("pch_insert_expense_topup_row", {
+        p_case_id: caseId,
+        p_label: slot.label,
+        p_amount_paid_pence: addPence,
+        p_category: slot.category,
+        p_sa103s_box: slot.sa103s_box,
+        p_car_cost: slot.car_cost,
+        p_upload_id: uploadId,
+        p_confidence: confidence,
+        p_note: noteLine,
       });
       if (!ins.error) return true;
       if (ins.error.code === "23505") {
@@ -442,20 +457,6 @@ async function jitterDelay(attempt: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function nextSortOrder(
-  admin: ReturnType<typeof createAdminClient>,
-  table: "pch_income_lines" | "pch_expense_lines",
-  caseId: string,
-): Promise<number> {
-  const { data } = await admin
-    .from(table)
-    .select("sort_order")
-    .eq("case_id", caseId)
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return ((data?.sort_order as number | undefined) ?? -1) + 1;
-}
 
 // Routes a downloaded upload to the right extractable input. PDF and
 // image files pass through unchanged (same inference extraction-
