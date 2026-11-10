@@ -1,5 +1,5 @@
 import "server-only";
-import OpenAI from "openai";
+import { EXTRACTION_MODEL, openAiClient, visionContentBlock } from "./openai-vision";
 
 // AI document extraction for PCH automated cases.
 //
@@ -45,14 +45,6 @@ export type DocumentInput = {
 //               the accountant; nothing pre-filled on the client side
 //   skip      - no AI pass (final approval doc, identity scan, etc.)
 export type SlotExtractionMode = "extract" | "flag" | "skip";
-
-function client(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set. Document extraction is disabled.");
-  }
-  return new OpenAI({ apiKey });
-}
 
 // Shared "ExtractedField" schema. Every structured-output schema below
 // reuses this. OpenAI's strict-mode JSON Schema supports anyOf but not
@@ -135,8 +127,6 @@ type SlotDefinition = {
   schema?: Record<string, unknown>;
 };
 
-const MODEL_GPT = "gpt-6.1-sol";
-
 function schemaWith(fields: Record<string, unknown>, required: string[]) {
   return {
     type: "object",
@@ -162,7 +152,7 @@ export const SLOT_DEFINITIONS: Record<string, SlotDefinition> = {
     prompt: (ctx) => photoIdPrompt(ctx),
     toolName: "extract_photo_id",
     toolDescription: "Extract name, DOB, address, postcode from a UK Photo ID.",
-    model: MODEL_GPT,
+    model: EXTRACTION_MODEL,
     schema: schemaWith(
       {
         documentNumber: fieldSchema(
@@ -216,25 +206,12 @@ async function runExtraction(
   doc: DocumentInput,
   ctx: ExtractionContext,
 ): Promise<ExtractionResult> {
-  const openai = client();
-  const base64 = Buffer.from(doc.bytes).toString("base64");
-
-  const docContent =
-    doc.mimeType === "application/pdf"
-      ? {
-          type: "input_file" as const,
-          file_data: `data:application/pdf;base64,${base64}`,
-          filename: "document.pdf",
-        }
-      : {
-          type: "input_image" as const,
-          image_url: `data:${doc.mimeType};base64,${base64}`,
-          detail: "high" as const,
-        };
+  const openai = openAiClient();
+  const docContent = visionContentBlock(doc.bytes, doc.mimeType);
 
   const prompt = typeof def.prompt === "function" ? def.prompt(ctx) : def.prompt;
   const response = await openai.responses.create({
-    model: def.model ?? MODEL_GPT,
+    model: def.model ?? EXTRACTION_MODEL,
     max_output_tokens: 3072,
     reasoning: { effort: "low" },
     instructions:

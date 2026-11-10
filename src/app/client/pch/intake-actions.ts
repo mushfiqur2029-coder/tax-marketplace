@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole, assertNotSuspended } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 import { validateDateNotInFuture } from "@/lib/pch/validation";
+import { extractShortTextAnswer } from "@/lib/pch/openai-vision";
 
 type ActionOk = { ok: true };
 type ActionErr = { ok: false; error: string };
@@ -229,71 +230,14 @@ export async function setDeclarationStatusAction(
 const UTR_REGEX = /\b(\d{10})\b/;
 const NINO_REGEX = /\b([A-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D])\b/i;
 
-// Shared vision call for every short single-answer OCR prompt below
-// (UTR/NINO, fixed-row amounts, attachment amounts, private-use
-// amounts). One short prompt in, one short text answer out via
-// OpenAI's Responses API - no structured-output schema needed for
-// these, just like the old single-field Anthropic calls this
-// replaces. Returns null on any failure (bad response, network
-// error) so every caller can fall back the same way the file it's
-// already saved still counts as a partial success.
-const OCR_MODEL = "gpt-6.1-sol";
-
-async function callOpenAiVision(
-  apiKey: string,
-  bytes: Uint8Array,
-  mediaType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp",
-  prompt: string,
-  maxOutputTokens = 256,
-): Promise<string | null> {
-  try {
-    const base64 = Buffer.from(bytes).toString("base64");
-    const contentBlock: Record<string, unknown> =
-      mediaType === "application/pdf"
-        ? { type: "input_file", file_data: `data:application/pdf;base64,${base64}`, filename: "document.pdf" }
-        : { type: "input_image", image_url: `data:${mediaType};base64,${base64}`, detail: "high" };
-
-    const resp = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OCR_MODEL,
-        max_output_tokens: maxOutputTokens,
-        reasoning: { effort: "low" },
-        input: [
-          {
-            role: "user",
-            content: [contentBlock, { type: "input_text", text: prompt }],
-          },
-        ],
-      }),
-    });
-    if (!resp.ok) {
-      // Logged rather than swallowed silently: this exact shape of
-      // failure (every call returning null with no visible error)
-      // is how the "minimal" reasoning-effort bug shipped unnoticed
-      // after the Claude -> OpenAI migration - every UTR/NINO/
-      // attachment-amount OCR call failed the same way for a while
-      // and nothing in the UI or logs told anyone. The caller still
-      // treats this as a graceful "couldn't read it" and falls back
-      // to the client typing the value by hand; only the visibility
-      // changes here.
-      const errBody = await resp.text().catch(() => "");
-      console.error(
-        "[callOpenAiVision] OpenAI responses API returned " + resp.status + ": " + errBody.slice(0, 500),
-      );
-      return null;
-    }
-    const body = (await resp.json()) as { output_text?: string };
-    return typeof body.output_text === "string" ? body.output_text : null;
-  } catch (e) {
-    console.error("[callOpenAiVision] request failed:", e instanceof Error ? e.message : e);
-    return null;
-  }
-}
+// The shared vision call for every short single-answer OCR prompt
+// below (UTR/NINO, fixed-row amounts, attachment amounts, private-use
+// amounts) now lives in openai-vision.ts (extractShortTextAnswer), so
+// this file no longer has its own copy of the model name, the content-
+// block shape, or the reasoning-effort setting - the 2026-11-10 audit
+// found exactly this file's own copy had drifted ("minimal" instead
+// of "low", silently rejected by the model with nothing visible
+// anywhere) because every extraction file used to build this by hand.
 
 export async function extractUtrFromUploadAction(
   caseId: string,
@@ -406,7 +350,7 @@ async function extractSingleField(
           ? "image/webp"
           : "image/jpeg";
 
-    const raw = await callOpenAiVision(apiKey, bytes, mediaType, cfg.prompt);
+    const raw = await extractShortTextAnswer(bytes, mediaType, cfg.prompt);
     if (raw === null) {
       // Partial success: file is stored, OCR failed. Don't fail the
       // action; the client's typed value stays the source of truth.
@@ -872,7 +816,7 @@ async function extractAmountForLine(
           ? "image/webp"
           : "image/jpeg";
 
-    const raw = await callOpenAiVision(apiKey, bytes, mediaType, cfg.prompt);
+    const raw = await extractShortTextAnswer(bytes, mediaType, cfg.prompt);
     if (raw === null) return { ok: true, value: null };
 
     // Model may wrap the figure in prose; pattern-match if needed.
@@ -1017,7 +961,7 @@ export async function uploadIntakeAttachmentAction(
           ? "image/webp"
           : "image/jpeg";
 
-    const raw = await callOpenAiVision(apiKey, bytes, mediaType, prompt);
+    const raw = await extractShortTextAnswer(bytes, mediaType, prompt);
     if (raw === null) {
       return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
     }
@@ -1390,7 +1334,7 @@ export async function uploadPrivateUseAttachmentAction(
           ? "image/webp"
           : "image/jpeg";
 
-    const raw = await callOpenAiVision(apiKey, bytes, mediaType, EXPENSE_ATTACH_PROMPT);
+    const raw = await extractShortTextAnswer(bytes, mediaType, EXPENSE_ATTACH_PROMPT);
     if (raw === null) {
       return { ok: true, doc_id: docId, file_name: fileName, extracted_pence: null };
     }

@@ -1,9 +1,9 @@
 import "server-only";
-import OpenAI from "openai";
 import {
   EXPENSE_FIXED_SLOTS,
   INCOME_FIXED_SLOTS,
 } from "./intake-slots";
+import { EXTRACTION_MODEL, openAiClient, visionContentBlock } from "./openai-vision";
 
 // Phase B of the PCH intake redesign: pull every distinct
 // transaction / line item out of a client-uploaded bank statement,
@@ -23,7 +23,6 @@ import {
 // "too many lines, split the file" error - do NOT silently return a
 // partial list.
 
-const MODEL_GPT = "gpt-6.1-sol";
 const MAX_TOKENS = 8192;
 const MAX_ITEMS = 300;
 
@@ -63,16 +62,6 @@ export type BulkExtractionResult = {
   items: BulkExtractedItem[];
   documentSummary: string;
 };
-
-function client(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "OPENAI_API_KEY is not set. Bulk intake extraction is disabled.",
-    );
-  }
-  return new OpenAI({ apiKey });
-}
 
 // Slot label lists for the system prompt. These must stay in sync
 // with the taxonomy in intake-slots.ts: using the shared arrays
@@ -178,31 +167,20 @@ function buildSystemPrompt(): string {
 export async function extractBulkIntakeDocument(
   doc: BulkIntakeDocument,
 ): Promise<BulkExtractionResult> {
-  const openai = client();
+  const openai = openAiClient();
 
   // CSV/spreadsheet data goes in as plain text, not a file/image
   // block; there is nothing to render or OCR, and reading it as text
   // is both cheaper and more reliable than treating it as an image.
+  // PDF/image share the same shape every PCH extraction call uses -
+  // see openai-vision.ts.
   const docContent =
     doc.mimeType === "text/csv"
-      ? {
-          type: "input_text" as const,
-          text: Buffer.from(doc.bytes).toString("utf-8"),
-        }
-      : doc.mimeType === "application/pdf"
-        ? {
-            type: "input_file" as const,
-            file_data: `data:application/pdf;base64,${Buffer.from(doc.bytes).toString("base64")}`,
-            filename: "document.pdf",
-          }
-        : {
-            type: "input_image" as const,
-            image_url: `data:${doc.mimeType};base64,${Buffer.from(doc.bytes).toString("base64")}`,
-            detail: "high" as const,
-          };
+      ? { type: "input_text" as const, text: Buffer.from(doc.bytes).toString("utf-8") }
+      : visionContentBlock(doc.bytes, doc.mimeType);
 
   const response = await openai.responses.create({
-    model: MODEL_GPT,
+    model: EXTRACTION_MODEL,
     max_output_tokens: MAX_TOKENS,
     reasoning: { effort: "low" },
     instructions: buildSystemPrompt(),
