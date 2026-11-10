@@ -262,7 +262,7 @@ async function callOpenAiVision(
       body: JSON.stringify({
         model: OCR_MODEL,
         max_output_tokens: maxOutputTokens,
-        reasoning: { effort: "minimal" },
+        reasoning: { effort: "low" },
         input: [
           {
             role: "user",
@@ -271,10 +271,26 @@ async function callOpenAiVision(
         ],
       }),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      // Logged rather than swallowed silently: this exact shape of
+      // failure (every call returning null with no visible error)
+      // is how the "minimal" reasoning-effort bug shipped unnoticed
+      // after the Claude -> OpenAI migration - every UTR/NINO/
+      // attachment-amount OCR call failed the same way for a while
+      // and nothing in the UI or logs told anyone. The caller still
+      // treats this as a graceful "couldn't read it" and falls back
+      // to the client typing the value by hand; only the visibility
+      // changes here.
+      const errBody = await resp.text().catch(() => "");
+      console.error(
+        "[callOpenAiVision] OpenAI responses API returned " + resp.status + ": " + errBody.slice(0, 500),
+      );
+      return null;
+    }
     const body = (await resp.json()) as { output_text?: string };
     return typeof body.output_text === "string" ? body.output_text : null;
-  } catch {
+  } catch (e) {
+    console.error("[callOpenAiVision] request failed:", e instanceof Error ? e.message : e);
     return null;
   }
 }
